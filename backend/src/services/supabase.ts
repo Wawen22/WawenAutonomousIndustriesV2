@@ -247,6 +247,31 @@ export async function getProjects(): Promise<Project[]> {
   return data as Project[]
 }
 
+export async function getProjectById(id: string): Promise<Project | null> {
+  const { data, error } = await getSupabaseClient()
+    .from('projects')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (error?.code === 'PGRST116') return null
+  if (error) throw new Error(`Failed to get project ${id}: ${error.message}`)
+  return data as Project
+}
+
+export async function getProjectBySlug(clientId: string, slug: string): Promise<Project | null> {
+  const { data, error } = await getSupabaseClient()
+    .from('projects')
+    .select('*')
+    .eq('client_id', clientId)
+    .eq('slug', slug)
+    .single()
+
+  if (error?.code === 'PGRST116') return null
+  if (error) throw new Error(`Failed to get project ${slug}: ${error.message}`)
+  return data as Project
+}
+
 export async function getProjectsByClient(clientSlug: string): Promise<Project[]> {
   const client = await getClientBySlug(clientSlug)
   if (!client) return []

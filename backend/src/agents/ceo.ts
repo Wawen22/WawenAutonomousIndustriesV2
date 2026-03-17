@@ -7,6 +7,8 @@ import { runAgent } from '../services/llm.js'
 import { createTask, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
 import { runPmSaasAgent } from './pm_saas.js'
+import { runConsultingLeadAgent } from './consulting_lead.js'
+import { runAnalystAgent } from './analyst.js'
 import type { Task, TaskType, TaskPriority } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -15,22 +17,22 @@ import type { Task, TaskType, TaskPriority } from '../types/index.js'
 
 const AGENT_ROSTER = `
 Available agents:
-- pm_saas        – Product Manager SaaS: roadmap, feature prioritization, user stories
-- dev_lead_saas  – Dev Lead SaaS: technical planning, sprint planning, subtask breakdown
-- dev_saas_1     – Developer SaaS #1: code implementation, tests, PRs
-- dev_saas_2     – Developer SaaS #2: boilerplate, docs, simple features
-- architect      – Architect: system design, tech stack decisions, diagrams
-- dev_general_1  – Developer General #1: implementation, refactoring, debugging
-- dev_general_2  – Developer General #2: simple implementations, boilerplate
-- qa             – QA Agent: test writing, quality checklists, bug reports
-- consulting_lead – Consulting Lead: client intake, scope definition, delivery
-- analyst        – Analyst: research, data gathering, reports
+- pm_saas         – Product Manager SaaS: roadmap, feature prioritization, user stories for SaaS products
+- dev_lead_saas   – Dev Lead SaaS: technical planning, sprint planning, subtask breakdown
+- dev_saas_1      – Developer SaaS #1: code implementation, tests, PRs
+- dev_saas_2      – Developer SaaS #2: boilerplate, docs, simple features
+- architect       – Architect: system design, tech stack decisions, diagrams
+- dev_general_1   – Developer General #1: implementation, refactoring, debugging
+- dev_general_2   – Developer General #2: simple implementations, boilerplate
+- qa              – QA Agent: test writing, quality checklists, bug reports
+- consulting_lead – Consulting Lead: client proposals, scope definition, consulting delivery pipeline — USE THIS for any client project task, consulting work, or proposal creation
+- analyst         – Analyst: market research, data gathering, competitive analysis, reports — USE THIS for standalone analysis tasks without a consulting proposal
 - marketing_strategist – Marketing Strategist: campaigns, funnels, strategy
 - content_creator – Content Creator: blog posts, social copy, scripts
-- social_manager – Social Media Manager: scheduling, engagement, metrics
-- ops            – Ops Agent: system monitoring, uptime, incidents
-- finance        – Finance Agent: cost tracking, budget alerts, reports
-- hr             – HR Agent: agent docs, role definitions, process docs
+- social_manager  – Social Media Manager: scheduling, engagement, metrics
+- ops             – Ops Agent: system monitoring, uptime, incidents
+- finance         – Finance Agent: cost tracking, budget alerts, reports
+- hr              – HR Agent: agent docs, role definitions, process docs
 `.trim()
 
 const VALID_TASK_TYPES = [
@@ -200,6 +202,9 @@ Analyze and delegate to the most appropriate agent.`
       'CEO Agent: task delegated'
     )
 
+    // CEO job done: mark parent task as done (subtask carries the work forward)
+    await updateTaskStatus(task.id, 'done')
+
     await notify(
       `🤖 *CEO Agent Decision*\n\n` +
         `📋 Task: ${task.title}\n` +
@@ -212,6 +217,14 @@ Analyze and delegate to the most appropriate agent.`
     if (delegation.delegateTo === 'pm_saas') {
       void runPmSaasAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'PM SaaS Agent failed')
+      })
+    } else if (delegation.delegateTo === 'consulting_lead') {
+      void runConsultingLeadAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Consulting Lead Agent failed')
+      })
+    } else if (delegation.delegateTo === 'analyst') {
+      void runAnalystAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Analyst Agent failed')
       })
     }
   } catch (err) {

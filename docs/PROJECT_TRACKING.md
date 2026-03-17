@@ -9,7 +9,7 @@
 ## Current Milestone: M5 – First Autonomous Deliverable
 
 **Target:** 2026-Q2
-**Status:** ⬜ Todo
+**Status:** 🔄 In Progress
 
 ---
 
@@ -53,6 +53,11 @@
 | T019 | Telegram: /new_client /new_project commands | ✅ Done | Claude | 1 | + /clients /projects — workspace folder creation |
 | T020 | CEO Agent: project-aware delegation | ✅ Done | Claude | 2 | project_id ereditato nei subtask, project context nel prompt |
 | T021 | Dashboard: Clients view + Projects view | ✅ Done | Claude | 2 | ClientsView + ProjectsView — 8 views totali, sidebar updated |
+| T022 | Consulting Lead Agent | ✅ Done | Claude | 1 | backend/src/agents/consulting_lead.ts — legge brief.md, produce proposal.md, crea analyst sub-task |
+| T023 | CEO routing → consulting_lead + analyst | ✅ Done | Claude | 1 | ceo.ts — fire-and-forget per consulting_lead e analyst; AGENT_ROSTER aggiornato |
+| T024 | /task con scope progetto | ✅ Done | Claude | 1 | telegram.ts — /task client/project desc; lookup client+project; metadata iniettato |
+| T025 | Analyst Agent | ✅ Done | Claude | 2 | backend/src/agents/analyst.ts — produce analysis.md; invocato da consulting_lead |
+| T026 | Dashboard: deliverables viewer | ✅ Done | Claude | 2 | backend GET /api/deliverables; ProjectsView — click riga → panel deliverables con lista file |
 
 ---
 
@@ -69,6 +74,15 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-17 — Sessione 8: M5 First Autonomous Deliverable (T022–T026) 🔄
+
+- **T022** `backend/src/agents/consulting_lead.ts` — `runConsultingLeadAgent(task, notify)`: legge `brief.md` da workspace, chiama GPT-5.4, produce proposta strutturata JSON → converte in `deliverables/proposal.md`, crea sub-subtask Analyst se `requiresAnalysis: true`, logga run+evento, notifica Neb con preview
+- **T023** `backend/src/agents/ceo.ts` — import `runConsultingLeadAgent` + `runAnalystAgent`; fire-and-forget per entrambi; AGENT_ROSTER aggiornato con descrizione precisa per consulting_lead e analyst
+- **T024** `backend/src/services/telegram.ts` — `/task` ora accetta prefisso opzionale `client_slug/project_slug`; lookup Supabase client+project; inietta `project_id`, `project_name`, `client_name`, `client_slug`, `project_slug`, `project_type`, `workspace_path` nel metadata del task; backward-compatible
+- **T025** `backend/src/agents/analyst.ts` — `runAnalystAgent(task, notify)`: produce report di ricerca strutturato → `deliverables/analysis.md`; invocato da consulting_lead o direttamente da CEO
+- **T026** `backend/src/index.ts` — API `GET /api/deliverables?path=workspace/client/project` con CORS; lista file in `deliverables/` con nome/size/modified_at; `dashboard/src/components/ProjectsView.tsx` — click su riga progetto → panel deliverables con fetch API; `dashboard/.env.local` — aggiunta `VITE_BACKEND_URL`
+- **DB** `backend/src/services/supabase.ts` — aggiunti `getProjectById(id)` e `getProjectBySlug(clientId, slug)`
 
 ### 2026-03-17 — Sessione 7: M4 Client & Project Management System ✅
 

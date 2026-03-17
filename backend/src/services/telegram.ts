@@ -13,6 +13,7 @@ import {
   getClientBySlug,
   getClients,
   getMonthlyCost,
+  getProjectBySlug,
   getProjectState,
   getProjectsByClient,
   getRecentEvents,
@@ -81,6 +82,7 @@ function registerHandlers(bot: Bot): void {
       '🤖 *WAI – Wawen Autonomous Industries*\n\n' +
         '*Tasks:*\n' +
         '/task descrizione – Crea un task\n' +
+        '/task client/project descrizione – Task con scope progetto\n' +
         '/approve task\\_id – Approva output\n' +
         '/reject task\\_id motivo – Rifiuta output\n\n' +
         '*Clients & Projects:*\n' +
@@ -98,7 +100,10 @@ function registerHandlers(bot: Bot): void {
     await recordEvent('founder_command', { payload: { command: 'start' } })
   })
 
-  // /task "description" [type] [priority]
+  // /task [client_slug/project_slug] description
+  // Examples:
+  //   /task Build a new auth module
+  //   /task acme-corp/website Crea una proposta per il sito
   bot.command('task', async (ctx) => {
     if (!requireFounder(ctx)) return
 
@@ -106,33 +111,118 @@ function registerHandlers(bot: Bot): void {
     const args = text.replace('/task', '').trim()
 
     if (!args) {
-      await ctx.reply('Usage: /task "Task description" [type] [priority]\nExample: /task "Build auth module" dev 1')
+      await ctx.reply(
+        'Usage:\n' +
+          '/task description\n' +
+          '/task client\\_slug/project\\_slug description\n\n' +
+          'Examples:\n' +
+          '/task Build auth module\n' +
+          '/task acme\\-corp/website Crea proposta commerciale',
+        { parse_mode: 'Markdown' }
+      )
       return
+    }
+
+    // Detect optional "client_slug/project_slug" as first token (contains a slash, no spaces)
+    let description = args
+    let projectMetadata: Record<string, unknown> = {}
+    let projectId: string | undefined
+
+    const firstToken = args.split(' ')[0] ?? ''
+    const projectScopeMatch = firstToken.match(/^([a-z0-9-]+)\/([a-z0-9-]+)$/)
+
+    if (projectScopeMatch) {
+      const clientSlug = projectScopeMatch[1]!
+      const projectSlug = projectScopeMatch[2]!
+      description = args.slice(firstToken.length).trim()
+
+      if (!description) {
+        await ctx.reply(
+          `❌ Missing task description after \`${firstToken}\`.\n` +
+            `Usage: /task ${firstToken} your task description`,
+          { parse_mode: 'Markdown' }
+        )
+        return
+      }
+
+      try {
+        const client = await getClientBySlug(clientSlug)
+        if (!client) {
+          await ctx.reply(
+            `❌ Client \`${clientSlug}\` not found. Use /clients to see available clients.`,
+            { parse_mode: 'Markdown' }
+          )
+          return
+        }
+
+        const project = await getProjectBySlug(client.id, projectSlug)
+        if (!project) {
+          await ctx.reply(
+            `❌ Project \`${projectSlug}\` not found for client \`${clientSlug}\`.\n` +
+              `Use /projects ${clientSlug} to see available projects.`,
+            { parse_mode: 'Markdown' }
+          )
+          return
+        }
+
+        projectId = project.id
+        projectMetadata = {
+          project_id: project.id,
+          project_name: project.name,
+          project_slug: project.slug,
+          project_type: project.type,
+          client_id: client.id,
+          client_name: client.name,
+          client_slug: client.slug,
+          workspace_path: project.workspace_path ?? undefined,
+        }
+
+        log.info(
+          { clientSlug, projectSlug, projectId: project.id },
+          'Task scoped to project'
+        )
+      } catch (err) {
+        log.error({ err }, 'Failed to resolve project scope for /task')
+        await ctx.reply('❌ Failed to resolve project. Check logs.')
+        return
+      }
     }
 
     try {
       const taskInput: CreateTaskInput = {
-        title: args.substring(0, 100),
-        description: args,
+        title: description.substring(0, 100),
+        description,
         type: 'dev',
         priority: 2,
         delegator_agent_id: 'founder',
         assignee_agent_id: 'ceo',
         requires_human_review: false,
+        ...(projectId ? { project_id: projectId } : {}),
+        ...(Object.keys(projectMetadata).length > 0 ? { metadata: projectMetadata } : {}),
       }
 
       const task = await createTask(taskInput)
       await recordEvent('task_created', {
         taskId: task.id,
-        payload: { title: task.title, source: 'telegram', issued_by: 'founder' },
+        payload: {
+          title: task.title,
+          source: 'telegram',
+          issued_by: 'founder',
+          ...(projectId ? { project_id: projectId } : {}),
+        },
       })
 
-      await ctx.reply(`✅ Task created:\nID: \`${task.id}\`\nTitle: ${task.title}\nAssigned to: CEO Agent`, {
-        parse_mode: 'Markdown',
-      })
+      const scopeLine =
+        projectMetadata['project_name']
+          ? `\nProject: ${projectMetadata['client_name'] as string} / ${projectMetadata['project_name'] as string}`
+          : ''
+
+      await ctx.reply(
+        `✅ Task created:\nID: \`${task.id}\`\nTitle: ${task.title}${scopeLine}\nAssigned to: CEO Agent`,
+        { parse_mode: 'Markdown' }
+      )
 
       // Invoke CEO Agent asynchronously (fire-and-forget)
-      // Pass sendTelegramNotification as callback to avoid circular dependency
       void runCeoAgent(task, sendTelegramNotification).catch((err: unknown) => {
         log.error({ err, taskId: task.id }, 'CEO Agent failed')
       })

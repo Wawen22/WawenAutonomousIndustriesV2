@@ -3,7 +3,7 @@
 // Lista progetti filtrabili per client / status / tipo.
 // ============================================================
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
 import { Panel } from './ui/Panel.js'
@@ -11,6 +11,115 @@ import { Badge } from './ui/Badge.js'
 import { Stat } from './ui/Stat.js'
 import { useClients, useProjects } from '../hooks/useSupabaseRealtime.js'
 import type { Project, ProjectStatus, ProjectType } from '../types/index.js'
+
+// ---------------------------------------------------------------------------
+// Deliverables panel
+// ---------------------------------------------------------------------------
+
+interface DeliverableFile {
+  name: string
+  modified_at: string
+  size_bytes: number
+}
+
+function useDeliverables(workspacePath: string | null) {
+  const [files, setFiles] = useState<DeliverableFile[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!workspacePath) {
+      setFiles([])
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    const backendUrl = import.meta.env['VITE_BACKEND_URL'] ?? 'http://localhost:3001'
+    const url = `${backendUrl}/api/deliverables?path=${encodeURIComponent(workspacePath)}`
+
+    fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json() as Promise<{ files: DeliverableFile[] }>
+      })
+      .then((data) => {
+        setFiles(data.files)
+        setLoading(false)
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Error fetching deliverables')
+        setLoading(false)
+      })
+  }, [workspacePath])
+
+  return { files, loading, error }
+}
+
+function fileIcon(name: string): string {
+  if (name.endsWith('.pdf')) return '📕'
+  if (name === 'proposal.md') return '📄'
+  if (name === 'analysis.md') return '📊'
+  return '📝'
+}
+
+interface DeliverablesPanelProps {
+  project: Project
+}
+
+function DeliverablesPanel({ project }: DeliverablesPanelProps) {
+  const { files, loading, error } = useDeliverables(project.workspace_path)
+
+  return (
+    <div className="mt-3 border border-white/[0.06] rounded-lg bg-white/[0.02] p-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] uppercase tracking-wider font-semibold text-violet-400">
+          Deliverables — {project.name}
+        </span>
+        <span className="text-[10px] text-slate-600 font-mono">{project.workspace_path ?? '—'}</span>
+      </div>
+
+      {loading && (
+        <p className="text-[11px] text-slate-600 font-mono animate-pulse">Loading…</p>
+      )}
+      {error && (
+        <p className="text-[11px] text-rose-400 font-mono">Error: {error}</p>
+      )}
+      {!loading && !error && files.length === 0 && (
+        <p className="text-[11px] text-slate-600 font-mono">
+          No deliverables yet — run a consulting task to generate files.
+        </p>
+      )}
+      {!loading && files.length > 0 && (
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-white/[0.04] text-left">
+              <th className="pb-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600">File</th>
+              <th className="pb-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600 text-right">Size</th>
+              <th className="pb-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600 text-right">Modified</th>
+            </tr>
+          </thead>
+          <tbody>
+            {files.map((f) => (
+              <tr key={f.name} className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors">
+                <td className="py-2 text-slate-300 font-mono">
+                  {fileIcon(f.name)} {f.name}
+                </td>
+                <td className="py-2 text-right text-slate-600 font-mono text-[10px]">
+                  {f.size_bytes < 1024 ? `${f.size_bytes}B` : `${(f.size_bytes / 1024).toFixed(1)}KB`}
+                </td>
+                <td className="py-2 text-right text-slate-600 font-mono text-[10px]">
+                  {format(new Date(f.modified_at), 'MMM d, HH:mm')}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Badge mappings
@@ -105,12 +214,21 @@ function FilterBar({
 interface ProjectRowProps {
   project: Project
   clientName: string
+  selected: boolean
+  onSelect: (p: Project) => void
 }
 
-function ProjectRow({ project, clientName }: ProjectRowProps) {
+function ProjectRow({ project, clientName, selected, onSelect }: ProjectRowProps) {
   return (
-    <tr className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors group">
+    <tr
+      className={clsx(
+        'border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors group cursor-pointer',
+        selected && 'bg-violet-950/30 border-violet-800/30'
+      )}
+      onClick={() => onSelect(project)}
+    >
       <td className="px-4 py-3 font-medium text-white text-sm max-w-[180px] truncate">
+        {selected && <span className="text-violet-400 mr-1">▸</span>}
         {project.name}
       </td>
       <td className="px-4 py-3 text-sm text-slate-400">
@@ -147,6 +265,12 @@ export function ProjectsView() {
   const [typeFilter, setTypeFilter] = useState<ProjectType | 'all'>('all')
   const [clientFilter, setClientFilter] = useState('')
   const [search, setSearch] = useState('')
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
+
+  // Deselect if project is filtered out
+  const handleSelectProject = (p: Project) => {
+    setSelectedProject((prev) => (prev?.id === p.id ? null : p))
+  }
 
   const clientMap = useMemo(() => {
     const m = new Map<string, string>()
@@ -258,11 +382,17 @@ export function ProjectsView() {
                       key={project.id}
                       project={project}
                       clientName={clientMap.get(project.client_id) ?? '—'}
+                      selected={selectedProject?.id === project.id}
+                      onSelect={handleSelectProject}
                     />
                   ))}
                 </tbody>
               </table>
             </div>
+          )}
+
+          {selectedProject && (
+            <DeliverablesPanel project={selectedProject} />
           )}
         </div>
       </Panel>
