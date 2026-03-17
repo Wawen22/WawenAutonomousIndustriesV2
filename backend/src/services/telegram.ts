@@ -15,6 +15,7 @@ import {
   updateAgentModel,
 } from './supabase.js'
 import { setModelOverride } from '../config/models.js'
+import { runCeoAgent } from '../agents/ceo.js'
 import type { CreateTaskInput } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -30,6 +31,9 @@ export function getTelegramBot(): Bot {
   if (!_bot) {
     _bot = new Bot(token)
     registerHandlers(_bot)
+    _bot.catch((err) => {
+      log.error({ err: err.message, update: err.ctx?.update?.update_id }, 'Telegram bot error')
+    })
   }
   return _bot
 }
@@ -61,14 +65,15 @@ function registerHandlers(bot: Bot): void {
   bot.command('start', async (ctx) => {
     if (!requireFounder(ctx)) return
     await ctx.reply(
-      '🤖 *WAI – Wawen Autonomous Industries*\n\nCommands:\n' +
-        '/task "description" – Create a task\n' +
-        '/status – System status\n' +
-        '/logs – Recent events\n' +
-        '/budget – Current costs\n' +
-        '/assign_model agent_id model_id – Change model\n' +
-        '/approve task_id – Approve output\n' +
-        '/reject task_id "reason" – Reject output',
+      '🤖 *WAI – Wawen Autonomous Industries*\n\n' +
+        'Commands:\n' +
+        '/task descrizione – Crea un task\n' +
+        '/status – Stato del sistema\n' +
+        '/logs – Eventi recenti\n' +
+        '/budget – Costi API\n' +
+        '/assign\\_model agent\\_id model\\_id – Cambia modello\n' +
+        '/approve task\\_id – Approva output\n' +
+        '/reject task\\_id motivo – Rifiuta output',
       { parse_mode: 'Markdown' }
     )
     await recordEvent('founder_command', { payload: { command: 'start' } })
@@ -106,6 +111,12 @@ function registerHandlers(bot: Bot): void {
 
       await ctx.reply(`✅ Task created:\nID: \`${task.id}\`\nTitle: ${task.title}\nAssigned to: CEO Agent`, {
         parse_mode: 'Markdown',
+      })
+
+      // Invoke CEO Agent asynchronously (fire-and-forget)
+      // Pass sendTelegramNotification as callback to avoid circular dependency
+      void runCeoAgent(task, sendTelegramNotification).catch((err: unknown) => {
+        log.error({ err, taskId: task.id }, 'CEO Agent failed')
       })
     } catch (err) {
       log.error({ err }, 'Failed to create task from Telegram')

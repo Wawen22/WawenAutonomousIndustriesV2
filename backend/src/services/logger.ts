@@ -11,13 +11,14 @@ import type { EventType, EventSeverity, LogRunInput } from '../types/index.js'
 // Pino logger (structured JSON logging)
 // ---------------------------------------------------------------------------
 
-export const log = pino({
+const pinoOptions: pino.LoggerOptions = {
   level: process.env['LOG_LEVEL'] ?? 'info',
-  transport:
-    process.env['NODE_ENV'] === 'development'
-      ? { target: 'pino-pretty', options: { colorize: true } }
-      : undefined,
-})
+}
+if (process.env['NODE_ENV'] === 'development') {
+  pinoOptions.transport = { target: 'pino-pretty', options: { colorize: true } }
+}
+
+export const log = pino(pinoOptions)
 
 // ---------------------------------------------------------------------------
 // Supabase event logger (persisted events for Dashboard)
@@ -35,8 +36,8 @@ export async function recordEvent(
   try {
     await logEvent({
       type,
-      agent_id: options.agentId,
-      task_id: options.taskId,
+      ...(options.agentId !== undefined && { agent_id: options.agentId }),
+      ...(options.taskId !== undefined && { task_id: options.taskId }),
       payload: options.payload ?? {},
       severity: options.severity ?? 'info',
     })

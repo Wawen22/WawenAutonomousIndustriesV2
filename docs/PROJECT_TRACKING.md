@@ -6,9 +6,9 @@
 
 ---
 
-## Current Milestone: M1 – Local Development Stack
+## Current Milestone: M3 – WAI Dashboard live con dati real-time
 
-**Target:** 2025-Q1
+**Target:** 2026-Q1
 **Status:** In Progress
 
 ---
@@ -17,13 +17,13 @@
 
 | ID | Milestone | Target | Status |
 |----|-----------|--------|--------|
-| M1 | Local development stack running | 2025-Q1 | In Progress |
-| M2 | All agents configured in OpenClaw | 2025-Q1 | Todo |
-| M3 | WAI Dashboard live with real-time data | 2025-Q1 | Todo |
-| M4 | First autonomous task completed by agent | 2025-Q2 | Todo |
-| M5 | Deploy to Hetzner VPS | 2025-Q2 | Todo |
-| M6 | First revenue-generating output | 2025-Q3 | Todo |
-| M7 | Migrate to personal mini PC | 2025-Q3 | Todo |
+| M1 | Local development stack running | 2026-Q1 | ✅ Done |
+| M2 | CEO Agent esegue primo task autonomo | 2026-Q1 | ✅ Done |
+| M3 | WAI Dashboard live con dati real-time | 2026-Q1 | 🔄 In Progress |
+| M4 | First autonomous task completed by agent | 2026-Q2 | ⬜ Todo |
+| M5 | Deploy to Hetzner VPS | 2026-Q2 | ⬜ Todo |
+| M6 | First revenue-generating output | 2026-Q3 | ⬜ Todo |
+| M7 | Migrate to personal mini PC | 2026-Q3 | ⬜ Todo |
 
 ---
 
@@ -31,16 +31,16 @@
 
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
-| T001 | Initialize WAI project structure | Done | Claude | 1 | Initial repo setup |
-| T002 | Create Supabase schema migrations | Todo | dev_saas_1 | 1 | See docs/SUPABASE_SCHEMA.md |
-| T003 | Configure OpenClaw agent sessions | Todo | dev_lead_saas | 1 | All agents in config/agents.ts |
-| T004 | Build WAI Dashboard basic views | Todo | dev_saas_1 | 2 | AgentList, TaskBoard, EventTimeline |
-| T005 | Set up Telegram bot handler | Todo | dev_saas_1 | 1 | Neb commands via Telegram |
-| T006 | Implement model router | Todo | architect | 1 | config/models.ts routing logic |
-| T007 | Set up Finance Agent cron | Todo | ops | 2 | Hourly cost alerts |
-| T008 | Write Docker Compose production config | Todo | ops | 3 | For Hetzner deploy |
-| T009 | Configure Supabase RLS policies | Todo | dev_saas_1 | 2 | Security |
-| T010 | End-to-end test: Neb → CEO → task → done | Todo | qa | 1 | Full flow validation |
+| T001 | Initialize WAI project structure | ✅ Done | Claude | 1 | Repo completo |
+| T002 | Supabase schema + seed applicati | ✅ Done | Claude | 1 | Via Management API |
+| T003 | LiteLLM proxy configurato e testato | ✅ Done | Claude | 1 | GPT-5.4 + Gemini 2.5 Flash ok |
+| T004 | Backend TypeScript avviato | ✅ Done | Claude | 1 | 17 agenti online, Telegram ok |
+| T005 | Telegram bot @wai_v2_bot funzionante | ✅ Done | Claude | 1 | /start /status /budget /logs ok |
+| T006 | Implementare CEO Agent loop | ✅ Done | Claude | 1 | backend/src/agents/ceo.ts — GPT-5.4 delega via JSON |
+| T007 | WAI Dashboard: installare deps e avviare | ✅ Done | Claude | 2 | Dashboard live su localhost:3000, refactor UI completo |
+| T008 | Set up Finance Agent cron in backend | ⬜ Todo | ops | 2 | Già c'è budget.ts, collegare a cron |
+| T009 | Test end-to-end: /task su Telegram → CEO → Supabase | ✅ Done | Neb | 1 | Verificato 2026-03-17: task + subtask creati, CEO delega a pm_saas |
+| T010 | Docker compose: aggiungere backend containerizzato | ⬜ Todo | ops | 3 | Ora gira solo in locale |
 
 ---
 
@@ -58,11 +58,25 @@
 
 ## CHANGELOG
 
-### 2025-03-17
-- **T001** Done - Initialized complete WAI project structure
-  - Created README.md, CLAUDE.md, .env.example, docker-compose.yml
-  - Created all docs/ files (VISION, ARCHITECTURE, AGENTS_AND_TEAMS, SUPABASE_SCHEMA, OPERATIONS_AND_MONITORING, TASKS_AND_PROJECT_STATE, DEPLOYMENT_PLAN, SECURITY, COSTS_AND_BUDGET)
-  - Created backend/ TypeScript structure with agents, config, services, tools, types
-  - Created dashboard/ React/TypeScript structure
-  - Created Supabase migrations
-  - Created infrastructure/ configs
+### 2026-03-17 — Sessione 3: Dashboard refactor + M3 avviata ✅
+
+- **T007** Dashboard live su `localhost:3000` — fix RLS Supabase (policy anon read su 6 tabelle), fix `.env.local` con variabili `VITE_`
+- **DESIGN** Refactor completo dashboard: design system "Neural Command Center" — sidebar collassabile, 5 views (Overview, Agents, Tasks, Activity, Costs), componenti UI riusabili (Panel, Badge, Stat, Icon), font Inter + JetBrains Mono, dot-grid background, colori semantici cyan/emerald/amber/rose
+- **FIX** TypeScript: `useRealtimeTable<T extends object>`, aggiunto `"types": ["vite/client"]` in tsconfig
+- **TEST** E2E verificato: `/task` Telegram → CEO Agent (GPT-5.4) → delega a `pm_saas` → subtask Supabase → notifica Telegram
+- **M2** Completata — CEO Agent loop funzionante
+
+### 2026-03-17 — Sessione 2: CEO Agent loop implementato ✅
+
+- **T006** Creato `backend/src/agents/ceo.ts`: `runCeoAgent(task, notify)` chiama GPT-5.4 via LiteLLM, parsa JSON delegation decision, crea subtask su Supabase, notifica Neb via Telegram
+- **WIRE** `telegram.ts` aggiornato: dopo `/task`, invoca CEO Agent in fire-and-forget con `sendTelegramNotification` come callback (no circular dep)
+- **ARCH** Pattern: callback injection per evitare circular dependency `telegram ↔ ceo`
+
+### 2026-03-17 — Sessione 1: Foundation completa ✅
+
+- **T001** Inizializzato repo WAI completo: README, CLAUDE.md, docs/ (10 file), backend/ TypeScript, dashboard/ React, supabase/, infrastructure/
+- **T002** Supabase project `nxrgwbwhauuusuuytipf` (wai-v2): schema applicato via Management API, seed 17 agenti + 2 modelli, Realtime abilitato su 5 tabelle
+- **T003** LiteLLM Docker container up: `gpt-5.4` (Azure) + `gemini-2.5-flash` (Google) — entrambi testati e funzionanti
+- **T004** Backend Node.js/TypeScript avviato in dev mode: 17 agenti marcati online su Supabase, budget monitor attivo
+- **T005** Telegram bot `@wai_v2_bot` operativo: /start /status /logs /budget /assign_model funzionanti, Neb autenticato (chat_id: 854149335)
+- **ARCH** Decisione: no OpenClaw per ora — architettura custom Node.js + LiteLLM + Supabase + grammy

@@ -4,7 +4,7 @@
   "description": "WAI Backend - OpenClaw agent orchestration and services",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --env-file ../.env src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
@@ -14,7 +14,8 @@
     "@supabase/supabase-js": "^2.39.0",
     "grammy": "^1.21.1",
     "@octokit/rest": "^20.0.2",
-    "@sendgrid/mail": "^8.1.1",
+    "openai": "^4.28.0",
+    "resend": "^3.2.0",
     "dotenv": "^16.3.1",
     "zod": "^3.22.4",
     "pino": "^8.17.2"
@@ -23,6 +24,7 @@
     "@types/node": "^20.11.0",
     "typescript": "^5.3.3",
     "tsx": "^4.6.2",
+    "pino-pretty": "^11.0.0",
     "eslint": "^8.56.0",
     "@typescript-eslint/eslint-plugin": "^6.18.1",
     "@typescript-eslint/parser": "^6.18.1"

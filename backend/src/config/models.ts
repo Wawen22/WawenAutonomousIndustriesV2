@@ -6,15 +6,34 @@
 import type { ModelConfig, ModelRoutingContext, TaskType } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
-// Model Registry
-// Keep in sync with Supabase `models` table (seed.sql)
+// LiteLLM Client Config
+// All LLM calls go through LiteLLM proxy (http://litellm:4000/v1).
+// Use getLiteLLMConfig() to get the OpenAI-compatible client config.
 // ---------------------------------------------------------------------------
 
-export const MODELS: Record<string, ModelConfig> = {
+export interface LiteLLMClientConfig {
+  baseURL: string
+  apiKey: string
+}
+
+export function getLiteLLMConfig(): LiteLLMClientConfig {
+  const baseURL = process.env['LITELLM_BASE_URL'] ?? 'http://litellm:4000/v1'
+  const apiKey = process.env['LITELLM_API_KEY'] ?? 'sk-wai-master-key'
+  return { baseURL, apiKey }
+}
+
+// ---------------------------------------------------------------------------
+// Model Registry
+// Keep in sync with Supabase `models` table (seed.sql).
+// litellm_model_name = the model name to pass to LiteLLM proxy.
+// ---------------------------------------------------------------------------
+
+export const MODELS: Record<string, ModelConfig & { litellm_model_name: string }> = {
   'gpt-5.4': {
     id: 'gpt-5.4',
     provider: 'azure',
     display_name: 'GPT-5.4 (Azure Foundry)',
+    litellm_model_name: 'gpt-5.4',          // matches model_name in litellm/config.yaml
     cost_per_1k_input_tokens: 0.01,
     cost_per_1k_output_tokens: 0.03,
     context_window: 128000,
@@ -25,6 +44,7 @@ export const MODELS: Record<string, ModelConfig> = {
     id: 'gemini-2.5-flash',
     provider: 'google',
     display_name: 'Gemini 2.5 Flash',
+    litellm_model_name: 'gemini-2.5-flash', // matches model_name in litellm/config.yaml
     cost_per_1k_input_tokens: 0.00035,
     cost_per_1k_output_tokens: 0.00105,
     context_window: 1000000,
@@ -137,7 +157,7 @@ export function getModelForAgent(ctx: ModelRoutingContext): ModelConfig {
     if (COMPLEX_TASK_TYPES.has(taskType) || requiresComplex === true) {
       return MODELS['gpt-5.4']!
     }
-    if (SIMPLE_TASK_TYPES.has(taskType) && requiresComplex !== true) {
+    if (SIMPLE_TASK_TYPES.has(taskType)) {
       return MODELS['gemini-2.5-flash']!
     }
   }

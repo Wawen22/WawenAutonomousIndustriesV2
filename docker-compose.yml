@@ -1,10 +1,41 @@
 version: "3.9"
 
 # =============================================================
-# WAI – Local Development Stack
+# WAI – Local Development / Production Stack
+#
+# Supabase: usa il cloud (supabase.com) — non servono DB/Realtime locali.
+# LiteLLM: proxy unificato per GPT-5.4 (Azure) e Gemini 2.5 Flash.
 # =============================================================
 
 services:
+
+  # -----------------------------------------------------------
+  # LiteLLM – Proxy LLM unificato
+  # Tutti gli agenti chiamano http://litellm:4000/v1
+  # UI: http://localhost:4000/ui
+  # -----------------------------------------------------------
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: wai-litellm
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./infrastructure/litellm/config.yaml:/app/config.yaml:ro
+    environment:
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION:-2025-01-01-preview}
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      - LITELLM_API_KEY=${LITELLM_API_KEY:-sk-wai-master-key}
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "2"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - wai-network
 
   # -----------------------------------------------------------
   # WAI Backend (OpenClaw agent orchestration + API)
@@ -18,31 +49,40 @@ services:
     ports:
       - "3001:3001"
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3001
+      # LiteLLM (tutti i modelli passano da qui)
+      - LITELLM_BASE_URL=http://litellm:4000/v1
+      - LITELLM_API_KEY=${LITELLM_API_KEY:-sk-wai-master-key}
+      # Supabase Cloud
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-      - DATABASE_URL=${DATABASE_URL}
-      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
-      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
-      - AZURE_OPENAI_DEPLOYMENT_GPT54=${AZURE_OPENAI_DEPLOYMENT_GPT54}
-      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      # Telegram
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_FOUNDER_CHAT_ID=${TELEGRAM_FOUNDER_CHAT_ID}
+      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
+      # GitHub
       - GITHUB_TOKEN=${GITHUB_TOKEN}
-      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
+      # Email
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL}
+      # Slack
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      # Budget
       - MONTHLY_BUDGET_USD=${MONTHLY_BUDGET_USD:-500}
       - ALERT_THRESHOLD_PERCENT=${ALERT_THRESHOLD_PERCENT:-80}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ./backend:/app
       - /app/node_modules
     networks:
       - wai-network
     depends_on:
-      - db
+      litellm:
+        condition: service_healthy
 
   # -----------------------------------------------------------
-  # WAI Dashboard (React + TypeScript)
+  # WAI Dashboard (React + TypeScript + Vite)
   # -----------------------------------------------------------
   dashboard:
     build:
@@ -60,51 +100,6 @@ services:
       - /app/node_modules
     networks:
       - wai-network
-
-  # -----------------------------------------------------------
-  # PostgreSQL (local Supabase-compatible DB)
-  # -----------------------------------------------------------
-  db:
-    image: supabase/postgres:15.1.1.78
-    container_name: wai-db
-    restart: unless-stopped
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: postgres
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-password}
-    volumes:
-      - wai-db-data:/var/lib/postgresql/data
-      - ./supabase/migrations:/docker-entrypoint-initdb.d
-    networks:
-      - wai-network
-
-  # -----------------------------------------------------------
-  # Supabase Realtime
-  # -----------------------------------------------------------
-  realtime:
-    image: supabase/realtime:v2.28.32
-    container_name: wai-realtime
-    restart: unless-stopped
-    ports:
-      - "4000:4000"
-    environment:
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-password}
-      DB_NAME: postgres
-      PORT: 4000
-      SECRET_KEY_BASE: ${REALTIME_SECRET_KEY_BASE:-your-realtime-secret-key}
-      JWT_SECRET: ${JWT_SECRET:-your-jwt-secret}
-    networks:
-      - wai-network
-    depends_on:
-      - db
-
-volumes:
-  wai-db-data:
 
 networks:
   wai-network:

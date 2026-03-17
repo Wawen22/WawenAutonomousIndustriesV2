@@ -1,0 +1,55 @@
+# =============================================================
+# LiteLLM Proxy Configuration – WAI
+# Proxy unificato per tutti i modelli LLM di WAI.
+# Tutti gli agenti chiamano http://litellm:4000/v1
+# =============================================================
+
+model_list:
+
+  # --- GPT-5.4 via Azure OpenAI (OpenAI-compatible endpoint) ---
+  - model_name: gpt-5.4
+    litellm_params:
+      model: openai/gpt-5.4
+      api_base: https://rsrc-gpt-5-codex.openai.azure.com/openai/v1/
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+
+  # --- Gemini 2.5 Flash via Google AI ---
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GOOGLE_AI_API_KEY
+
+# =============================================================
+# Router settings
+# =============================================================
+
+router_settings:
+  routing_strategy: simple-shuffle      # round-robin tra repliche dello stesso modello
+  num_retries: 2
+  timeout: 60
+  retry_after: 5
+
+# =============================================================
+# General settings
+# =============================================================
+
+litellm_settings:
+  drop_params: true                     # ignora parametri non supportati dal modello
+  request_timeout: 120
+  set_verbose: false
+  json_logs: true
+
+# =============================================================
+# Master API key (usata da tutti gli agenti WAI)
+# =============================================================
+
+general_settings:
+  master_key: os.environ/LITELLM_API_KEY
+  store_model_in_db: false
+
+# =============================================================
+# Budget per modello (opzionale — override via Dashboard LiteLLM)
+# =============================================================
+
+# model_group_alias:
+#   gpt-5.4: "azure-gpt-5.4"

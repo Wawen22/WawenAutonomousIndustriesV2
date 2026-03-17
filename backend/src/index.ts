@@ -2,14 +2,29 @@
 // WAI Backend – Entry Point
 // ============================================================
 
-import 'dotenv/config'
+import { createServer } from 'node:http'
 import { log, recordEvent } from './services/logger.js'
 import { getTelegramBot } from './services/telegram.js'
 import { startBudgetMonitor } from './services/budget.js'
-import { getAgents, updateAgentStatus, getProjectState } from './services/supabase.js'
-import { AGENTS, getAllAgentIds } from './config/agents.js'
+import { updateAgentStatus, getProjectState } from './services/supabase.js'
+import { getAllAgentIds } from './config/agents.js'
+import { pingLiteLLM } from './services/llm.js'
 
 async function main(): Promise<void> {
+  const PORT = parseInt(process.env['PORT'] ?? '3001', 10)
+
+  // --- Health check HTTP server (minimo, solo per docker healthcheck) ---
+  const server = createServer((req, res) => {
+    if (req.url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ status: 'ok', version: '0.1.0' }))
+    } else {
+      res.writeHead(404)
+      res.end()
+    }
+  })
+  server.listen(PORT, () => log.info(`Health server on :${PORT}`))
+
   log.info('WAI Backend starting...')
 
   // --- Validate environment ---
@@ -53,6 +68,14 @@ async function main(): Promise<void> {
     log.error({ err }, 'Failed to start Telegram bot')
   }
 
+  // --- Ping LiteLLM ---
+  const litellmOk = await pingLiteLLM()
+  if (litellmOk) {
+    log.info('LiteLLM reachable ✓')
+  } else {
+    log.warn('LiteLLM not reachable — model calls will fail until it is up')
+  }
+
   // --- Start budget monitor (every hour) ---
   startBudgetMonitor(3_600_000)
 
@@ -74,6 +97,7 @@ async function main(): Promise<void> {
   // --- Graceful shutdown ---
   process.on('SIGTERM', async () => {
     log.info('SIGTERM received, shutting down...')
+    server.close()
     await recordEvent('system_shutdown', { severity: 'info' })
     for (const agentId of getAllAgentIds()) {
       await updateAgentStatus(agentId, 'offline').catch(() => {})

@@ -10,7 +10,7 @@ import type { Agent, AgentRun, ProjectState, SystemEvent, Task } from '../types/
 // Generic realtime hook
 // ---------------------------------------------------------------------------
 
-function useRealtimeTable<T extends Record<string, unknown>>(
+function useRealtimeTable<T extends object>(
   table: string,
   fetchFn: () => Promise<T[]>
 ): { data: T[]; loading: boolean; error: string | null } {
