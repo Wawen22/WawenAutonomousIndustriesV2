@@ -1,0 +1,111 @@
+version: "3.9"
+
+# =============================================================
+# WAI – Local Development Stack
+# =============================================================
+
+services:
+
+  # -----------------------------------------------------------
+  # WAI Backend (OpenClaw agent orchestration + API)
+  # -----------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: wai-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - DATABASE_URL=${DATABASE_URL}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT_GPT54=${AZURE_OPENAI_DEPLOYMENT_GPT54}
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_FOUNDER_CHAT_ID=${TELEGRAM_FOUNDER_CHAT_ID}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - MONTHLY_BUDGET_USD=${MONTHLY_BUDGET_USD:-500}
+      - ALERT_THRESHOLD_PERCENT=${ALERT_THRESHOLD_PERCENT:-80}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - wai-network
+    depends_on:
+      - db
+
+  # -----------------------------------------------------------
+  # WAI Dashboard (React + TypeScript)
+  # -----------------------------------------------------------
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: wai-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_SUPABASE_URL=${SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    volumes:
+      - ./dashboard:/app
+      - /app/node_modules
+    networks:
+      - wai-network
+
+  # -----------------------------------------------------------
+  # PostgreSQL (local Supabase-compatible DB)
+  # -----------------------------------------------------------
+  db:
+    image: supabase/postgres:15.1.1.78
+    container_name: wai-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-password}
+    volumes:
+      - wai-db-data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d
+    networks:
+      - wai-network
+
+  # -----------------------------------------------------------
+  # Supabase Realtime
+  # -----------------------------------------------------------
+  realtime:
+    image: supabase/realtime:v2.28.32
+    container_name: wai-realtime
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-password}
+      DB_NAME: postgres
+      PORT: 4000
+      SECRET_KEY_BASE: ${REALTIME_SECRET_KEY_BASE:-your-realtime-secret-key}
+      JWT_SECRET: ${JWT_SECRET:-your-jwt-secret}
+    networks:
+      - wai-network
+    depends_on:
+      - db
+
+volumes:
+  wai-db-data:
+
+networks:
+  wai-network:
+    driver: bridge

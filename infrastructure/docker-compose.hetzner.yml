@@ -1,0 +1,57 @@
+version: "3.9"
+
+# =============================================================
+# WAI – Hetzner VPS Production Stack
+# =============================================================
+
+services:
+
+  backend:
+    image: wai-backend:latest
+    container_name: wai-backend
+    restart: always
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - /opt/wai/.env
+    networks:
+      - wai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  dashboard:
+    image: wai-dashboard:latest
+    container_name: wai-dashboard
+    restart: always
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - /opt/wai/.env
+    networks:
+      - wai-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: wai-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /opt/wai/infrastructure/nginx:/etc/nginx/conf.d:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    networks:
+      - wai-network
+    depends_on:
+      - backend
+      - dashboard
+
+networks:
+  wai-network:
+    driver: bridge

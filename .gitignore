@@ -1,0 +1,38 @@
+# Environment
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Node
+node_modules/
+dist/
+build/
+.pnpm-store/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OpenClaw
+~/.openclaw/
+
+# Docker
+*.pid
+
+# Backups
+*.sql.gz
+backups/
+
+# TypeScript build info
+*.tsbuildinfo
