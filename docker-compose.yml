@@ -73,8 +73,7 @@ services:
       - ALERT_THRESHOLD_PERCENT=${ALERT_THRESHOLD_PERCENT:-80}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
-      - ./backend:/app
-      - /app/node_modules
+      - ./workspace:/workspace
     networks:
       - wai-network
     depends_on:

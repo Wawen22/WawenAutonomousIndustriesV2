@@ -7,6 +7,7 @@
 import { runAgent } from '../services/llm.js'
 import { createTask, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
+import { runDevLeadSaasAgent } from './dev_lead_saas.js'
 import type { Task, TaskPriority } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -164,12 +165,23 @@ Break this down into 3-6 user stories with clear acceptance criteria.`
         type: 'planning',
         priority: story.priority,
         parent_task_id: task.id,
+        ...(task.project_id ? { project_id: task.project_id } : {}),
         delegator_agent_id: 'pm_saas',
         assignee_agent_id: 'dev_lead_saas',
         requires_human_review: false,
-        metadata: { story_points: story.storyPoints, epic: output.epic },
+        metadata: {
+          ...task.metadata,
+          story_points: story.storyPoints,
+          epic: output.epic,
+          story_description: story.description,
+          acceptance_criteria: story.acceptanceCriteria,
+        },
       })
       createdStories.push({ id: subTask.id, title: story.title })
+
+      void runDevLeadSaasAgent(subTask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subTask.id }, 'Dev Lead SaaS Agent failed')
+      })
     }
 
     await recordEvent('task_completed', {

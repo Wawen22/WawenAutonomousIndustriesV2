@@ -1,5 +1,9 @@
 # Deployment Plan
 
+> Strategic note: production deployment is intentionally **not** the current milestone.
+> WAI stays local-first until the autonomous build/delivery/revenue loops are stable.
+> Hetzner deployment is treated as the final infrastructure hardening step before 24/7 operation.
+
 ## Phase 1: Local Development
 
 **Goal:** Working system on developer machine, all services via Docker Compose.
@@ -27,6 +31,14 @@ openclaw gateway --port 18789
 | Supabase Realtime | 4000 | WebSocket subscriptions |
 | OpenClaw Gateway | 18789 | Loopback only |
 
+### Backend Container
+
+- `backend/Dockerfile` uses `node:22-alpine`
+- Dependencies are installed with `pnpm install --frozen-lockfile`
+- Runtime uses the compiled backend via `node dist/index.js`
+- `docker-compose.yml` mounts `./workspace` into `/workspace` so project deliverables remain persistent when the backend runs in a container
+- For local hot-reload development, keep using `cd backend && pnpm dev`; the containerized backend is meant for deployment/prep and smoke testing
+
 ### Security in Phase 1
 - All services on localhost only
 - No internet exposure
@@ -37,6 +49,8 @@ openclaw gateway --port 18789
 ## Phase 2: Hetzner VPS
 
 **Goal:** WAI running 24/7 on a cloud server, accessible to Neb via Tailscale/SSH.
+
+**When to execute this phase:** only after the functional milestones are closed enough that WAI is worth running continuously. Until then, this phase exists as deployment prep documentation, not as the active development track.
 
 ### Recommended Hetzner Server
 - **Type:** CPX21 (3 vCPU, 4GB RAM) or CPX31 (4 vCPU, 8GB RAM)
@@ -76,6 +90,8 @@ nano .env
 # 9. Start WAI
 docker compose -f docker-compose.yml up -d
 ```
+
+The backend container already exposes port `3001` and expects the same environment variables used in local development (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Telegram credentials, LiteLLM URL/key, and budget settings).
 
 ### Reverse Proxy (Nginx)
 

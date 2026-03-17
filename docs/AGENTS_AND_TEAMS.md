@@ -48,6 +48,30 @@ CEO Agent (GPT-5.4)
 
 ---
 
+## Runtime Implementation Status (2026-03-17)
+
+Important: the backend currently marks all registered agents as `online` at startup. That means the agent exists in the registry and is reachable from the system perspective. It does **not** automatically mean the agent already has a dedicated autonomous runtime loop implemented.
+
+| Agent / Group | Registry Status | Runtime Status | Notes |
+|--------------|-----------------|----------------|-------|
+| `ceo` | configured | ✅ implemented | Delegation loop active |
+| `pm_saas` | configured | ✅ implemented | User story generation active |
+| `dev_lead_saas` | configured | ✅ implemented | Sprint planning + worker orchestration active |
+| `dev_saas_1`, `dev_saas_2` | configured | ✅ implemented | Worker runtime active; writes implementation deliverables |
+| `consulting_lead` | configured | ✅ implemented | Proposal delivery active |
+| `analyst` | configured | ✅ implemented | Analysis delivery active |
+| `architect` | configured | ⬜ not yet implemented | Registry/model/tools only |
+| `dev_general_1`, `dev_general_2` | configured | ⬜ not yet implemented | Registry/model/tools only |
+| `qa` | configured | ⬜ not yet implemented | Registry/model/tools only |
+| `marketing_strategist` | configured | ✅ implemented | Marketing plan + worker orchestration active |
+| `content_creator` | configured | ✅ implemented | Content package delivery active |
+| `social_manager` | configured | ✅ implemented | Social calendar delivery active |
+| `ops` | configured | ⬜ not yet implemented | Monitoring role defined, no autonomous loop yet |
+| `finance` | configured | ⚠️ partial | Budget monitor exists; dedicated finance agent runtime loop not implemented |
+| `hr` | configured | ⬜ not yet implemented | Registry/model/tools only |
+
+---
+
 ## Team SaaS
 
 Responsible for WAI's own SaaS products: from idea to deployed product.
@@ -127,18 +151,21 @@ Drives awareness, content, and growth for WAI and its products.
 - **Role:** Marketing strategy, campaign planning, funnel design
 - **Model:** GPT-5.4
 - **Tools:** Supabase, Browser, Email
+- **Runtime:** Produces `marketing-plan-*.md`, creates worker tasks for `content_creator` and `social_manager`
 
 ### Content Creator
 - **ID:** `content_creator`
 - **Role:** Blog posts, social copy, video scripts, email newsletters
 - **Model:** Gemini 2.5 Flash
 - **Tools:** File system, Supabase, Browser
+- **Runtime:** Produces `content-package-*.md` deliverables
 
 ### Social Manager
 - **ID:** `social_manager`
 - **Role:** Content scheduling, engagement monitoring, metrics reporting
 - **Model:** Gemini 2.5 Flash
 - **Tools:** Browser, Supabase, Email
+- **Runtime:** Produces `social-calendar-*.md` delivery calendars
 
 ---
 

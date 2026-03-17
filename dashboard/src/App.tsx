@@ -51,7 +51,7 @@ function Topbar({ view }: { view: ViewId }) {
         {/* Milestone pill */}
         <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.06]">
           <span className="w-1 h-1 rounded-full bg-[#00D4FF]" />
-          <span className="text-[10px] text-slate-500 font-mono">M4 In Progress</span>
+          <span className="text-[10px] text-slate-500 font-mono">M7 In Progress</span>
         </span>
 
         <div className="w-px h-3.5 bg-white/[0.08]" />

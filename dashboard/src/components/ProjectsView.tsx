@@ -61,6 +61,11 @@ function fileIcon(name: string): string {
   if (name.endsWith('.pdf')) return '📕'
   if (name === 'proposal.md') return '📄'
   if (name === 'analysis.md') return '📊'
+  if (name === 'sprint_plan.md') return '🗺️'
+  if (name.startsWith('marketing-plan')) return '📈'
+  if (name.startsWith('content-package')) return '✍️'
+  if (name.startsWith('social-calendar')) return '📣'
+  if (name.startsWith('dev-saas')) return '💻'
   return '📝'
 }
 
@@ -88,7 +93,7 @@ function DeliverablesPanel({ project }: DeliverablesPanelProps) {
       )}
       {!loading && !error && files.length === 0 && (
         <p className="text-[11px] text-slate-600 font-mono">
-          No deliverables yet — run a consulting task to generate files.
+          No deliverables yet — run an agent task on this project to generate files.
         </p>
       )}
       {!loading && files.length > 0 && (
@@ -138,10 +143,30 @@ const STATUS_BADGE: Record<ProjectStatus, string> = {
 const TYPE_BADGE: Record<ProjectType, string> = {
   website:    'dev',
   app:        'dev_complex',
+  saas:       'dev_complex',
   consulting: 'consulting',
+  ai:         'analysis',
   marketing:  'marketing',
+  content:    'content',
+  copywriting:'content',
+  design:     'default',
+  automation: 'ops',
   other:      'default',
 }
+
+const PROJECT_TYPE_OPTIONS: ProjectType[] = [
+  'website',
+  'app',
+  'saas',
+  'consulting',
+  'ai',
+  'marketing',
+  'content',
+  'copywriting',
+  'design',
+  'automation',
+  'other',
+]
 
 // ---------------------------------------------------------------------------
 // Filter bar
@@ -199,7 +224,7 @@ function FilterBar({
 
       <select value={typeFilter} onChange={(e) => onType(e.target.value as ProjectType | AnyFilter)} className={selectClass}>
         <option value="all">All types</option>
-        {(['website','app','consulting','marketing','other'] as ProjectType[]).map((t) => (
+        {PROJECT_TYPE_OPTIONS.map((t) => (
           <option key={t} value={t}>{t}</option>
         ))}
       </select>
@@ -230,6 +255,7 @@ function ProjectRow({ project, clientName, selected, onSelect }: ProjectRowProps
       <td className="px-4 py-3 font-medium text-white text-sm max-w-[180px] truncate">
         {selected && <span className="text-violet-400 mr-1">▸</span>}
         {project.name}
+        {project.repo_local_path && <span className="ml-2 text-[10px] text-cyan-400 font-mono">repo</span>}
       </td>
       <td className="px-4 py-3 text-sm text-slate-400">
         {clientName}
@@ -289,7 +315,9 @@ export function ProjectsView() {
         if (
           !p.name.toLowerCase().includes(q) &&
           !p.slug.toLowerCase().includes(q) &&
-          !clientName.toLowerCase().includes(q)
+          !clientName.toLowerCase().includes(q) &&
+          !(p.repo_local_path ?? '').toLowerCase().includes(q) &&
+          !(p.repo_url ?? '').toLowerCase().includes(q)
         ) return false
       }
       return true

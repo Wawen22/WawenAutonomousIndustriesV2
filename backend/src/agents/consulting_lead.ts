@@ -12,7 +12,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 
 import { runAgent } from '../services/llm.js'
-import { createTask, updateTaskStatus } from '../services/supabase.js'
+import { createTask, updateProjectStatus, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
 import { getProjectWorkspacePath } from '../services/workspace.js'
 import type { Task } from '../types/index.js'
@@ -259,6 +259,10 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
       log.info({ analystTaskId: analystTask.id }, 'Consulting Lead: analyst sub-task created')
     }
 
+    if (projectId) {
+      await updateProjectStatus(projectId, 'active')
+    }
+
     await recordEvent('task_completed', {
       agentId: 'consulting_lead',
       taskId: task.id,
@@ -268,6 +272,7 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
         objectives_count: proposal.objectives.length,
         requires_analysis: proposal.requiresAnalysis,
         proposal_path: proposalAbsPath,
+        ...(projectId ? { project_status: 'active' } : {}),
         model_used: result.modelId,
         cost_usd: result.costUsd,
       },

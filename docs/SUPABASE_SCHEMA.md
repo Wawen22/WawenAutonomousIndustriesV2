@@ -72,14 +72,22 @@ Projects linked to a client, each with a workspace folder.
 | `client_id` | `uuid` FK→clients | Owning client |
 | `name` | `text` | Display name |
 | `slug` | `text` | URL-safe identifier (unique per client) |
-| `type` | `text` | `website` \| `app` \| `consulting` \| `marketing` \| `other` |
+| `type` | `text` | `website` \| `app` \| `saas` \| `consulting` \| `ai` \| `marketing` \| `content` \| `copywriting` \| `design` \| `automation` \| `other` |
 | `status` | `text` | `discovery` \| `active` \| `paused` \| `review` \| `delivered` \| `invoiced` |
 | `workspace_path` | `text` | Relative path to project folder (e.g., `workspace/acme/website`) |
+| `repo_url` | `text` | Optional remote repo URL for software/SaaS projects |
+| `repo_local_path` | `text` | Optional absolute local path to the working repo |
+| `repo_default_branch` | `text` | Optional default branch (`main`, `master`, etc.) |
+| `repo_provider` | `text` | Optional repo host: `github` \| `gitlab` \| `bitbucket` \| `other` |
 | `contract_value_usd` | `numeric` | Contract value in USD (default 0) |
 | `metadata` | `jsonb` | Extra data |
 | `created_at` | `timestamptz` | |
 
 **RLS:** `anon` SELECT, `service_role` full access.
+
+Notes:
+- Repo columns are optional and intended for software/SaaS execution flows only.
+- Non-software projects (consulting, AI, marketing, content, copywriting, design) can omit repo context entirely.
 
 ---
 

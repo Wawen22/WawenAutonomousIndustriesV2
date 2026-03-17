@@ -30,23 +30,43 @@ WAI operates across multiple verticals simultaneously:
 |--------------|-------------|
 | **SaaS Products** | Autonomous development and management of software products |
 | **Custom Software Dev** | Client projects designed and built by Dev agents |
-| **Consulting** | Research, analysis, and strategic reports for clients |
-| **Content & Marketing** | Blog posts, social media, campaigns, growth |
+| **Consulting** | Research, analysis, strategic reports, technical and AI advisory |
+| **AI Services** | AI strategy, automation design, internal copilots, applied AI delivery |
+| **Content & Marketing** | Blog posts, social media, campaigns, funnels, authority building |
+| **Copywriting & Design** | Landing page copy, offer positioning, brand/design support |
+| **Automation** | Internal workflows, lead pipelines, process automation for clients |
+
+WAI is intentionally not a software-only company. Software is one delivery lane, not the company identity.
+The operating system must support a broad multi-service business where some projects need a repo and others need only briefs, deliverables, campaign assets, or strategic documents.
+
+## Current Autonomous Loops
+
+As of 2026-03-17, WAI can already execute these end-to-end autonomous patterns locally:
+
+- **SaaS chain:** `Neb /task → CEO → PM SaaS → Dev Lead SaaS → Dev SaaS workers → deliverables + PROGRESS + review`
+- **Consulting chain:** `Neb /task client/project → CEO → Consulting Lead → proposal.md → Analyst → analysis.md`
+- **Marketing chain:** `Neb /task client/project → CEO → Marketing Strategist → Content Creator + Social Manager → content/social deliverables`
+
+The largest remaining execution gap is **custom software delivery for client projects that are not SaaS products**, where `architect`, `dev_general_*`, and `qa` still need full runtime implementation.
 
 ---
 
 ## Medium-Term Goals (6–18 months)
 
-- [ ] Full autonomous SaaS development pipeline (spec → code → deploy → support)
+- [ ] Full autonomous SaaS development pipeline (spec → code → review → revenue)
+- [ ] Full autonomous custom software pipeline (architecture → implementation → QA → client-ready delivery)
 - [ ] First paying customer acquired without Neb's direct involvement
 - [ ] Real-time cost tracking with zero budget overruns
 - [ ] WAI Dashboard used as primary Founder interface (replacing ad-hoc CLI)
 - [ ] Agent collaboration patterns: CEO delegates to team leads, team leads to workers
 - [ ] Multi-model routing optimized by empirical cost/quality data
 
+Production deployment remains a later operationalization step. The system should first prove that it can plan, deliver, review, and monetize work locally before it is moved to always-on infrastructure.
+
 ## Long-Term Vision (18 months+)
 
 - WAI is a multi-product company generating recurring revenue
+- WAI is a multi-service company capable of switching between software, advisory, marketing, and creative delivery lanes
 - Agent teams evolve: specialization increases, new teams added as needed
 - Neb's role shifts from operator to investor/strategist
 - The WAI "operating system" becomes a replicable template for other ZHC ventures

@@ -60,7 +60,20 @@ export interface Client {
   created_at: string
 }
 
-export type ProjectType = 'website' | 'app' | 'consulting' | 'marketing' | 'other'
+export type ProjectType =
+  | 'website'
+  | 'app'
+  | 'saas'
+  | 'consulting'
+  | 'ai'
+  | 'marketing'
+  | 'content'
+  | 'copywriting'
+  | 'design'
+  | 'automation'
+  | 'other'
+
+export type RepoProvider = 'github' | 'gitlab' | 'bitbucket' | 'other'
 
 export type ProjectStatus =
   | 'discovery'
@@ -78,6 +91,10 @@ export interface Project {
   type: ProjectType
   status: ProjectStatus
   workspace_path: string | null
+  repo_url: string | null
+  repo_local_path: string | null
+  repo_default_branch: string | null
+  repo_provider: RepoProvider | null
   contract_value_usd: number
   metadata: Record<string, unknown>
   created_at: string

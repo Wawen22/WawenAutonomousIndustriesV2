@@ -4,7 +4,7 @@
 // Root: <repo>/workspace/{client-slug}/{project-slug}/
 // ============================================================
 
-import { mkdir, writeFile } from 'fs/promises'
+import { appendFile, mkdir, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
@@ -126,4 +126,24 @@ _Any additional context._
   await writeFile(join(projectPath, 'PROGRESS.md'), progress, 'utf-8')
 
   return projectPath
+}
+
+// ---------------------------------------------------------------------------
+// Project progress log
+// ---------------------------------------------------------------------------
+
+export async function appendProjectProgress(
+  workspacePath: string,
+  title: string,
+  lines: string[]
+): Promise<void> {
+  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 16)
+  const content = [
+    '',
+    `### ${timestamp} — ${title}`,
+    ...lines.map((line) => `- ${line}`),
+    '',
+  ].join('\n')
+
+  await appendFile(join(workspacePath, 'PROGRESS.md'), content, 'utf-8')
 }

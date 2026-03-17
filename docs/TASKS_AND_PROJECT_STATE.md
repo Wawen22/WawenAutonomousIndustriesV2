@@ -57,6 +57,12 @@ Tasks can have subtasks via `parent_task_id`. Max recommended depth: 3 levels.
 │   └── [DEV] Write auth tests
 ├── [MARKETING] Create launch page (priority: 2)
 └── [OPS] Set up production deploy (priority: 1)
+
+[CEO] Launch AI consulting offer (priority: 1)
+├── [STRATEGY] Build offer positioning and campaign plan
+│   ├── [CONTENT] Draft lead magnet / newsletter / page copy
+│   └── [MARKETING] Build social distribution calendar
+└── [CONSULTING] Produce proposal and analysis
 ```
 
 ---
@@ -88,15 +94,18 @@ Tasks can have subtasks via `parent_task_id`. Max recommended depth: 3 levels.
 
 Milestones represent major project phases. Tracked in `project_state.current_milestone` and in `PROJECT_TRACKING.md`.
 
+Deployment is intentionally deferred until the last functional gate. The canonical roadmap lives in `docs/PROJECT_TRACKING.md`; if this file and the DB snapshot diverge, `PROJECT_TRACKING.md` is the source of truth for planning.
+
 | ID | Milestone | Target | Status |
 |----|-----------|--------|--------|
-| M1 | Local development stack running | 2025-Q1 | in_progress |
-| M2 | All agents configured in OpenClaw | 2025-Q1 | todo |
-| M3 | WAI Dashboard live with real-time data | 2025-Q1 | todo |
-| M4 | First autonomous task completed by agent | 2025-Q2 | todo |
-| M5 | Deploy to Hetzner VPS | 2025-Q2 | todo |
-| M6 | First revenue-generating output | 2025-Q3 | todo |
-| M7 | Migrate to personal mini PC | 2025-Q3 | todo |
+| M1 | Local development stack running | 2026-Q1 | done |
+| M2 | CEO Agent esegue primo task autonomo | 2026-Q1 | done |
+| M3 | WAI Dashboard live con dati real-time | 2026-Q1 | done |
+| M4 | Client & Project Management System | 2026-Q2 | done |
+| M5 | First autonomous deliverable for a real client | 2026-Q2 | done |
+| M6 | Deploy to Hetzner VPS | 2026-Q2 | deferred (final infrastructure step) |
+| M7 | First revenue-generating output | 2026-Q3 | in_progress |
+| M8 | Migrate to personal mini PC | 2026-Q3 | todo |
 
 ---
 

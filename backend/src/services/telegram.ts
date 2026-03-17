@@ -3,7 +3,10 @@
 // Processes commands from Neb and sends notifications.
 // ============================================================
 
+import { mkdir, writeFile } from 'fs/promises'
+import { existsSync } from 'fs'
 import { Bot, Context } from 'grammy'
+import { isAbsolute, join } from 'path'
 import { log, recordEvent } from './logger.js'
 import {
   createClient,
@@ -20,17 +23,42 @@ import {
   getTaskById,
   getTasksByStatus,
   updateAgentModel,
+  updateProjectRepo,
   updateProjectWorkspacePath,
   updateTaskStatus,
 } from './supabase.js'
 import {
   createClientWorkspace,
   createProjectWorkspace,
+  getProjectWorkspacePath,
   getRelativeProjectPath,
 } from './workspace.js'
 import { setModelOverride } from '../config/models.js'
 import { runCeoAgent } from '../agents/ceo.js'
-import type { CreateTaskInput, ProjectType } from '../types/index.js'
+import type { CreateTaskInput, ProjectType, RepoProvider } from '../types/index.js'
+
+const PROJECT_TYPES: ProjectType[] = [
+  'website',
+  'app',
+  'saas',
+  'consulting',
+  'ai',
+  'marketing',
+  'content',
+  'copywriting',
+  'design',
+  'automation',
+  'other',
+]
+
+function inferRepoProvider(repoUrl?: string): RepoProvider | undefined {
+  if (!repoUrl) return undefined
+  const lower = repoUrl.toLowerCase()
+  if (lower.includes('github.com')) return 'github'
+  if (lower.includes('gitlab')) return 'gitlab'
+  if (lower.includes('bitbucket')) return 'bitbucket'
+  return 'other'
+}
 
 // ---------------------------------------------------------------------------
 // Bot singleton
@@ -83,6 +111,8 @@ function registerHandlers(bot: Bot): void {
         '*Tasks:*\n' +
         '/task descrizione – Crea un task\n' +
         '/task client/project descrizione – Task con scope progetto\n' +
+        '/brief client/project testo – Aggiorna brief.md del progetto\n' +
+        '/link\\_repo client/project /path/repo \\[branch\\] \\[repo\\_url\\] – Collega repo al progetto\n' +
         '/approve task\\_id – Approva output\n' +
         '/reject task\\_id motivo – Rifiuta output\n\n' +
         '*Clients & Projects:*\n' +
@@ -175,6 +205,10 @@ function registerHandlers(bot: Bot): void {
           client_name: client.name,
           client_slug: client.slug,
           workspace_path: project.workspace_path ?? undefined,
+          repo_url: project.repo_url ?? undefined,
+          repo_local_path: project.repo_local_path ?? undefined,
+          repo_default_branch: project.repo_default_branch ?? undefined,
+          repo_provider: project.repo_provider ?? undefined,
         }
 
         log.info(
@@ -229,6 +263,190 @@ function registerHandlers(bot: Bot): void {
     } catch (err) {
       log.error({ err }, 'Failed to create task from Telegram')
       await ctx.reply('❌ Failed to create task. Check logs.')
+    }
+  })
+
+  // /brief <client_slug>/<project_slug> <brief text>
+  bot.command('brief', async (ctx) => {
+    if (!requireFounder(ctx)) return
+
+    const text = ctx.message?.text ?? ''
+    const args = text.replace(/^\/brief(?:@\S+)?/, '').trim()
+
+    if (!args) {
+      await ctx.reply(
+        'Usage:\n' +
+          '/brief client\\_slug/project\\_slug brief text\n\n' +
+          'Example:\n' +
+          '/brief acme\\-corp/landingpage Landing page per lead generation B2B con CTA demo',
+        { parse_mode: 'Markdown' }
+      )
+      return
+    }
+
+    const firstSpace = args.indexOf(' ')
+    if (firstSpace === -1) {
+      await ctx.reply('❌ Missing brief text.\nUsage: /brief client\\_slug/project\\_slug your brief', {
+        parse_mode: 'Markdown',
+      })
+      return
+    }
+
+    const scope = args.slice(0, firstSpace).trim()
+    const briefText = args.slice(firstSpace + 1).trim()
+    const scopeMatch = scope.match(/^([a-z0-9-]+)\/([a-z0-9-]+)$/)
+
+    if (!scopeMatch || !briefText) {
+      await ctx.reply('❌ Invalid format.\nUsage: /brief client\\_slug/project\\_slug your brief', {
+        parse_mode: 'Markdown',
+      })
+      return
+    }
+
+    const clientSlug = scopeMatch[1]!
+    const projectSlug = scopeMatch[2]!
+
+    try {
+      const client = await getClientBySlug(clientSlug)
+      if (!client) {
+        await ctx.reply(`❌ Client \`${clientSlug}\` not found. Use /clients to inspect available clients.`, {
+          parse_mode: 'Markdown',
+        })
+        return
+      }
+
+      const project = await getProjectBySlug(client.id, projectSlug)
+      if (!project) {
+        await ctx.reply(
+          `❌ Project \`${projectSlug}\` not found for client \`${clientSlug}\`.\nUse /projects ${clientSlug} to inspect available projects.`,
+          { parse_mode: 'Markdown' }
+        )
+        return
+      }
+
+      const projectPath = getProjectWorkspacePath(clientSlug, projectSlug)
+      await mkdir(projectPath, { recursive: true })
+
+      const briefPath = join(projectPath, 'brief.md')
+      await writeFile(briefPath, briefText, 'utf-8')
+
+      await recordEvent('founder_command', {
+        payload: {
+          command: 'brief',
+          client_slug: clientSlug,
+          project_slug: projectSlug,
+          project_id: project.id,
+          brief_path: briefPath,
+        },
+      })
+
+      await ctx.reply(
+        `✅ *Brief Updated*\n\n` +
+          `Client: ${client.name}\n` +
+          `Project: ${project.name}\n` +
+          `Path: \`${briefPath}\``,
+        { parse_mode: 'Markdown' }
+      )
+    } catch (err) {
+      log.error({ err, clientSlug, projectSlug }, 'Failed to update project brief')
+      await ctx.reply('❌ Failed to update brief. Check logs.')
+    }
+  })
+
+  // /link_repo <client_slug>/<project_slug> <repo_local_path> [branch] [repo_url]
+  bot.command('link_repo', async (ctx) => {
+    if (!requireFounder(ctx)) return
+
+    const text = ctx.message?.text ?? ''
+    const args = text.replace(/^\/link_repo(?:@\S+)?/, '').trim().split(/\s+/).filter(Boolean)
+
+    if (args.length < 2) {
+      await ctx.reply(
+        'Usage:\n' +
+          '/link\\_repo client\\_slug/project\\_slug /absolute/repo/path \\[branch\\] \\[repo\\_url\\]\n\n' +
+          'Example:\n' +
+          '/link\\_repo acme-corp/landingpage /home/neb/repos/acme-landing main https://github.com/acme/landing',
+        { parse_mode: 'Markdown' }
+      )
+      return
+    }
+
+    const scope = args[0]!
+    const repoLocalPath = args[1]!
+    const repoDefaultBranch = args[2]
+    const repoUrl = args[3]
+    const scopeMatch = scope.match(/^([a-z0-9-]+)\/([a-z0-9-]+)$/)
+
+    if (!scopeMatch) {
+      await ctx.reply('❌ Invalid scope. Usage: /link\\_repo client\\_slug/project\\_slug /absolute/repo/path', {
+        parse_mode: 'Markdown',
+      })
+      return
+    }
+
+    if (!isAbsolute(repoLocalPath)) {
+      await ctx.reply('❌ repo_local_path must be an absolute path.', { parse_mode: 'Markdown' })
+      return
+    }
+
+    if (!existsSync(repoLocalPath)) {
+      await ctx.reply(`❌ Path \`${repoLocalPath}\` does not exist on disk.`, { parse_mode: 'Markdown' })
+      return
+    }
+
+    const clientSlug = scopeMatch[1]!
+    const projectSlug = scopeMatch[2]!
+
+    try {
+      const client = await getClientBySlug(clientSlug)
+      if (!client) {
+        await ctx.reply(`❌ Client \`${clientSlug}\` not found.`, { parse_mode: 'Markdown' })
+        return
+      }
+
+      const project = await getProjectBySlug(client.id, projectSlug)
+      if (!project) {
+        await ctx.reply(`❌ Project \`${projectSlug}\` not found for client \`${clientSlug}\`.`, {
+          parse_mode: 'Markdown',
+        })
+        return
+      }
+
+      const repoProvider = inferRepoProvider(repoUrl)
+
+      await updateProjectRepo(project.id, {
+        repo_local_path: repoLocalPath,
+        repo_default_branch: repoDefaultBranch,
+        repo_url: repoUrl,
+        repo_provider: repoProvider,
+      })
+
+      await recordEvent('founder_command', {
+        payload: {
+          command: 'link_repo',
+          project_id: project.id,
+          client_slug: clientSlug,
+          project_slug: projectSlug,
+          repo_local_path: repoLocalPath,
+          repo_default_branch: repoDefaultBranch,
+          repo_url: repoUrl,
+          repo_provider: repoProvider,
+        },
+      })
+
+      await ctx.reply(
+        `✅ *Repo Linked*\n\n` +
+          `Client: ${client.name}\n` +
+          `Project: ${project.name}\n` +
+          `Repo Path: \`${repoLocalPath}\`\n` +
+          `Branch: ${repoDefaultBranch ?? '—'}\n` +
+          `Repo URL: ${repoUrl ?? '—'}`,
+        { parse_mode: 'Markdown' }
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      log.error({ err, clientSlug, projectSlug, repoLocalPath }, 'Failed to link repo')
+      await ctx.reply(`❌ Failed to link repo: ${msg}`)
     }
   })
 
@@ -462,7 +680,7 @@ function registerHandlers(bot: Bot): void {
     const clientSlug = args[0]
 
     // Last arg is type if it matches known types
-    const knownTypes: ProjectType[] = ['website', 'app', 'consulting', 'marketing', 'other']
+    const knownTypes: ProjectType[] = PROJECT_TYPES
     const lastArg = args[args.length - 1] ?? ''
     const type: ProjectType = knownTypes.includes(lastArg as ProjectType) ? (lastArg as ProjectType) : 'other'
     const nameParts = knownTypes.includes(lastArg as ProjectType)
@@ -473,7 +691,7 @@ function registerHandlers(bot: Bot): void {
     if (!clientSlug || !name) {
       await ctx.reply(
         'Usage: /new\\_project <client\\_slug> <project\\_name> \\[type\\]\n' +
-          'Types: website \\| app \\| consulting \\| marketing \\| other\n' +
+          'Types: website \\| app \\| saas \\| consulting \\| ai \\| marketing \\| content \\| copywriting \\| design \\| automation \\| other\n' +
           'Example: /new\\_project acme-corp "Landing Page" website',
         { parse_mode: 'Markdown' }
       )
@@ -575,9 +793,10 @@ function registerHandlers(bot: Bot): void {
       const statusIcon = (s: string) =>
         s === 'active' ? '🟢' : s === 'delivered' ? '✅' : s === 'paused' ? '⏸' : s === 'invoiced' ? '💰' : '🔵'
 
-      const lines = projects.map(
-        (p) => `${statusIcon(p.status)} *${p.name}* — ${p.type} — ${p.status}`
-      )
+      const lines = projects.map((p) => {
+        const repoMarker = p.repo_local_path ? ' — 🔗 repo linked' : ''
+        return `${statusIcon(p.status)} *${p.name}* — ${p.type} — ${p.status}${repoMarker}`
+      })
 
       const title = clientSlug ? `Projects for \`${clientSlug}\`` : 'All Projects'
       await ctx.reply(`*${title} (${projects.length})*\n\n${lines.join('\n')}`, { parse_mode: 'Markdown' })

@@ -7,8 +7,13 @@ import { runAgent } from '../services/llm.js'
 import { createTask, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
 import { runPmSaasAgent } from './pm_saas.js'
+import { runDevLeadSaasAgent } from './dev_lead_saas.js'
+import { runDevSaasAgent } from './dev_saas.js'
 import { runConsultingLeadAgent } from './consulting_lead.js'
 import { runAnalystAgent } from './analyst.js'
+import { runMarketingStrategistAgent } from './marketing_strategist.js'
+import { runContentCreatorAgent } from './content_creator.js'
+import { runSocialManagerAgent } from './social_manager.js'
 import type { Task, TaskType, TaskPriority } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -27,9 +32,9 @@ Available agents:
 - qa              – QA Agent: test writing, quality checklists, bug reports
 - consulting_lead – Consulting Lead: client proposals, scope definition, consulting delivery pipeline — USE THIS for any client project task, consulting work, or proposal creation
 - analyst         – Analyst: market research, data gathering, competitive analysis, reports — USE THIS for standalone analysis tasks without a consulting proposal
-- marketing_strategist – Marketing Strategist: campaigns, funnels, strategy
-- content_creator – Content Creator: blog posts, social copy, scripts
-- social_manager  – Social Media Manager: scheduling, engagement, metrics
+- marketing_strategist – Marketing Strategist: campaigns, funnels, positioning, content plans — USE THIS for project-scoped marketing, content, copywriting, launch or growth work
+- content_creator – Content Creator: blog posts, social copy, scripts, newsletters — USE THIS for standalone copy/content production tasks
+- social_manager  – Social Media Manager: scheduling, engagement, metrics — USE THIS for standalone distribution, social planning, or channel calendar tasks
 - ops             – Ops Agent: system monitoring, uptime, incidents
 - finance         – Finance Agent: cost tracking, budget alerts, reports
 - hr              – HR Agent: agent docs, role definitions, process docs
@@ -127,6 +132,11 @@ ${AGENT_ROSTER}
 
 Valid taskType values: ${VALID_TASK_TYPES.join(', ')}
 
+Routing hints:
+- If the task is a client project with type consulting or ai, prefer consulting_lead unless it is pure standalone analysis.
+- If the task is for saas, app, website, or automation delivery, prefer pm_saas or dev_lead_saas unless it is clearly a single worker task.
+- If the task is for marketing, content, copywriting, design, launches, funnels, or audience growth, prefer marketing_strategist for coordinated delivery. Use content_creator or social_manager directly only for clearly standalone execution.
+
 Respond with ONLY a JSON object — no markdown, no text outside JSON:
 {
   "delegateTo": "<agent_id>",
@@ -218,6 +228,15 @@ Analyze and delegate to the most appropriate agent.`
       void runPmSaasAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'PM SaaS Agent failed')
       })
+    } else if (delegation.delegateTo === 'dev_lead_saas') {
+      void runDevLeadSaasAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Dev Lead SaaS Agent failed')
+      })
+    } else if (delegation.delegateTo === 'dev_saas_1' || delegation.delegateTo === 'dev_saas_2') {
+      const workerAgentId = delegation.delegateTo
+      void runDevSaasAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id, assignee: workerAgentId }, 'Dev SaaS Agent failed')
+      })
     } else if (delegation.delegateTo === 'consulting_lead') {
       void runConsultingLeadAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'Consulting Lead Agent failed')
@@ -225,6 +244,18 @@ Analyze and delegate to the most appropriate agent.`
     } else if (delegation.delegateTo === 'analyst') {
       void runAnalystAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'Analyst Agent failed')
+      })
+    } else if (delegation.delegateTo === 'marketing_strategist') {
+      void runMarketingStrategistAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Marketing Strategist Agent failed')
+      })
+    } else if (delegation.delegateTo === 'content_creator') {
+      void runContentCreatorAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Content Creator Agent failed')
+      })
+    } else if (delegation.delegateTo === 'social_manager') {
+      void runSocialManagerAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Social Manager Agent failed')
       })
     }
   } catch (err) {

@@ -154,6 +154,33 @@ Finance Agent
 → UPDATE supabase.project_state SET monthly_cost = ...
 ```
 
+### 4. Marketing / content delivery chain
+
+```
+Neb → Telegram /task client/project ...
+→ Telegram Handler enriches task metadata with client/project/workspace context
+→ CEO Agent routes to marketing_strategist
+→ Marketing Strategist generates plan + creates worker subtasks
+→ Content Creator writes content-package-*.md
+→ Social Manager writes social-calendar-*.md
+→ Worker completion updates PROGRESS.md and project status → review
+→ Dashboard deliverables panel shows generated assets
+```
+
+---
+
+## Implemented Runtime Chains
+
+The agent registry is broader than the current runtime. The following chains are actually operational today:
+
+- **SaaS delivery:** CEO → PM SaaS → Dev Lead SaaS → Dev SaaS workers
+- **Consulting delivery:** CEO → Consulting Lead → Analyst
+- **Marketing delivery:** CEO → Marketing Strategist → Content Creator / Social Manager
+
+The main missing execution chain is:
+
+- **Custom software delivery:** CEO → Architect / Dev General / QA for non-SaaS software projects
+
 ---
 
 ## Directory Structure

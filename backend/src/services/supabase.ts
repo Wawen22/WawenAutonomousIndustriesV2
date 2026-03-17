@@ -16,10 +16,13 @@ import type {
   LogRunInput,
   ModelConfig,
   Project,
+  RepoProvider,
+  ProjectStatus,
   ProjectState,
   SystemEvent,
   Task,
   TaskStatus,
+  UpdateProjectRepoInput,
 } from '../types/index.js'
 import { estimateCost, getModelById } from '../config/models.js'
 
@@ -156,6 +159,17 @@ export async function getTasksByStatus(status: TaskStatus): Promise<Task[]> {
   return data as Task[]
 }
 
+export async function getChildTasks(parentTaskId: string): Promise<Task[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('tasks')
+    .select('*')
+    .eq('parent_task_id', parentTaskId)
+    .order('created_at')
+
+  if (error) throw new Error(`Failed to get child tasks for ${parentTaskId}: ${error.message}`)
+  return data as Task[]
+}
+
 export async function assignTask(taskId: string, agentId: string): Promise<void> {
   const { error } = await getSupabaseClient()
     .from('tasks')
@@ -227,6 +241,10 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
       type: input.type ?? 'other',
       status: input.status ?? 'discovery',
       workspace_path: input.workspace_path ?? null,
+      repo_url: input.repo_url ?? null,
+      repo_local_path: input.repo_local_path ?? null,
+      repo_default_branch: input.repo_default_branch ?? null,
+      repo_provider: input.repo_provider ?? null,
       contract_value_usd: input.contract_value_usd ?? 0,
       metadata: input.metadata ?? {},
     })
@@ -293,6 +311,36 @@ export async function updateProjectWorkspacePath(id: string, workspacePath: stri
     .eq('id', id)
 
   if (error) throw new Error(`Failed to update project workspace path: ${error.message}`)
+}
+
+export async function updateProjectStatus(id: string, status: ProjectStatus): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('projects')
+    .update({ status })
+    .eq('id', id)
+
+  if (error) throw new Error(`Failed to update project status: ${error.message}`)
+}
+
+export async function updateProjectRepo(id: string, input: UpdateProjectRepoInput): Promise<void> {
+  const updates: {
+    repo_url?: string | null
+    repo_local_path?: string | null
+    repo_default_branch?: string | null
+    repo_provider?: RepoProvider | null
+  } = {}
+
+  if (input.repo_url !== undefined) updates.repo_url = input.repo_url || null
+  if (input.repo_local_path !== undefined) updates.repo_local_path = input.repo_local_path || null
+  if (input.repo_default_branch !== undefined) updates.repo_default_branch = input.repo_default_branch || null
+  if (input.repo_provider !== undefined) updates.repo_provider = input.repo_provider || null
+
+  const { error } = await getSupabaseClient()
+    .from('projects')
+    .update(updates)
+    .eq('id', id)
+
+  if (error) throw new Error(`Failed to update project repo: ${error.message}`)
 }
 
 // ---------------------------------------------------------------------------
