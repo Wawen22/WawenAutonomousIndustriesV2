@@ -6,10 +6,10 @@
 
 ---
 
-## Current Milestone: M3 – WAI Dashboard live con dati real-time
+## Current Milestone: M4 – Client & Project Management System
 
-**Target:** 2026-Q1
-**Status:** ✅ Done
+**Target:** 2026-Q2
+**Status:** ⬜ Todo
 
 ---
 
@@ -20,10 +20,11 @@
 | M1 | Local development stack running | 2026-Q1 | ✅ Done |
 | M2 | CEO Agent esegue primo task autonomo | 2026-Q1 | ✅ Done |
 | M3 | WAI Dashboard live con dati real-time | 2026-Q1 | ✅ Done |
-| M4 | First autonomous task completed by agent | 2026-Q2 | ⬜ Todo |
-| M5 | Deploy to Hetzner VPS | 2026-Q2 | ⬜ Todo |
-| M6 | First revenue-generating output | 2026-Q3 | ⬜ Todo |
-| M7 | Migrate to personal mini PC | 2026-Q3 | ⬜ Todo |
+| M4 | Client & Project Management System | 2026-Q2 | ⬜ Todo |
+| M5 | First autonomous deliverable for a real client | 2026-Q2 | ⬜ Todo |
+| M6 | Deploy to Hetzner VPS | 2026-Q2 | ⬜ Todo |
+| M7 | First revenue-generating output | 2026-Q3 | ⬜ Todo |
+| M8 | Migrate to personal mini PC | 2026-Q3 | ⬜ Todo |
 
 ---
 
@@ -46,7 +47,12 @@
 | T013 | Fix FK events.agent_id per founder | ✅ Done | Claude | 1 | rimosso agentId: 'founder' da recordEvent in telegram.ts |
 | T014 | Dashboard view "Runs" (M3 completamento) | ✅ Done | Claude | 2 | RunsView.tsx — tabella filtrabile agente/modello/outcome, costo, tokens, sticky header |
 | T015 | Finance Agent cron (collegare budget.ts) | ✅ Done | Claude | 2 | startBudgetMonitor(3_600_000) già in index.ts riga 80 — nessuna modifica necessaria |
-| T016 | E2E test pm_saas loop verificato | ⬜ Todo | Neb | 1 | /task con richiesta product/roadmap → pm_saas → user stories Telegram |
+| T016 | E2E test pm_saas loop verificato | ✅ Done | Neb | 1 | Verificato 2026-03-17 — 5 user stories complete via Telegram |
+| T017 | DB schema: clients + projects tables | ⬜ Todo | Claude | 1 | Migration 002 — FK tasks.project_id, revenue tracking |
+| T018 | Backend: CRUD clients/projects in supabase.ts | ⬜ Todo | Claude | 1 | createClient, createProject, getClientBySlug ecc. |
+| T019 | Telegram: /new_client /new_project commands | ⬜ Todo | Claude | 1 | + workspace folder creation (Node fs) |
+| T020 | CEO Agent: project-aware delegation | ⬜ Todo | Claude | 2 | Passa project_id alle task quando disponibile |
+| T021 | Dashboard: Clients view + Projects view | ⬜ Todo | Claude | 2 | 2 nuove views con liste filtrabili + KPI per client |
 
 ---
 
@@ -63,6 +69,15 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-17 — Sessione 6: UI/UX Redesign + M4 Client/Project planning ✅
+
+- **T016** E2E pm_saas verificato — 5 user stories complete su Telegram, fix troncatura titoli
+- **UI** Overview redesign: Mission Banner + Active Work + Live Feed + Agent Matrix compatto
+- **UI** Panel.tsx: prop `accent` con border-top colorata per identità visiva
+- **UI** Stat.tsx: corner glow + bottom accent line + numero `text-2xl`
+- **UI** Topbar: milestone pill + orologio live che si aggiorna ogni 30s
+- **ARCH** Definita vision M4: Client & Project Management System (T017-T021)
 
 ### 2026-03-17 — Sessione 5: Dashboard view Runs + M3 completata ✅
 

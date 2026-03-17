@@ -1,7 +1,9 @@
 import { clsx } from 'clsx'
 import type { ReactNode } from 'react'
 
-const VALUE_COLORS: Record<string, string> = {
+type StatColor = 'default' | 'cyan' | 'emerald' | 'amber' | 'rose' | 'violet' | 'sky'
+
+const VALUE_COLORS: Record<StatColor, string> = {
   default: 'text-white',
   cyan:    'text-[#00D4FF]',
   emerald: 'text-emerald-400',
@@ -11,11 +13,21 @@ const VALUE_COLORS: Record<string, string> = {
   sky:     'text-sky-400',
 }
 
+const ACCENT_BAR: Record<StatColor, string> = {
+  default: 'bg-white/10',
+  cyan:    'bg-[#00D4FF]/50',
+  emerald: 'bg-emerald-400/50',
+  amber:   'bg-amber-400/50',
+  rose:    'bg-rose-400/50',
+  violet:  'bg-violet-400/50',
+  sky:     'bg-sky-400/50',
+}
+
 interface StatProps {
   label: string
   value: string | number
   sub?: string
-  color?: keyof typeof VALUE_COLORS
+  color?: StatColor
   icon?: ReactNode
   className?: string
 }
@@ -24,23 +36,31 @@ export function Stat({ label, value, sub, color = 'default', icon, className }: 
   return (
     <div
       className={clsx(
-        'rounded-xl border border-white/[0.07] bg-[#0A1628] p-5 flex flex-col gap-1',
+        'relative rounded-xl border border-white/[0.07] bg-[#0A1628] p-4 flex flex-col gap-0.5 overflow-hidden',
         className
       )}
     >
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">{label}</p>
-        {icon && <span className="text-slate-600">{icon}</span>}
-      </div>
-      <p
+      {/* Subtle corner glow */}
+      <div
         className={clsx(
-          'text-3xl font-bold leading-none mt-1 font-tabular',
-          VALUE_COLORS[color] ?? 'text-white'
+          'absolute top-0 right-0 w-16 h-16 rounded-full blur-2xl opacity-[0.06] pointer-events-none',
+          ACCENT_BAR[color]
         )}
-      >
+      />
+
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-600">{label}</p>
+        {icon && <span>{icon}</span>}
+      </div>
+
+      <p className={clsx('text-2xl font-bold leading-none font-tabular', VALUE_COLORS[color])}>
         {value}
       </p>
-      {sub && <p className="text-xs text-slate-500 mt-0.5">{sub}</p>}
+
+      {sub && <p className="text-[11px] text-slate-600 mt-1">{sub}</p>}
+
+      {/* Bottom accent line */}
+      <div className={clsx('absolute bottom-0 left-0 right-0 h-px opacity-40', ACCENT_BAR[color])} />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { clsx } from 'clsx'
 import { Sidebar, type ViewId } from './components/Sidebar.js'
 import { Overview } from './components/Overview.js'
@@ -27,37 +27,42 @@ const VIEW_META: Record<ViewId, { title: string; description: string }> = {
 
 function Topbar({ view }: { view: ViewId }) {
   const meta = VIEW_META[view]
-  const now  = new Date()
+  const [time, setTime] = useState(() => new Date())
+
+  useEffect(() => {
+    const id = setInterval(() => setTime(new Date()), 30_000)
+    return () => clearInterval(id)
+  }, [])
 
   return (
-    <div className="flex items-center justify-between px-6 py-3.5 border-b border-white/[0.07] bg-[#070C1A]/80 backdrop-blur-sm flex-shrink-0">
+    <div className="flex items-center justify-between px-6 py-3 border-b border-white/[0.07] bg-[#070C1A]/80 backdrop-blur-sm flex-shrink-0">
       <div>
-        <h1 className="text-base font-bold text-white tracking-tight leading-none">
+        <h1 className="text-sm font-bold text-white tracking-tight leading-none">
           {meta.title}
         </h1>
         <p className="text-[11px] text-slate-600 mt-0.5">{meta.description}</p>
       </div>
 
-      <div className="flex items-center gap-4">
-        {/* Current milestone */}
-        <span className="hidden sm:block text-[11px] text-slate-600 font-mono">
-          M2 · CEO Agent Loop
+      <div className="flex items-center gap-3">
+        {/* Milestone pill */}
+        <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.06]">
+          <span className="w-1 h-1 rounded-full bg-[#00D4FF]" />
+          <span className="text-[10px] text-slate-500 font-mono">M3 Done · M4 Next</span>
         </span>
 
-        {/* Divider */}
-        <div className="w-px h-4 bg-white/[0.08]" />
+        <div className="w-px h-3.5 bg-white/[0.08]" />
 
         {/* Live indicator */}
         <div className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-slow" />
-          <span className="text-[11px] text-emerald-400 font-mono uppercase tracking-wider font-semibold">
+          <span className="text-[10px] text-emerald-400 font-mono uppercase tracking-widest font-bold">
             Live
           </span>
         </div>
 
         {/* Time */}
-        <span className="hidden md:block text-[11px] text-slate-600 font-mono">
-          {now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+        <span className="hidden md:block text-[10px] text-slate-600 font-mono">
+          {time.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
         </span>
       </div>
     </div>
