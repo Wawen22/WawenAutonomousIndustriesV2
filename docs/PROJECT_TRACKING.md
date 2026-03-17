@@ -9,7 +9,7 @@
 ## Current Milestone: M4 – Client & Project Management System
 
 **Target:** 2026-Q2
-**Status:** ⬜ Todo
+**Status:** 🔄 In Progress
 
 ---
 
@@ -20,7 +20,7 @@
 | M1 | Local development stack running | 2026-Q1 | ✅ Done |
 | M2 | CEO Agent esegue primo task autonomo | 2026-Q1 | ✅ Done |
 | M3 | WAI Dashboard live con dati real-time | 2026-Q1 | ✅ Done |
-| M4 | Client & Project Management System | 2026-Q2 | ⬜ Todo |
+| M4 | Client & Project Management System | 2026-Q2 | 🔄 In Progress |
 | M5 | First autonomous deliverable for a real client | 2026-Q2 | ⬜ Todo |
 | M6 | Deploy to Hetzner VPS | 2026-Q2 | ⬜ Todo |
 | M7 | First revenue-generating output | 2026-Q3 | ⬜ Todo |
@@ -48,11 +48,11 @@
 | T014 | Dashboard view "Runs" (M3 completamento) | ✅ Done | Claude | 2 | RunsView.tsx — tabella filtrabile agente/modello/outcome, costo, tokens, sticky header |
 | T015 | Finance Agent cron (collegare budget.ts) | ✅ Done | Claude | 2 | startBudgetMonitor(3_600_000) già in index.ts riga 80 — nessuna modifica necessaria |
 | T016 | E2E test pm_saas loop verificato | ✅ Done | Neb | 1 | Verificato 2026-03-17 — 5 user stories complete via Telegram |
-| T017 | DB schema: clients + projects tables | ⬜ Todo | Claude | 1 | Migration 002 — FK tasks.project_id, revenue tracking |
-| T018 | Backend: CRUD clients/projects in supabase.ts | ⬜ Todo | Claude | 1 | createClient, createProject, getClientBySlug ecc. |
-| T019 | Telegram: /new_client /new_project commands | ⬜ Todo | Claude | 1 | + workspace folder creation (Node fs) |
-| T020 | CEO Agent: project-aware delegation | ⬜ Todo | Claude | 2 | Passa project_id alle task quando disponibile |
-| T021 | Dashboard: Clients view + Projects view | ⬜ Todo | Claude | 2 | 2 nuove views con liste filtrabili + KPI per client |
+| T017 | DB schema: clients + projects tables | ✅ Done | Claude | 1 | Migration 002 scritta — da applicare via Supabase SQL Editor |
+| T018 | Backend: CRUD clients/projects in supabase.ts | ✅ Done | Claude | 1 | createClient, createProject, getClients, getProjectsByClient, workspace.ts |
+| T019 | Telegram: /new_client /new_project commands | ✅ Done | Claude | 1 | + /clients /projects — workspace folder creation |
+| T020 | CEO Agent: project-aware delegation | ✅ Done | Claude | 2 | project_id ereditato nei subtask, project context nel prompt |
+| T021 | Dashboard: Clients view + Projects view | ✅ Done | Claude | 2 | ClientsView + ProjectsView — 8 views totali, sidebar updated |
 
 ---
 
@@ -69,6 +69,16 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-17 — Sessione 7: M4 Client & Project Management System ✅
+
+- **T017** `supabase/migrations/002_clients_projects.sql` — tabelle `clients` + `projects` con RLS, FK `tasks.project_id` — ⚠️ **applicare manualmente via Supabase Dashboard SQL Editor**
+- **T018** `backend/src/services/supabase.ts` — `createClient`, `createProject`, `getClients`, `getClientBySlug`, `getProjectsByClient`, `updateProjectWorkspacePath` — `backend/src/services/workspace.ts` — `createClientWorkspace`, `createProjectWorkspace` (brief.md + PROGRESS.md + dir structure) — tipi `Client`, `Project` in `backend/src/types/index.ts`
+- **T019** `backend/src/services/telegram.ts` — `/new_client`, `/new_project`, `/clients`, `/projects` — crea record Supabase + workspace su disco + risposta Telegram
+- **T020** `backend/src/agents/ceo.ts` — `project_id` propagato ai subtask dal metadata del task padre; project context iniettato nel system prompt del CEO
+- **T021** `dashboard/src/components/ClientsView.tsx` + `ProjectsView.tsx` — 8 views nella dashboard; `useClients`, `useProjects` hooks; `Client`, `Project` types in dashboard; icons in Icon.tsx; Sidebar + App.tsx aggiornati — **milestone pill aggiornata a "M4 In Progress"**
+
+
 
 ### 2026-03-17 — Sessione 6: UI/UX Redesign + M4 Client/Project planning ✅
 

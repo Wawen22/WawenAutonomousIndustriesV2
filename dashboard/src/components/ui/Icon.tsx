@@ -1,10 +1,10 @@
 import { clsx } from 'clsx'
 
 export type IconName =
-  | 'overview' | 'agents' | 'tasks' | 'activity' | 'costs' | 'runs'
+  | 'overview' | 'agents' | 'tasks' | 'activity' | 'costs' | 'runs' | 'clients' | 'projects'
   | 'chevron-left' | 'chevron-right'
   | 'check' | 'x' | 'clock' | 'zap' | 'arrow-right' | 'info' | 'alert'
-  | 'cpu' | 'dollar' | 'trending-up' | 'refresh'
+  | 'cpu' | 'dollar' | 'trending-up' | 'refresh' | 'folder' | 'building'
 
 interface IconProps {
   name: IconName
@@ -161,6 +161,24 @@ export function Icon({ name, size = 16, className }: IconProps) {
           <path d="M3 6h18M3 12h18M3 18h11" />
           <circle cx="19" cy="18" r="2" />
           <path d="M19 14v2" />
+        </svg>
+      )
+    case 'clients':
+    case 'building':
+      return (
+        <svg {...p}>
+          <rect x="3" y="9" width="18" height="13" rx="1" />
+          <path d="M8 22V9" />
+          <path d="M16 22V9" />
+          <path d="M3 9l9-6 9 6" />
+          <rect x="9" y="14" width="6" height="8" />
+        </svg>
+      )
+    case 'projects':
+    case 'folder':
+      return (
+        <svg {...p}>
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
         </svg>
       )
     default:

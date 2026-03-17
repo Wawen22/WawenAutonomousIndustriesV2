@@ -36,3 +36,6 @@ backups/
 
 # TypeScript build info
 *.tsbuildinfo
+
+# Workspace (client/project files — not tracked in git)
+/workspace/

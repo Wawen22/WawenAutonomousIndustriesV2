@@ -92,6 +92,7 @@ export interface Task {
   assignee_agent_id: string | null
   delegator_agent_id: string | null
   parent_task_id: string | null
+  project_id: string | null
   requires_human_review: boolean
   metadata: Record<string, unknown>
   created_at: string
@@ -104,9 +105,10 @@ export interface CreateTaskInput {
   description: string
   type: TaskType
   priority?: TaskPriority
-  assignee_agent_id?: string
-  delegator_agent_id?: string
-  parent_task_id?: string
+  assignee_agent_id?: string | undefined
+  delegator_agent_id?: string | undefined
+  parent_task_id?: string | undefined
+  project_id?: string | undefined
   requires_human_review?: boolean
   metadata?: Record<string, unknown>
 }
@@ -188,6 +190,66 @@ export interface LogEventInput {
   task_id?: string
   payload?: Record<string, unknown>
   severity?: EventSeverity
+}
+
+// --- Clients ---
+
+export type ClientStatus = 'prospect' | 'active' | 'completed' | 'archived'
+
+export interface Client {
+  id: string
+  name: string
+  slug: string
+  email: string | null
+  phone: string | null
+  status: ClientStatus
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export interface CreateClientInput {
+  name: string
+  slug: string
+  email?: string | undefined
+  phone?: string | undefined
+  status?: ClientStatus
+  metadata?: Record<string, unknown>
+}
+
+// --- Projects ---
+
+export type ProjectType = 'website' | 'app' | 'consulting' | 'marketing' | 'other'
+
+export type ProjectStatus =
+  | 'discovery'
+  | 'active'
+  | 'paused'
+  | 'review'
+  | 'delivered'
+  | 'invoiced'
+
+export interface Project {
+  id: string
+  client_id: string
+  name: string
+  slug: string
+  type: ProjectType
+  status: ProjectStatus
+  workspace_path: string | null
+  contract_value_usd: number
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export interface CreateProjectInput {
+  client_id: string
+  name: string
+  slug: string
+  type?: ProjectType
+  status?: ProjectStatus
+  workspace_path?: string | undefined
+  contract_value_usd?: number
+  metadata?: Record<string, unknown>
 }
 
 // --- Project State ---

@@ -43,6 +43,46 @@ Registry of all available LLM models.
 
 ---
 
+### `clients`
+
+Registry of WAI clients (prospects and active).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `uuid` PK | Auto-generated |
+| `name` | `text` | Display name |
+| `slug` | `text` UNIQUE | URL-safe identifier (e.g., `acme-corp`) |
+| `email` | `text` | Contact email (optional) |
+| `phone` | `text` | Contact phone (optional) |
+| `status` | `text` | `prospect` \| `active` \| `completed` \| `archived` |
+| `metadata` | `jsonb` | Extra data (notes, links, contacts) |
+| `created_at` | `timestamptz` | |
+
+**RLS:** `anon` SELECT, `service_role` full access.
+
+---
+
+### `projects`
+
+Projects linked to a client, each with a workspace folder.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `uuid` PK | Auto-generated |
+| `client_id` | `uuid` FK→clients | Owning client |
+| `name` | `text` | Display name |
+| `slug` | `text` | URL-safe identifier (unique per client) |
+| `type` | `text` | `website` \| `app` \| `consulting` \| `marketing` \| `other` |
+| `status` | `text` | `discovery` \| `active` \| `paused` \| `review` \| `delivered` \| `invoiced` |
+| `workspace_path` | `text` | Relative path to project folder (e.g., `workspace/acme/website`) |
+| `contract_value_usd` | `numeric` | Contract value in USD (default 0) |
+| `metadata` | `jsonb` | Extra data |
+| `created_at` | `timestamptz` | |
+
+**RLS:** `anon` SELECT, `service_role` full access.
+
+---
+
 ### `tasks`
 
 The core task management table.
@@ -58,6 +98,7 @@ The core task management table.
 | `assignee_agent_id` | `text` FK→agents | Currently assigned agent |
 | `delegator_agent_id` | `text` FK→agents | Who assigned the task (agent or `founder`) |
 | `parent_task_id` | `uuid` FK→tasks | For subtask hierarchies |
+| `project_id` | `uuid` FK→projects | Linked project (optional, added in migration 002) |
 | `requires_human_review` | `bool` | If true, Neb must approve before proceeding |
 | `metadata` | `jsonb` | Extra data (URLs, context, links) |
 | `created_at` | `timestamptz` | |
@@ -136,6 +177,8 @@ Aggregate state of WAI as a whole.
 ## Relationships
 
 ```
+clients ←────────── projects (client_id)
+projects ←────────── tasks (project_id)
 agents ←────────── tasks (assignee_agent_id, delegator_agent_id)
 agents ←────────── runs (agent_id)
 agents ←────────── events (agent_id)
@@ -159,6 +202,8 @@ The following tables have Realtime enabled and are subscribed to by the Dashboar
 | `events` | INSERT | Event Timeline |
 | `runs` | INSERT | Cost Panel, Agent Activity |
 | `project_state` | UPDATE | Header stats |
+| `clients` | INSERT, UPDATE | Clients View |
+| `projects` | INSERT, UPDATE | Projects View |
 
 ---
 

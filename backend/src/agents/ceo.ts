@@ -106,6 +106,18 @@ export async function runCeoAgent(
 ): Promise<void> {
   log.info({ taskId: task.id, title: task.title }, 'CEO Agent: analyzing task')
 
+  // Build optional project context from task.metadata or task.project_id
+  const projectId = task.project_id ?? (task.metadata['project_id'] as string | undefined)
+  let projectContext = ''
+  if (task.metadata['project_name']) {
+    const clientSlug = task.metadata['client_slug'] as string | undefined
+    projectContext = `\nProject context:
+- Project: ${task.metadata['project_name'] as string}
+- Client: ${(task.metadata['client_name'] as string | undefined) ?? 'unknown'}
+- Type: ${(task.metadata['project_type'] as string | undefined) ?? 'unknown'}
+${clientSlug ? `- Client slug: ${clientSlug}` : ''}`
+  }
+
   const systemPrompt = `You are the CEO Agent of WAI (Wawen Autonomous Industries), a Zero Human Company.
 Your role: analyze tasks from Founder Neb and delegate them to the right agent.
 
@@ -124,7 +136,7 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
 
   const userMessage = `New task from Founder Neb:
 Title: ${task.title}
-Description: ${task.description}
+Description: ${task.description}${projectContext}
 
 Analyze and delegate to the most appropriate agent.`
 
@@ -157,16 +169,18 @@ Analyze and delegate to the most appropriate agent.`
       )
     }
 
-    // Create subtask assigned to the chosen agent
+    // Create subtask assigned to the chosen agent (inherit project_id if set)
     const subtask = await createTask({
       title: delegation.subtaskTitle,
       description: task.description,
       type: delegation.taskType,
       priority: delegation.priority,
       parent_task_id: task.id,
+      ...(projectId ? { project_id: projectId } : {}),
       delegator_agent_id: 'ceo',
       assignee_agent_id: delegation.delegateTo,
       requires_human_review: false,
+      metadata: projectId ? { project_id: projectId, ...task.metadata } : task.metadata,
     })
 
     await recordEvent('task_assigned', {

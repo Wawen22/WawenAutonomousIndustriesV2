@@ -6,19 +6,30 @@
 import { Bot, Context } from 'grammy'
 import { log, recordEvent } from './logger.js'
 import {
+  createClient,
+  createProject,
   createTask,
   getAgents,
+  getClientBySlug,
+  getClients,
   getMonthlyCost,
   getProjectState,
+  getProjectsByClient,
   getRecentEvents,
   getTaskById,
   getTasksByStatus,
   updateAgentModel,
+  updateProjectWorkspacePath,
   updateTaskStatus,
 } from './supabase.js'
+import {
+  createClientWorkspace,
+  createProjectWorkspace,
+  getRelativeProjectPath,
+} from './workspace.js'
 import { setModelOverride } from '../config/models.js'
 import { runCeoAgent } from '../agents/ceo.js'
-import type { CreateTaskInput } from '../types/index.js'
+import type { CreateTaskInput, ProjectType } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Bot singleton
@@ -68,14 +79,20 @@ function registerHandlers(bot: Bot): void {
     if (!requireFounder(ctx)) return
     await ctx.reply(
       '🤖 *WAI – Wawen Autonomous Industries*\n\n' +
-        'Commands:\n' +
+        '*Tasks:*\n' +
         '/task descrizione – Crea un task\n' +
+        '/approve task\\_id – Approva output\n' +
+        '/reject task\\_id motivo – Rifiuta output\n\n' +
+        '*Clients & Projects:*\n' +
+        '/new\\_client nome \\[email\\] – Crea cliente\n' +
+        '/new\\_project slug\\_cliente nome \\[tipo\\] – Crea progetto\n' +
+        '/clients – Lista clienti\n' +
+        '/projects \\[client\\_slug\\] – Lista progetti\n\n' +
+        '*System:*\n' +
         '/status – Stato del sistema\n' +
         '/logs – Eventi recenti\n' +
         '/budget – Costi API\n' +
-        '/assign\\_model agent\\_id model\\_id – Cambia modello\n' +
-        '/approve task\\_id – Approva output\n' +
-        '/reject task\\_id motivo – Rifiuta output',
+        '/assign\\_model agent\\_id model\\_id – Cambia modello',
       { parse_mode: 'Markdown' }
     )
     await recordEvent('founder_command', { payload: { command: 'start' } })
@@ -298,6 +315,185 @@ function registerHandlers(bot: Bot): void {
     } catch (err) {
       log.error({ err, taskId }, 'Failed to reject task')
       await ctx.reply('❌ Failed to reject task. Check logs.')
+    }
+  })
+
+  // /new_client <name> [email]
+  bot.command('new_client', async (ctx) => {
+    if (!requireFounder(ctx)) return
+
+    const text = ctx.message?.text ?? ''
+    const args = text.replace('/new_client', '').trim().split(/\s+/)
+    const name = args[0]
+
+    if (!name) {
+      await ctx.reply('Usage: /new\\_client <name> \\[email\\]\nExample: /new\\_client "Acme Corp" info@acme.com', { parse_mode: 'Markdown' })
+      return
+    }
+
+    const email = args[1] ?? undefined
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+    try {
+      const existing = await getClientBySlug(slug)
+      if (existing) {
+        await ctx.reply(`⚠️ Client with slug \`${slug}\` already exists.`, { parse_mode: 'Markdown' })
+        return
+      }
+
+      const client = await createClient({ name, slug, email })
+      const workspacePath = await createClientWorkspace(slug)
+
+      await recordEvent('task_created', {
+        payload: { action: 'client_created', client_id: client.id, slug, source: 'telegram' },
+      })
+
+      await ctx.reply(
+        `✅ *Client Created*\n\n` +
+          `Name: ${client.name}\n` +
+          `Slug: \`${slug}\`\n` +
+          `Status: ${client.status}\n` +
+          `Workspace: \`${workspacePath}\``,
+        { parse_mode: 'Markdown' }
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      log.error({ err }, 'Failed to create client')
+      await ctx.reply(`❌ Failed to create client: ${msg}`)
+    }
+  })
+
+  // /new_project <client_slug> <project_name> [type]
+  bot.command('new_project', async (ctx) => {
+    if (!requireFounder(ctx)) return
+
+    const text = ctx.message?.text ?? ''
+    const args = text.replace('/new_project', '').trim().split(/\s+/)
+    const clientSlug = args[0]
+
+    // Last arg is type if it matches known types
+    const knownTypes: ProjectType[] = ['website', 'app', 'consulting', 'marketing', 'other']
+    const lastArg = args[args.length - 1] ?? ''
+    const type: ProjectType = knownTypes.includes(lastArg as ProjectType) ? (lastArg as ProjectType) : 'other'
+    const nameParts = knownTypes.includes(lastArg as ProjectType)
+      ? args.slice(1, args.length - 1)
+      : args.slice(1)
+    const name = nameParts.join(' ')
+
+    if (!clientSlug || !name) {
+      await ctx.reply(
+        'Usage: /new\\_project <client\\_slug> <project\\_name> \\[type\\]\n' +
+          'Types: website \\| app \\| consulting \\| marketing \\| other\n' +
+          'Example: /new\\_project acme-corp "Landing Page" website',
+        { parse_mode: 'Markdown' }
+      )
+      return
+    }
+
+    try {
+      const client = await getClientBySlug(clientSlug)
+      if (!client) {
+        await ctx.reply(`❌ Client \`${clientSlug}\` not found. Use /new\\_client first.`, { parse_mode: 'Markdown' })
+        return
+      }
+
+      const projectSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      const relPath = getRelativeProjectPath(clientSlug, projectSlug)
+
+      const project = await createProject({
+        client_id: client.id,
+        name,
+        slug: projectSlug,
+        type,
+        workspace_path: relPath,
+      })
+
+      const absPath = await createProjectWorkspace(clientSlug, projectSlug, name, type, client.name)
+      await updateProjectWorkspacePath(project.id, relPath)
+
+      await recordEvent('task_created', {
+        payload: {
+          action: 'project_created',
+          project_id: project.id,
+          client_slug: clientSlug,
+          source: 'telegram',
+        },
+      })
+
+      await ctx.reply(
+        `✅ *Project Created*\n\n` +
+          `Name: ${project.name}\n` +
+          `Client: ${client.name}\n` +
+          `Type: ${type}\n` +
+          `Status: ${project.status}\n` +
+          `Workspace: \`${absPath}\`\n` +
+          `Files: brief.md, PROGRESS.md, deliverables/, assets/, drafts/`,
+        { parse_mode: 'Markdown' }
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      log.error({ err }, 'Failed to create project')
+      await ctx.reply(`❌ Failed to create project: ${msg}`)
+    }
+  })
+
+  // /clients
+  bot.command('clients', async (ctx) => {
+    if (!requireFounder(ctx)) return
+
+    try {
+      const clients = await getClients()
+
+      if (clients.length === 0) {
+        await ctx.reply('No clients yet. Use /new\\_client to add one.', { parse_mode: 'Markdown' })
+        return
+      }
+
+      const statusIcon = (s: string) =>
+        s === 'active' ? '🟢' : s === 'prospect' ? '🟡' : s === 'completed' ? '✅' : '⬜'
+
+      const lines = clients.map((c) => `${statusIcon(c.status)} *${c.name}* \\(\`${c.slug}\`\\) — ${c.status}`)
+
+      await ctx.reply(`*Clients (${clients.length})*\n\n${lines.join('\n')}`, { parse_mode: 'MarkdownV2' })
+    } catch (err) {
+      log.error({ err }, 'Failed to list clients')
+      await ctx.reply('❌ Failed to list clients.')
+    }
+  })
+
+  // /projects [client_slug]
+  bot.command('projects', async (ctx) => {
+    if (!requireFounder(ctx)) return
+
+    const text = ctx.message?.text ?? ''
+    const clientSlug = text.replace('/projects', '').trim() || undefined
+
+    try {
+      const projects = clientSlug
+        ? await getProjectsByClient(clientSlug)
+        : await (async () => {
+            const { getProjects } = await import('./supabase.js')
+            return getProjects()
+          })()
+
+      if (projects.length === 0) {
+        const note = clientSlug ? ` for \`${clientSlug}\`` : ''
+        await ctx.reply(`No projects found${note}.`, { parse_mode: 'Markdown' })
+        return
+      }
+
+      const statusIcon = (s: string) =>
+        s === 'active' ? '🟢' : s === 'delivered' ? '✅' : s === 'paused' ? '⏸' : s === 'invoiced' ? '💰' : '🔵'
+
+      const lines = projects.map(
+        (p) => `${statusIcon(p.status)} *${p.name}* — ${p.type} — ${p.status}`
+      )
+
+      const title = clientSlug ? `Projects for \`${clientSlug}\`` : 'All Projects'
+      await ctx.reply(`*${title} (${projects.length})*\n\n${lines.join('\n')}`, { parse_mode: 'Markdown' })
+    } catch (err) {
+      log.error({ err }, 'Failed to list projects')
+      await ctx.reply('❌ Failed to list projects.')
     }
   })
 

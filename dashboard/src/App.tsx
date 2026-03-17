@@ -7,17 +7,21 @@ import { TaskBoard } from './components/TaskBoard.js'
 import { EventTimeline } from './components/EventTimeline.js'
 import { CostPanel } from './components/CostPanel.js'
 import { RunsView } from './components/RunsView.js'
+import { ClientsView } from './components/ClientsView.js'
+import { ProjectsView } from './components/ProjectsView.js'
 
 // ---------------------------------------------------------------------------
 // View metadata
 // ---------------------------------------------------------------------------
 
 const VIEW_META: Record<ViewId, { title: string; description: string }> = {
-  overview: { title: 'Overview',       description: 'System command center'           },
-  agents:   { title: 'Agent Fleet',    description: 'All agents and their status'     },
-  tasks:    { title: 'Task Board',     description: 'Task pipeline — Kanban view'     },
-  activity: { title: 'Activity Log',   description: 'Real-time system event timeline' },
-  costs:    { title: 'Costs & Runs',   description: 'Budget, model usage, run history'},
+  overview: { title: 'Overview',       description: 'System command center'                        },
+  agents:   { title: 'Agent Fleet',    description: 'All agents and their status'                  },
+  tasks:    { title: 'Task Board',     description: 'Task pipeline — Kanban view'                  },
+  clients:  { title: 'Clients',        description: 'Client registry — prospects and active deals' },
+  projects: { title: 'Projects',       description: 'All projects — filterable by client / status' },
+  activity: { title: 'Activity Log',   description: 'Real-time system event timeline'              },
+  costs:    { title: 'Costs & Runs',   description: 'Budget, model usage, run history'             },
   runs:     { title: 'Runs',           description: 'All agent runs — filterable by agent, model, outcome' },
 }
 
@@ -47,7 +51,7 @@ function Topbar({ view }: { view: ViewId }) {
         {/* Milestone pill */}
         <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.06]">
           <span className="w-1 h-1 rounded-full bg-[#00D4FF]" />
-          <span className="text-[10px] text-slate-500 font-mono">M3 Done · M4 Next</span>
+          <span className="text-[10px] text-slate-500 font-mono">M4 In Progress</span>
         </span>
 
         <div className="w-px h-3.5 bg-white/[0.08]" />
@@ -75,12 +79,14 @@ function Topbar({ view }: { view: ViewId }) {
 
 function ViewContent({ view }: { view: ViewId }) {
   switch (view) {
-    case 'overview': return <Overview />
-    case 'agents':   return <AgentList />
-    case 'tasks':    return <TaskBoard />
-    case 'activity': return <EventTimeline />
-    case 'costs':    return <CostPanel />
-    case 'runs':     return <RunsView />
+    case 'overview':  return <Overview />
+    case 'agents':    return <AgentList />
+    case 'tasks':     return <TaskBoard />
+    case 'clients':   return <ClientsView />
+    case 'projects':  return <ProjectsView />
+    case 'activity':  return <EventTimeline />
+    case 'costs':     return <CostPanel />
+    case 'runs':      return <RunsView />
   }
 }
 

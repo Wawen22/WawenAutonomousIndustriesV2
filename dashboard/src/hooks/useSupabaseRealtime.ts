@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase.js'
-import type { Agent, AgentRun, ProjectState, SystemEvent, Task } from '../types/index.js'
+import type { Agent, AgentRun, Client, Project, ProjectState, SystemEvent, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Generic realtime hook
@@ -106,6 +106,36 @@ export function useRecentRuns(limit = 20) {
   }, [limit])
 
   return useRealtimeTable<AgentRun>('runs', fetchRuns)
+}
+
+export function useClients() {
+  const fetchClients = useCallback(async (): Promise<Client[]> => {
+    const { data, error } = await supabase
+      .from('clients')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Client[]
+  }, [])
+
+  return useRealtimeTable<Client>('clients', fetchClients)
+}
+
+export function useProjects(clientId?: string) {
+  const fetchProjects = useCallback(async (): Promise<Project[]> => {
+    let query = supabase
+      .from('projects')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (clientId) {
+      query = query.eq('client_id', clientId)
+    }
+    const { data, error } = await query
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Project[]
+  }, [clientId])
+
+  return useRealtimeTable<Project>('projects', fetchProjects)
 }
 
 export function useProjectState() {

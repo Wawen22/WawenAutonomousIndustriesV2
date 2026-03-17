@@ -39,11 +39,48 @@ export interface Task {
   assignee_agent_id: string | null
   delegator_agent_id: string | null
   parent_task_id: string | null
+  project_id: string | null
   requires_human_review: boolean
   metadata: Record<string, unknown>
   created_at: string
   updated_at: string
   completed_at: string | null
+}
+
+export type ClientStatus = 'prospect' | 'active' | 'completed' | 'archived'
+
+export interface Client {
+  id: string
+  name: string
+  slug: string
+  email: string | null
+  phone: string | null
+  status: ClientStatus
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export type ProjectType = 'website' | 'app' | 'consulting' | 'marketing' | 'other'
+
+export type ProjectStatus =
+  | 'discovery'
+  | 'active'
+  | 'paused'
+  | 'review'
+  | 'delivered'
+  | 'invoiced'
+
+export interface Project {
+  id: string
+  client_id: string
+  name: string
+  slug: string
+  type: ProjectType
+  status: ProjectStatus
+  workspace_path: string | null
+  contract_value_usd: number
+  metadata: Record<string, unknown>
+  created_at: string
 }
 
 export type EventSeverity = 'info' | 'warning' | 'error' | 'critical'

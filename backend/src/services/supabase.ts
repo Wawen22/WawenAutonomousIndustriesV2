@@ -3,15 +3,19 @@
 // Typed query helpers. Always use service_role key server-side.
 // ============================================================
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseSdkClient } from '@supabase/supabase-js'
 import type {
   Agent,
   AgentRun,
   AgentStatus,
+  Client,
+  CreateClientInput,
+  CreateProjectInput,
   CreateTaskInput,
   LogEventInput,
   LogRunInput,
   ModelConfig,
+  Project,
   ProjectState,
   SystemEvent,
   Task,
@@ -31,7 +35,7 @@ function createSupabaseClient() {
     throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables')
   }
 
-  return createClient(url, key, {
+  return createSupabaseSdkClient(url, key, {
     auth: { persistSession: false },
   })
 }
@@ -163,6 +167,107 @@ export async function assignTask(taskId: string, agentId: string): Promise<void>
     .eq('id', taskId)
 
   if (error) throw new Error(`Failed to assign task: ${error.message}`)
+}
+
+// ---------------------------------------------------------------------------
+// Client Queries
+// ---------------------------------------------------------------------------
+
+export async function createClient(input: CreateClientInput): Promise<Client> {
+  const { data, error } = await getSupabaseClient()
+    .from('clients')
+    .insert({
+      name: input.name,
+      slug: input.slug,
+      email: input.email ?? null,
+      phone: input.phone ?? null,
+      status: input.status ?? 'prospect',
+      metadata: input.metadata ?? {},
+    })
+    .select()
+    .single()
+
+  if (error) throw new Error(`Failed to create client: ${error.message}`)
+  return data as Client
+}
+
+export async function getClients(): Promise<Client[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('clients')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (error) throw new Error(`Failed to get clients: ${error.message}`)
+  return data as Client[]
+}
+
+export async function getClientBySlug(slug: string): Promise<Client | null> {
+  const { data, error } = await getSupabaseClient()
+    .from('clients')
+    .select('*')
+    .eq('slug', slug)
+    .single()
+
+  if (error?.code === 'PGRST116') return null
+  if (error) throw new Error(`Failed to get client ${slug}: ${error.message}`)
+  return data as Client
+}
+
+// ---------------------------------------------------------------------------
+// Project Queries
+// ---------------------------------------------------------------------------
+
+export async function createProject(input: CreateProjectInput): Promise<Project> {
+  const { data, error } = await getSupabaseClient()
+    .from('projects')
+    .insert({
+      client_id: input.client_id,
+      name: input.name,
+      slug: input.slug,
+      type: input.type ?? 'other',
+      status: input.status ?? 'discovery',
+      workspace_path: input.workspace_path ?? null,
+      contract_value_usd: input.contract_value_usd ?? 0,
+      metadata: input.metadata ?? {},
+    })
+    .select()
+    .single()
+
+  if (error) throw new Error(`Failed to create project: ${error.message}`)
+  return data as Project
+}
+
+export async function getProjects(): Promise<Project[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('projects')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (error) throw new Error(`Failed to get projects: ${error.message}`)
+  return data as Project[]
+}
+
+export async function getProjectsByClient(clientSlug: string): Promise<Project[]> {
+  const client = await getClientBySlug(clientSlug)
+  if (!client) return []
+
+  const { data, error } = await getSupabaseClient()
+    .from('projects')
+    .select('*')
+    .eq('client_id', client.id)
+    .order('created_at', { ascending: false })
+
+  if (error) throw new Error(`Failed to get projects for client ${clientSlug}: ${error.message}`)
+  return data as Project[]
+}
+
+export async function updateProjectWorkspacePath(id: string, workspacePath: string): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('projects')
+    .update({ workspace_path: workspacePath })
+    .eq('id', id)
+
+  if (error) throw new Error(`Failed to update project workspace path: ${error.message}`)
 }
 
 // ---------------------------------------------------------------------------
