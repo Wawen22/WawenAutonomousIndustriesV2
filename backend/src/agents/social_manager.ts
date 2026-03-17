@@ -150,6 +150,8 @@ export async function runSocialManagerAgent(
   const projectId = task.project_id ?? (task.metadata['project_id'] as string | undefined)
   const projectName = (task.metadata['project_name'] as string | undefined) ?? task.title
   const clientName = (task.metadata['client_name'] as string | undefined) ?? 'the client'
+  const clientSlug = (task.metadata['client_slug'] as string | undefined) ?? ''
+  const projectSlug = (task.metadata['project_slug'] as string | undefined) ?? ''
   const campaignTitle = (task.metadata['marketing_plan_title'] as string | undefined) ?? 'Marketing delivery'
   const targetAudience = (task.metadata['target_audience'] as string | undefined) ?? ''
   const channels = normalizeStringArray(task.metadata['recommended_channels'])
@@ -266,6 +268,9 @@ Constraints:
       `📝 ${socialCalendar.summary}`,
       artifactPath ? `\n💾 Saved: \`${artifactPath}\`` : '',
       projectMovedToReview ? `\n🔎 Project status moved to *review*` : '',
+      projectMovedToReview && clientSlug && projectSlug
+        ? `💰 Pronto per la fattura: /invoice ${clientSlug}/${projectSlug}`
+        : '',
     ].filter((line) => line !== '').join('\n')
 
     await notify(lines)

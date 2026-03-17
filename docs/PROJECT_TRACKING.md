@@ -74,8 +74,14 @@
 | T037 | Telegram repo linkage + context propagation | ✅ Done | Claude | 1 | `/link_repo` aggiunto; task scoped propagano metadata repo agli agenti |
 | T038 | Marketing delivery chain | ✅ Done | Claude | 1 | Runtime per `marketing_strategist`, `content_creator`, `social_manager` con deliverable workspace |
 | T039 | Docs sync + next-phase handoff | ✅ Done | Claude | 2 | Vision/architecture/tracking riallineati allo stato multi-service e al prossimo target runtime |
-| T040 | Custom software delivery chain | ⬜ Todo | Claude | 1 | Runtime `architect` → `dev_general_*` → `qa` per website/app/automation/custom software |
-| T041 | QA review gate + final delivery status | ⬜ Todo | Claude | 2 | Report QA, criterio per `review`/`delivered`, notifiche Neb e deliverable QA |
+| T040 | Custom software delivery chain | ✅ Done | Claude | 1 | Runtime `architect` → `dev_general_*` → `qa` per website/app/automation/custom software |
+| T041 | QA review gate + final delivery status | ✅ Done | Claude | 2 | Report QA, criterio per `review`/`blocked`/`delivered`, notifiche Neb e deliverable QA |
+| T042 | Repo onboarding ergonomics | ✅ Done | Codex | 1 | `/link_repo` con path quotati e auto-clone; `/init_repo` aggiunto; playbook founder documentato |
+| T043 | Repo-aware software execution + defensive QA | ✅ Done | Codex | 1 | Gli agenti software leggono/modificano la repo linkata, salvano `repo-execution-*.md`, eseguono check difensivi reali e il QA incorpora stato git + esito comandi |
+| T044 | Intelligent worker orchestration + stuck run hardening | ✅ Done | Codex | 1 | Parallelismo mantenuto per subtasks indipendenti; bootstrap repo e dipendenze software ora sono queued/sequenziali, con timeout LLM hard, block cascade e QA/status finali senza task appese |
+
+| T045 | Revenue flow: /invoice command + consulting chain completion | ✅ Done | Claude | 1 | Consulting chain → `delivered`; `/invoice` command; `revenue_recorded` event |
+| T046 | Invoice prompt: SaaS + Marketing chain completion | ✅ Done | Claude | 1 | `dev_saas`, `content_creator`, `social_manager` ora includono `/invoice client/project` quando il progetto va in `review` |
 
 ---
 
@@ -92,6 +98,56 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-18 — Sessione 20: T046 — Invoice prompt SaaS + Marketing chain ✅
+
+- **T046** `backend/src/agents/dev_saas.ts` — estratti `clientSlug`/`projectSlug` dal metadata; quando tutti i worker SaaS terminano e il progetto va in `review`, la notifica a Neb include ora `💰 Pronto per la fattura: /invoice client/project`
+- **T046** `backend/src/agents/content_creator.ts` — stesso pattern: invoice prompt aggiunto quando `maybeMoveMarketingProjectToReview` restituisce `true`
+- **T046** `backend/src/agents/social_manager.ts` — idem: invoice prompt aggiunto sul trigger `projectMovedToReview`
+- **GIT** `supabase/migrations/004_projects_blocked_status.sql` — migration committata (era untracked)
+- **VERIFY** `pnpm typecheck && pnpm build` verdi su backend e dashboard
+
+### 2026-03-18 — Sessione 19: Revenue flow — /invoice + consulting chain completion ✅
+
+- **T045** `backend/src/agents/consulting_lead.ts` — se `requiresAnalysis: false`, il progetto si sposta ora a `delivered` (non più `active`) e la notifica include il prompt `/invoice client/project`; se analisi richiesta, il progetto resta `active` in attesa dell'Analyst
+- **T045** `backend/src/agents/analyst.ts` — completamento della chain consulting: l'Analyst sposta il progetto a `delivered` al termine, emette `project_delivered` event, e notifica Neb con il prompt `/invoice`
+- **T045** `backend/src/agents/qa.ts` — quando il QA porta il progetto a `delivered`, la notifica include il prompt `/invoice client/project`
+- **T045** `backend/src/services/supabase.ts` — aggiunto `updateProjectContractValue(id, amount)` per aggiornare il valore contratto post-creazione
+- **T045** `backend/src/types/index.ts` — aggiunti `project_delivered` e `revenue_recorded` a `EventType`
+- **T045** `backend/src/services/telegram.ts` — nuovo comando `/invoice client/project [amount_usd]`: valida progetto, transizione a `invoiced`, aggiorna `contract_value_usd`, emette `revenue_recorded` event, risponde a Neb con conferma; aggiornato `/start` con il nuovo comando
+- **VERIFY** `cd backend && pnpm typecheck && pnpm build`; `cd dashboard && pnpm typecheck && pnpm build` verdi
+
+
+
+### 2026-03-18 — Sessione 18: Intelligent worker orchestration + stuck run hardening ✅
+
+- **T044** `backend/src/agents/architect.ts`, `backend/src/agents/dev_lead_saas.ts`, `backend/src/agents/dev_general.ts`, `backend/src/agents/dev_saas.ts`, `backend/src/agents/software_delivery_utils.ts` — l’orchestrazione software è ora dependency-aware: i worker indipendenti continuano a poter partire in parallelo, ma sui repo bootstrap/empty `dev_general_2` dipende da `dev_general_1` e `dev_saas_2` dipende da `dev_saas_1`; i task dipendenti restano `todo` finché il predecessore non chiude, poi vengono sbloccati automaticamente
+- **T044** `backend/src/agents/dev_general.ts`, `backend/src/agents/dev_saas.ts` — aggiunto il cascade difensivo quando una dipendenza fallisce: i task dipendenti vengono marcati `blocked` invece di restare `todo`, il QA custom software parte comunque quando tutti i worker sono terminali, e il flow SaaS porta il progetto a `blocked` se una worker chain si ferma
+- **T044** `backend/src/services/llm.ts`, `backend/src/agents/architect.ts`, `backend/src/agents/dev_lead_saas.ts` — introdotto timeout hard sui run LLM via `AbortController` (`LLM_RUN_TIMEOUT_MS`, default 180s) e transizione esplicita a `blocked` anche per i planner software; questo elimina i casi in cui un task restava indefinitamente `in_progress`
+- **VERIFY** `cd backend && pnpm typecheck`, `cd dashboard && pnpm typecheck`, `cd backend && pnpm build`, `cd dashboard && pnpm build` verdi. Test E2E mirato rieseguito su `acmecorp/qr-code-generator`: l’architect ha creato `dev_general_2` con `dependency_task_ids`, il worker bootstrap è andato a timeout controllato, il dipendente è stato marcato `blocked`, il QA si è attivato e il progetto è stato portato a `blocked` senza task appese
+- **DOCS** `docs/ARCHITECTURE.md`, `docs/AGENTS_AND_TEAMS.md`, `docs/TASKS_AND_PROJECT_STATE.md`, `docs/FOUNDER_OPERATIONS_PLAYBOOK.md` — documentati queueing sequenziale su repo vuota, parallelismo solo per subtasks indipendenti, timeout LLM hard, e comportamento founder-facing dei task software staged
+
+### 2026-03-17 — Sessione 17: Repo-aware software execution + defensive QA ✅
+
+- **T043** `backend/src/agents/software_repo_runtime.ts`, `backend/src/agents/software_delivery_utils.ts` — aggiunto un runtime condiviso per repo inspection, safe file edits dentro `repo_local_path`, rilevamento `package.json` / script, esecuzione difensiva di `install` / `typecheck` / `build` / `test`, logging sintetico su `runs` + `events`, e rendering dei report `repo-execution-*.md`
+- **T043** `backend/src/agents/dev_general.ts`, `backend/src/agents/dev_saas.ts`, `backend/src/agents/architect.ts` — i worker software leggono il codebase reale quando la repo è linkata, chiedono path repo-relativi ai modelli, possono modificare file reali con operazioni mirate, persistono summary di file toccati/comandi/check/blocker, e il flow custom software attiva QA quando i worker raggiungono uno stato terminale
+- **T043** `backend/src/agents/qa.ts` — il QA gate ora valuta anche git status e check reali della repo, distingue blocker vs warning, fonde il verdetto LLM con i blocker oggettivi dei comandi, e produce `qa_report.md` coerente con il repo state
+- **UI/DOCS** `dashboard/src/components/ProjectsView.tsx`, `docs/ARCHITECTURE.md`, `docs/AGENTS_AND_TEAMS.md`, `docs/TASKS_AND_PROJECT_STATE.md`, `docs/FOUNDER_OPERATIONS_PLAYBOOK.md` — la dashboard riconosce i nuovi artifact `repo-execution-*`; la documentazione spiega il runtime repo-aware, le regole di shell difensiva e il nuovo significato operativo di `review` / `blocked` / `delivered`
+- **VERIFY** `cd backend && pnpm typecheck && pnpm build`; `cd dashboard && pnpm typecheck && pnpm build` verdi. Test mirato repo-aware eseguito su una fixture git locale: `architect` + `dev_general_2` hanno prodotto deliverable reali e `repo-execution-*.md`; il QA ha bloccato correttamente la release perché `typecheck` e `build` fallivano davvero sulla repo fixture
+### 2026-03-17 — Sessione 16: Repo onboarding ergonomics + founder playbook ✅
+
+- **T042** `backend/src/services/telegram.ts`, `backend/src/services/git.ts`, `backend/src/services/workspace.ts` — `/link_repo` ora usa un parser robusto con supporto a path assoluti quotati contenenti spazi; valida repo git reali; può auto-clonare una remote URL dentro `workspace/<client>/<project>/repo`; aggiunto `/init_repo` per inizializzare una repo locale vuota e collegare opzionalmente `origin`; logging `founder_command` esteso con `mode`, branch, provider e canonical workspace repo path
+- **UI** `dashboard/src/components/ProjectsView.tsx` — il pannello progetto mostra contesto repo, path/remote/branch/provider e un promemoria operativo del flow founder `/new_project → /link_repo|/init_repo → /brief → /task`
+- **DOCS** `docs/FOUNDER_OPERATIONS_PLAYBOOK.md`, `docs/AGENTS_AND_TEAMS.md`, `docs/ARCHITECTURE.md`, `docs/TASKS_AND_PROJECT_STATE.md` — aggiunta una guida completa con esempi reali dei comandi founder e documentato il nuovo onboarding repo locale/remoto
+- **VERIFY** `cd backend && pnpm typecheck && pnpm build`; `cd dashboard && pnpm typecheck && pnpm build` verdi
+
+### 2026-03-17 — Sessione 15: Custom software delivery chain + QA gate ✅
+
+- **T040** `backend/src/agents/architect.ts`, `backend/src/agents/dev_general.ts`, `backend/src/agents/qa.ts`, `backend/src/agents/software_delivery_utils.ts` — nuova chain runtime per software custom: l’Architect legge brief/repo context, scrive `deliverables/architecture_plan.md`, crea task per `dev_general_1` / `dev_general_2`, predispone il task QA; i worker scrivono deliverable `dev-general-*.md`, aggiornano `PROGRESS.md` e attivano il QA gate; `qa` produce `deliverables/qa_report.md` e decide `review` / `blocked` / `delivered`
+- **WIRE** `backend/src/agents/ceo.ts` — routing hints aggiornati per preferire `architect` sui progetti `website`, `app`, `automation` e custom software; supporto fire-and-forget aggiunto per `architect`, `dev_general_*` e `qa`
+- **DB** `supabase/migrations/004_projects_blocked_status.sql`, `backend/src/types/index.ts`, `dashboard/src/types/index.ts`, `backend/src/services/supabase.ts`, `backend/src/services/telegram.ts` — introdotto `projects.status = blocked` per il QA gate e aggiunto helper atomico `transitionTaskStatus(...)` per evitare avvii duplicati del task QA
+- **UI/DOCS** `dashboard/src/components/ProjectsView.tsx`, `docs/AGENTS_AND_TEAMS.md`, `docs/ARCHITECTURE.md`, `docs/TASKS_AND_PROJECT_STATE.md`, `docs/SUPABASE_SCHEMA.md` — nuove icone deliverable per `architecture_plan.md`, `qa_report.md` e `dev-general-*`; stato runtime agenti dev aggiornato; flow custom software e lifecycle `review/blocked/delivered` documentati
+- **VERIFY** `pnpm typecheck` + `pnpm build` verdi su backend e dashboard
 
 ### 2026-03-17 — Sessione 14: Documentation sync + next-phase handoff ✅
 
