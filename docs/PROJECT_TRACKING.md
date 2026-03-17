@@ -9,7 +9,7 @@
 ## Current Milestone: M3 – WAI Dashboard live con dati real-time
 
 **Target:** 2026-Q1
-**Status:** In Progress
+**Status:** ✅ Done
 
 ---
 
@@ -19,7 +19,7 @@
 |----|-----------|--------|--------|
 | M1 | Local development stack running | 2026-Q1 | ✅ Done |
 | M2 | CEO Agent esegue primo task autonomo | 2026-Q1 | ✅ Done |
-| M3 | WAI Dashboard live con dati real-time | 2026-Q1 | 🔄 In Progress |
+| M3 | WAI Dashboard live con dati real-time | 2026-Q1 | ✅ Done |
 | M4 | First autonomous task completed by agent | 2026-Q2 | ⬜ Todo |
 | M5 | Deploy to Hetzner VPS | 2026-Q2 | ⬜ Todo |
 | M6 | First revenue-generating output | 2026-Q3 | ⬜ Todo |
@@ -41,6 +41,12 @@
 | T008 | Set up Finance Agent cron in backend | ⬜ Todo | ops | 2 | Già c'è budget.ts, collegare a cron |
 | T009 | Test end-to-end: /task su Telegram → CEO → Supabase | ✅ Done | Neb | 1 | Verificato 2026-03-17: task + subtask creati, CEO delega a pm_saas |
 | T010 | Docker compose: aggiungere backend containerizzato | ⬜ Todo | ops | 3 | Ora gira solo in locale |
+| T011 | /approve e /reject su Telegram | ✅ Done | Claude | 1 | telegram.ts — aggiorna status task Supabase, logga human_approved/rejected |
+| T012 | PM SaaS Agent loop | ✅ Done | Claude | 1 | backend/src/agents/pm_saas.ts — produce user stories, crea sub-subtask, notifica Neb |
+| T013 | Fix FK events.agent_id per founder | ✅ Done | Claude | 1 | rimosso agentId: 'founder' da recordEvent in telegram.ts |
+| T014 | Dashboard view "Runs" (M3 completamento) | ✅ Done | Claude | 2 | RunsView.tsx — tabella filtrabile agente/modello/outcome, costo, tokens, sticky header |
+| T015 | Finance Agent cron (collegare budget.ts) | ✅ Done | Claude | 2 | startBudgetMonitor(3_600_000) già in index.ts riga 80 — nessuna modifica necessaria |
+| T016 | E2E test pm_saas loop verificato | ⬜ Todo | Neb | 1 | /task con richiesta product/roadmap → pm_saas → user stories Telegram |
 
 ---
 
@@ -57,6 +63,19 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-17 — Sessione 5: Dashboard view Runs + M3 completata ✅
+
+- **T014** `dashboard/src/components/RunsView.tsx` — 6a view "Runs": tabella filtrable (agente/modello/outcome), colonne timestamp/agent/model/outcome/tokens_in/tokens_out/cost_usd/duration_ms, stats toolbar (totale cost + tokens + success rate), sticky header, scroll verticale 60vh. Wiratura in App.tsx + Sidebar.tsx + Icon.tsx
+- **T015** Confermato già wired: `startBudgetMonitor(3_600_000)` in `backend/src/index.ts` riga 80 — nessuna modifica necessaria
+- **M3** Completata — Dashboard a 6 views live con dati real-time
+
+### 2026-03-17 — Sessione 4: /approve /reject + PM SaaS Agent loop ✅
+
+- **T011** `/approve <task_id>` e `/reject <task_id> [reason]` in `telegram.ts` — aggiornano status Supabase, loggano `human_approved`/`human_rejected`, rispondono a Neb. Aggiunta `getTaskById` in `supabase.ts`
+- **T012** `backend/src/agents/pm_saas.ts` — `runPmSaasAgent(task, notify)`: chiama GPT-5.4, produce 3-6 user stories strutturate in JSON (titolo, descrizione, acceptance criteria, priority, story points), crea un sub-subtask per ciascuna (assignee: dev_lead_saas), logga evento `task_completed`, notifica Neb via Telegram
+- **WIRE** `ceo.ts`: dopo delega a `pm_saas`, invoca `runPmSaasAgent` in fire-and-forget con stesso pattern callback (no circular dep)
+- **ARCH** Chain ora completa: Neb `/task` → CEO Agent → PM SaaS Agent → user stories in Supabase → notifica Neb
 
 ### 2026-03-17 — Sessione 3: Dashboard refactor + M3 avviata ✅
 

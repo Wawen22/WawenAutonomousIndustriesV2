@@ -6,6 +6,7 @@
 import { runAgent } from '../services/llm.js'
 import { createTask, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
+import { runPmSaasAgent } from './pm_saas.js'
 import type { Task, TaskType, TaskPriority } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -192,6 +193,13 @@ Analyze and delegate to the most appropriate agent.`
         `💭 ${delegation.reasoning}\n` +
         `🆔 Subtask: \`${subtask.id}\``
     )
+
+    // Invoke downstream agents asynchronously (fire-and-forget)
+    if (delegation.delegateTo === 'pm_saas') {
+      void runPmSaasAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'PM SaaS Agent failed')
+      })
+    }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)
 

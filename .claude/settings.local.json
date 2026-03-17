@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(docker version:*)"
     ]
+  },
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "sbp_ead2999ed254f308fa5e626bf6aee08f1337945f"
+      ]
+    }
   }
 }

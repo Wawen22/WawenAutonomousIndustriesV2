@@ -11,8 +11,10 @@ import {
   getMonthlyCost,
   getProjectState,
   getRecentEvents,
+  getTaskById,
   getTasksByStatus,
   updateAgentModel,
+  updateTaskStatus,
 } from './supabase.js'
 import { setModelOverride } from '../config/models.js'
 import { runCeoAgent } from '../agents/ceo.js'
@@ -104,9 +106,8 @@ function registerHandlers(bot: Bot): void {
 
       const task = await createTask(taskInput)
       await recordEvent('task_created', {
-        agentId: 'founder',
         taskId: task.id,
-        payload: { title: task.title, source: 'telegram' },
+        payload: { title: task.title, source: 'telegram', issued_by: 'founder' },
       })
 
       await ctx.reply(`✅ Task created:\nID: \`${task.id}\`\nTitle: ${task.title}\nAssigned to: CEO Agent`, {
@@ -224,6 +225,79 @@ function registerHandlers(bot: Bot): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       await ctx.reply(`❌ Failed: ${message}`)
+    }
+  })
+
+  // /approve <task_id>
+  bot.command('approve', async (ctx) => {
+    if (!requireFounder(ctx)) return
+
+    const text = ctx.message?.text ?? ''
+    const parts = text.split(' ').filter(Boolean)
+    const taskId = parts[1]
+
+    if (!taskId) {
+      await ctx.reply('Usage: /approve <task\\_id>', { parse_mode: 'Markdown' })
+      return
+    }
+
+    try {
+      const task = await getTaskById(taskId)
+      if (!task) {
+        await ctx.reply(`❌ Task \`${taskId}\` not found.`, { parse_mode: 'Markdown' })
+        return
+      }
+
+      await updateTaskStatus(taskId, 'done')
+      await recordEvent('human_approved', {
+        taskId,
+        payload: { title: task.title, approved_by: 'founder' },
+      })
+
+      await ctx.reply(
+        `✅ *Task Approved*\n\nID: \`${taskId}\`\nTitle: ${task.title}\nStatus: done`,
+        { parse_mode: 'Markdown' }
+      )
+    } catch (err) {
+      log.error({ err, taskId }, 'Failed to approve task')
+      await ctx.reply('❌ Failed to approve task. Check logs.')
+    }
+  })
+
+  // /reject <task_id> [reason]
+  bot.command('reject', async (ctx) => {
+    if (!requireFounder(ctx)) return
+
+    const text = ctx.message?.text ?? ''
+    const parts = text.replace('/reject', '').trim().split(' ')
+    const taskId = parts[0]
+    const reason = parts.slice(1).join(' ').trim() || 'No reason provided'
+
+    if (!taskId) {
+      await ctx.reply('Usage: /reject <task\\_id> [reason]', { parse_mode: 'Markdown' })
+      return
+    }
+
+    try {
+      const task = await getTaskById(taskId)
+      if (!task) {
+        await ctx.reply(`❌ Task \`${taskId}\` not found.`, { parse_mode: 'Markdown' })
+        return
+      }
+
+      await updateTaskStatus(taskId, 'cancelled')
+      await recordEvent('human_rejected', {
+        taskId,
+        payload: { title: task.title, rejected_by: 'founder', reason },
+      })
+
+      await ctx.reply(
+        `🚫 *Task Rejected*\n\nID: \`${taskId}\`\nTitle: ${task.title}\nReason: ${reason}`,
+        { parse_mode: 'Markdown' }
+      )
+    } catch (err) {
+      log.error({ err, taskId }, 'Failed to reject task')
+      await ctx.reply('❌ Failed to reject task. Check logs.')
     }
   })
 

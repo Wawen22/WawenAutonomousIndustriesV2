@@ -128,6 +128,18 @@ export async function updateTaskStatus(id: string, status: TaskStatus): Promise<
   if (error) throw new Error(`Failed to update task status: ${error.message}`)
 }
 
+export async function getTaskById(id: string): Promise<Task | null> {
+  const { data, error } = await getSupabaseClient()
+    .from('tasks')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (error?.code === 'PGRST116') return null
+  if (error) throw new Error(`Failed to get task ${id}: ${error.message}`)
+  return data as Task
+}
+
 export async function getTasksByStatus(status: TaskStatus): Promise<Task[]> {
   const { data, error } = await getSupabaseClient()
     .from('tasks')

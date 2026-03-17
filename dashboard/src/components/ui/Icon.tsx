@@ -1,7 +1,7 @@
 import { clsx } from 'clsx'
 
 export type IconName =
-  | 'overview' | 'agents' | 'tasks' | 'activity' | 'costs'
+  | 'overview' | 'agents' | 'tasks' | 'activity' | 'costs' | 'runs'
   | 'chevron-left' | 'chevron-right'
   | 'check' | 'x' | 'clock' | 'zap' | 'arrow-right' | 'info' | 'alert'
   | 'cpu' | 'dollar' | 'trending-up' | 'refresh'
@@ -153,6 +153,14 @@ export function Icon({ name, size = 16, className }: IconProps) {
           <path d="M23 4v6h-6" />
           <path d="M1 20v-6h6" />
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+        </svg>
+      )
+    case 'runs':
+      return (
+        <svg {...p}>
+          <path d="M3 6h18M3 12h18M3 18h11" />
+          <circle cx="19" cy="18" r="2" />
+          <path d="M19 14v2" />
         </svg>
       )
     default:

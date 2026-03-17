@@ -6,6 +6,7 @@ import { AgentList } from './components/AgentList.js'
 import { TaskBoard } from './components/TaskBoard.js'
 import { EventTimeline } from './components/EventTimeline.js'
 import { CostPanel } from './components/CostPanel.js'
+import { RunsView } from './components/RunsView.js'
 
 // ---------------------------------------------------------------------------
 // View metadata
@@ -17,6 +18,7 @@ const VIEW_META: Record<ViewId, { title: string; description: string }> = {
   tasks:    { title: 'Task Board',     description: 'Task pipeline — Kanban view'     },
   activity: { title: 'Activity Log',   description: 'Real-time system event timeline' },
   costs:    { title: 'Costs & Runs',   description: 'Budget, model usage, run history'},
+  runs:     { title: 'Runs',           description: 'All agent runs — filterable by agent, model, outcome' },
 }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +75,7 @@ function ViewContent({ view }: { view: ViewId }) {
     case 'tasks':    return <TaskBoard />
     case 'activity': return <EventTimeline />
     case 'costs':    return <CostPanel />
+    case 'runs':     return <RunsView />
   }
 }
 

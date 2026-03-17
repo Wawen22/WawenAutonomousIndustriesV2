@@ -1,7 +1,7 @@
 import { clsx } from 'clsx'
 import { Icon, type IconName } from './ui/Icon.js'
 
-export type ViewId = 'overview' | 'agents' | 'tasks' | 'activity' | 'costs'
+export type ViewId = 'overview' | 'agents' | 'tasks' | 'activity' | 'costs' | 'runs'
 
 interface NavItem {
   id: ViewId
@@ -15,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'tasks',     label: 'Tasks',     icon: 'tasks'     },
   { id: 'activity',  label: 'Activity',  icon: 'activity'  },
   { id: 'costs',     label: 'Costs',     icon: 'costs'     },
+  { id: 'runs',      label: 'Runs',      icon: 'runs'      },
 ]
 
 interface SidebarProps {
