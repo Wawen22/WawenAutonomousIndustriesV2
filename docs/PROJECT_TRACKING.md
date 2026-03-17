@@ -6,10 +6,10 @@
 
 ---
 
-## Current Milestone: M4 – Client & Project Management System
+## Current Milestone: M5 – First Autonomous Deliverable
 
 **Target:** 2026-Q2
-**Status:** 🔄 In Progress
+**Status:** ⬜ Todo
 
 ---
 
@@ -20,7 +20,7 @@
 | M1 | Local development stack running | 2026-Q1 | ✅ Done |
 | M2 | CEO Agent esegue primo task autonomo | 2026-Q1 | ✅ Done |
 | M3 | WAI Dashboard live con dati real-time | 2026-Q1 | ✅ Done |
-| M4 | Client & Project Management System | 2026-Q2 | 🔄 In Progress |
+| M4 | Client & Project Management System | 2026-Q2 | ✅ Done |
 | M5 | First autonomous deliverable for a real client | 2026-Q2 | ⬜ Todo |
 | M6 | Deploy to Hetzner VPS | 2026-Q2 | ⬜ Todo |
 | M7 | First revenue-generating output | 2026-Q3 | ⬜ Todo |
