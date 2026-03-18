@@ -9,18 +9,43 @@ interface NavItem {
   icon: IconName
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { id: 'overview',  label: 'Overview',  icon: 'overview'  },
-  { id: 'team',      label: 'Team',      icon: 'team'      },
-  { id: 'office',    label: 'Office',    icon: 'office'    },
-  { id: 'tasks',     label: 'Tasks',     icon: 'tasks'     },
-  { id: 'clients',   label: 'Clients',   icon: 'clients'   },
-  { id: 'projects',  label: 'Projects',  icon: 'projects'  },
-  { id: 'revenue',   label: 'Revenue',   icon: 'revenue'   },
-  { id: 'memory',    label: 'Memory',    icon: 'memory'    },
-  { id: 'activity',  label: 'Activity',  icon: 'activity'  },
-  { id: 'costs',     label: 'Costs',     icon: 'costs'     },
-  { id: 'runs',      label: 'Runs',      icon: 'runs'      },
+interface NavSection {
+  title: string
+  items: NavItem[]
+}
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    title: 'Main',
+    items: [
+      { id: 'overview',  label: 'Overview',  icon: 'overview'  },
+      { id: 'office',    label: 'Office',    icon: 'office'    },
+    ]
+  },
+  {
+    title: 'Business',
+    items: [
+      { id: 'clients',   label: 'Clients',   icon: 'clients'   },
+      { id: 'projects',  label: 'Projects',  icon: 'projects'  },
+      { id: 'revenue',   label: 'Revenue',   icon: 'revenue'   },
+      { id: 'costs',     label: 'Costs',     icon: 'costs'     },
+    ]
+  },
+  {
+    title: 'Operations',
+    items: [
+      { id: 'tasks',     label: 'Tasks',     icon: 'tasks'     },
+      { id: 'team',      label: 'Team',      icon: 'team'      },
+      { id: 'runs',      label: 'Runs',      icon: 'runs'      },
+      { id: 'activity',  label: 'Activity',  icon: 'activity'  },
+    ]
+  },
+  {
+    title: 'Intelligence',
+    items: [
+      { id: 'memory',    label: 'Memory',    icon: 'memory'    },
+    ]
+  }
 ]
 
 interface SidebarProps {
@@ -88,38 +113,43 @@ export function Sidebar({ current, onNavigate, collapsed, onToggle }: SidebarPro
       <div className="h-px bg-white/[0.06] mx-3" />
 
       {/* Navigation */}
-      <nav className="flex-1 px-2 pt-3 pb-2 space-y-0.5 overflow-y-auto">
-        {NAV_ITEMS.map((item) => {
-          const active = current === item.id
-          return (
-            <button
-              key={item.id}
-              onClick={() => onNavigate(item.id)}
-              title={collapsed ? item.label : undefined}
-              className={clsx(
-                'w-full flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-all duration-150',
-                collapsed && 'justify-center px-0 py-2.5',
-                active
-                  ? 'bg-[#00D4FF]/[0.08] text-[#00D4FF]'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-              )}
-            >
-              {/* Active left accent bar */}
-              {!collapsed && (
-                <span
+      <nav className="flex-1 px-2 pt-3 pb-2 space-y-4 overflow-y-auto custom-scrollbar">
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.title} className="space-y-0.5">
+            {!collapsed && (
+              <h3 className="px-3 mb-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">
+                {section.title}
+              </h3>
+            )}
+            {section.items.map((item) => {
+              const active = current === item.id
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => onNavigate(item.id)}
+                  title={collapsed ? item.label : undefined}
                   className={clsx(
-                    'absolute left-0 w-0.5 h-6 rounded-r bg-[#00D4FF] transition-opacity duration-150',
-                    active ? 'opacity-100' : 'opacity-0'
+                    'w-full flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-all duration-150 relative group',
+                    collapsed && 'justify-center px-0 py-2.5',
+                    active
+                      ? 'bg-[#00D4FF]/[0.08] text-[#00D4FF]'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
                   )}
-                />
-              )}
-              <Icon name={item.icon} size={16} />
-              {!collapsed && (
-                <span className="font-medium tracking-wide">{item.label}</span>
-              )}
-            </button>
-          )
-        })}
+                >
+                  {/* Active left accent bar */}
+                  {!collapsed && active && (
+                    <span className="absolute left-0 w-0.5 h-6 rounded-r bg-[#00D4FF]" />
+                  )}
+                  
+                  <Icon name={item.icon} size={16} />
+                  {!collapsed && (
+                    <span className="font-medium tracking-wide">{item.label}</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        ))}
       </nav>
 
       <div className="h-px bg-white/[0.06] mx-3" />
