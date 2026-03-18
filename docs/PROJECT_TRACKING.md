@@ -6,17 +6,15 @@
 
 ---
 
-## Current Milestone: M7 – First revenue-generating output
+## Current Milestone: M9 – Tool Foundation + Personal Assistant Mode
 
 **Target:** 2026-Q2
 **Status:** 🔄 In Progress
 
-> Note: production deployment is intentionally deferred until the final functional development gate.
-> Hetzner/VPS rollout remains a last-step infrastructure milestone, not the current focus.
-> M7 currently has two practical layers:
-> 1. **Revenue-ready validation in dev/test**: the founder flow for invoicing and payments works end-to-end on test clients/projects.
-> 2. **Real business revenue**: the same flow is executed on an actual paying client.
-> `T071` / `T073` refer to layer 2 and are not required to keep shipping development features.
+> WAI è sia un'azienda autonoma (Business OS) che un assistente personale per Neb.
+> La prossima fase porta agli agenti tool reali (web search, email, file export) e
+> abilita CEO Intake a gestire richieste personali oltre che business.
+> M8 (mini PC) e M6 (deploy) rimangono step infrastrutturali finali, non prerequisiti.
 
 ---
 
@@ -30,8 +28,11 @@
 | M4 | Client & Project Management System | 2026-Q2 | ✅ Done |
 | M5 | First autonomous deliverable for a real client | 2026-Q2 | ✅ Done |
 | M6 | Deploy to Hetzner VPS | 2026-Q2 | ⏸ Deferred (final infrastructure step) |
-| M7 | First revenue-generating output | 2026-Q3 | ✅ Done |
-| M8 | Migrate to personal mini PC | 2026-Q3 | ⬜ Todo |
+| M7 | First revenue-generating output | 2026-Q3 | ✅ Done — Wawen22 LandingPage $222 |
+| M8 | Migrate to personal mini PC | 2026-Q3 | ⬜ Todo (infra — after M9) |
+| M9 | Tool Foundation + Personal Assistant Mode | 2026-Q2 | 🔄 In Progress |
+| M10 | MCP Integration (Gmail, Calendar, Search) | 2026-Q2 | ⬜ Todo |
+| M11 | Multi-channel (WhatsApp/Slack) | 2026-Q3 | ⬜ Todo |
 
 ---
 
@@ -119,6 +120,43 @@
 
 ---
 
+## M9 — Tool Foundation + Personal Assistant (In Progress)
+
+### Fase 1 — Tool Foundation
+
+| ID | Title | Status | Owner | Priority | Notes |
+|----|-------|--------|-------|----------|-------|
+| T080 | Tool Registry per agente | ⬜ Todo | Claude | 1 | `backend/src/services/tool-executor.ts` — ogni agente dichiara tool in `agents.ts`; ToolExecutor li esegue e logga su `runs` |
+| T081 | Web Search tool | ⬜ Todo | Claude | 1 | Brave Search API (free tier) o Serper — `searchWeb()` disponibile ad Analyst, CEO, Consulting Lead |
+| T082 | Send Email tool | ⬜ Todo | Claude | 1 | Wrapper SendGrid già configurato — `sendEmail({to, subject, body})` disponibile a tutti gli agenti |
+| T083 | File Export tool | ⬜ Todo | Claude | 2 | Salva Markdown/TXT/CSV in `workspace/output/` + link diretto in notifica Telegram |
+
+### Fase 2 — Skills System
+
+| ID | Title | Status | Owner | Priority | Notes |
+|----|-------|--------|-------|----------|-------|
+| T084 | Skills per agente (SKILL.md pattern) | ⬜ Todo | Claude | 2 | `backend/src/skills/` — file Markdown per skill (research, write_report, send_email, web_search); iniettate nel system prompt prima di ogni LLM call |
+
+### Fase 3 — Personal Assistant Mode
+
+| ID | Title | Status | Owner | Priority | Notes |
+|----|-------|--------|-------|----------|-------|
+| T085 | CEO personal task routing | ⬜ Todo | Claude | 1 | Nuove azioni CEO Intake: `personal_research`, `weekly_digest`, `create_document`, `send_report`; Neb può chiedere "ricerca X e mandamela per mail" |
+
+### Fase 4 — MCP Integration (M10)
+
+| ID | Title | Status | Owner | Priority | Notes |
+|----|-------|--------|-------|----------|-------|
+| T086 | MCP integration layer | ⬜ Todo | Claude | 2 | `backend/src/services/mcp-bridge.ts` — bridge MCP → tool calls agenti; priorità: Gmail, Google Calendar, Brave Search, Filesystem |
+
+### Fase 5 — Multi-channel (M11)
+
+| ID | Title | Status | Owner | Priority | Notes |
+|----|-------|--------|-------|----------|-------|
+| T087 | WhatsApp via Baileys o Slack | ⬜ Todo | Claude | 3 | Canale secondario — solo dopo Fase 3 stabile |
+
+---
+
 ## Backlog
 
 | ID | Title | Owner | Notes |
@@ -132,6 +170,14 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-19 — Sessione 36: Nuova roadmap M9-M11 definita — Tool Foundation + Personal Assistant Mode
+
+- **Analisi OpenClaw**: analizzato il framework `openclaw-main` (20+ file letti) — skills system, tool registry, multi-channel, context management. Decisione: non integrare come dipendenza, estrarre i pattern migliori nativamente in WAI
+- **Visione PA**: WAI = Business OS (delivery chains M1-M7) + Personal Assistant (M9+); CEO Intake come entry point unico
+- **Milestones aggiunti**: M9 (Tool Foundation + PA), M10 (MCP), M11 (Multi-channel)
+- **Tasks aggiunti**: T080–T087 in `PROJECT_TRACKING.md`
+- **Docs aggiornati**: `PROJECT_TRACKING.md`, `docs/TASKS_AND_PROJECT_STATE.md`, memory
 
 ### 2026-03-18 — Sessione 35b: Complete documentation rewrite + final TypeScript fixes ✅
 

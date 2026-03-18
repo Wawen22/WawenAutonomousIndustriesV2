@@ -142,7 +142,10 @@ All four chains send an `/invoice` shortcut notification to Neb at completion.
 | M5 | First autonomous deliverable | ✅ Done |
 | M6 | Deploy to Hetzner VPS | ⏸ Deferred (final infra step) |
 | M7 | First revenue-generating output | ✅ Done — Wawen22 LandingPage $222 |
-| M8 | Migrate to personal mini PC | ⬜ Todo |
+| M8 | Migrate to personal mini PC | ⬜ Todo (infra — after M9) |
+| M9 | Tool Foundation + Personal Assistant Mode | 🔄 In Progress |
+| M10 | MCP Integration (Gmail, Calendar, Search) | ⬜ Todo |
+| M11 | Multi-channel (WhatsApp/Slack) | ⬜ Todo |
 
 ---
 
