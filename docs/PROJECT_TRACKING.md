@@ -99,7 +99,7 @@
 | T062 | HTML preview inline in ProjectsView | ✅ Done | Claude | 3 | `index.ts`: endpoint GET /api/file?path= per servire file testo/HTML; `ProjectsView.tsx`: pulsante Preview per .html → iframe sandboxed collassabile nel pannello Project Files |
 | T063 | Unified file viewer in ProjectsView | ✅ Done | Claude | 2 | Viewer per tutti i tipi: HTML in repo/→iframe con CSS/JS via /api/repo static route; .md→rendered markdown; code→pre/code; click su qualsiasi riga per aprire |
 | T064 | Team Org screen | ✅ Done | Claude | 1 | `TeamOrgView.tsx`: org chart Neb→CEO→teams; avatar generativi; status+model badge; slide-in panel con runs+tasks; `useAgentStats` hook; sidebar entry |
-| T065 | Virtual Office screen | ✅ Done | Claude | 2 | `VirtualOfficeView.tsx`: grid di scrivania per team; monitor animato (typing dots); Neb CEO Corner; easter egg "Office is quiet"; modale click con runs+tasks+events; realtime via hook |
+| T065 | Virtual Office screen | ✅ Done | Claude | 2 | `VirtualOffice3DView.tsx`: ufficio 3D con Three.js/R3F; 17 agent avatar animati; zone (Desk/Meeting/Lounge/Neb Corner); monitor glow; click info panel; idle wandering; working pulse; fog+lighting |
 | T066 | Memory system (backend + UI) | ⬜ Todo | Claude | 3 | Prossima sessione |
 
 ---
@@ -117,6 +117,10 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-18 — Sessione 24k: T065v2 — Virtual Office 3D (Three.js) ✅
+
+- **T065v2** `dashboard/src/components/VirtualOffice3DView.tsx` — ufficio 3D completamente nuovo: Three.js + React Three Fiber v9 + @react-three/drei; layout office 4 zone (Desk Zone, Meeting Zone, Lounge Zone, Neb CEO Corner); 17 agent avatar (sfera+cilindro con glow emissive team-color + halo trasparente + ring base); movimento completamente in `useRef`/`useFrame` senza re-render React; idle wandering con timer random (6-12s) attorno a waypoint base; agent `busy`→desk (monitor acceso + pointLight pulsante); agent `online`→lounge o meeting (1/3 in meeting, 2/3 in lounge, deterministico per agent.id hash); bobiing sinusoidale differenziato (veloce=working, lento=idle); rotazione smooth verso direzione di movimento; nome tag HTML distanziale + badge WORKING; fog volumetrica + grid cyberpunk drei + zone tint planes + separatori neon; click su avatar → info panel DOM con role/stats/tasks/runs/events; OrbitControls con damping; status bar overlay; `@types/three` installato come devDep
 
 ### 2026-03-18 — Sessione 24k: T065 — Virtual Office + rimozione Agents view ✅
 

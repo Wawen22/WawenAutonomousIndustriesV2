@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense, Component } from 'react'
+import type { ReactNode, ErrorInfo } from 'react'
 import { clsx } from 'clsx'
 import { Sidebar, type ViewId } from './components/Sidebar.js'
 import { Overview } from './components/Overview.js'
@@ -10,7 +11,48 @@ import { ClientsView } from './components/ClientsView.js'
 import { ProjectsView } from './components/ProjectsView.js'
 import { RevenueView } from './components/RevenueView.js'
 import { TeamOrgView } from './components/TeamOrgView.js'
-import { VirtualOfficeView } from './components/VirtualOfficeView.js'
+
+const VirtualOffice3DView = lazy(() =>
+  import('./components/VirtualOffice3DView.js').then((m) => ({ default: m.VirtualOffice3DView }))
+)
+
+// ---------------------------------------------------------------------------
+// Error boundary
+// ---------------------------------------------------------------------------
+
+interface EBState { error: Error | null }
+
+class ErrorBoundary extends Component<{ children: ReactNode }, EBState> {
+  state: EBState = { error: null }
+
+  static getDerivedStateFromError(error: Error): EBState {
+    return { error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[WAI ErrorBoundary]', error, info)
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+          <p className="text-rose-400 text-sm font-mono font-bold">Render error</p>
+          <pre className="text-[11px] text-slate-500 font-mono whitespace-pre-wrap max-w-xl text-center">
+            {this.state.error.message}
+          </pre>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="text-[11px] text-[#00D4FF] border border-[#00D4FF]/30 rounded px-3 py-1 hover:bg-[#00D4FF]/10 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // ---------------------------------------------------------------------------
 // View metadata
@@ -93,7 +135,15 @@ function ViewContent({ view }: { view: ViewId }) {
     case 'costs':     return <CostPanel />
     case 'runs':      return <RunsView />
     case 'team':      return <TeamOrgView />
-    case 'office':    return <VirtualOfficeView />
+    case 'office':    return (
+      <Suspense fallback={
+        <div className="flex items-center justify-center h-full min-h-[500px]">
+          <div className="w-6 h-6 border-2 border-[#00D4FF]/30 border-t-[#00D4FF] rounded-full animate-spin" />
+        </div>
+      }>
+        <VirtualOffice3DView />
+      </Suspense>
+    )
     case 'memory':    return <div className="flex items-center justify-center h-40 text-slate-600 text-sm">Memory System — coming soon (T066)</div>
   }
 }
@@ -136,7 +186,9 @@ export function App() {
             backgroundSize: 'auto, 28px 28px',
           }}
         >
-          <ViewContent view={view} />
+          <ErrorBoundary key={view}>
+            <ViewContent view={view} />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

@@ -10,6 +10,11 @@ import type { Agent, AgentRun, AgentRunWithContext, Client, Project, ProjectStat
 // Generic realtime hook
 // ---------------------------------------------------------------------------
 
+// Unique counter so multiple hook instances on the same table never share
+// the same Supabase channel (sharing causes removeChannel to silently kill
+// a sibling subscription that is still alive).
+let _channelSeq = 0
+
 function useRealtimeTable<T extends object>(
   table: string,
   fetchFn: () => Promise<T[]>
@@ -17,6 +22,8 @@ function useRealtimeTable<T extends object>(
   const [data, setData] = useState<T[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Stable channel id for the lifetime of this hook instance
+  const channelId = useState(() => `rt-${table}-${++_channelSeq}`)[0]
 
   const fetch = useCallback(async () => {
     try {
@@ -35,7 +42,7 @@ function useRealtimeTable<T extends object>(
     void fetch()
 
     const channel = supabase
-      .channel(`realtime-${table}`)
+      .channel(channelId)
       .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
         void fetch()
       })
@@ -44,7 +51,7 @@ function useRealtimeTable<T extends object>(
     return () => {
       void supabase.removeChannel(channel)
     }
-  }, [table, fetch])
+  }, [table, fetch, channelId])
 
   return { data, loading, error }
 }
