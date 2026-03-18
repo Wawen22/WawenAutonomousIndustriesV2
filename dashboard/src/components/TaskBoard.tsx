@@ -1,20 +1,16 @@
 // ============================================================
 // WAI Dashboard – Tactical Ops Task Board (T069)
-// High-depth Kanban with Agent Presence, Live Logs and Intelligence Pagination
+// High-depth Kanban with Independent Column Scrolling
 // ============================================================
 
 import { useState, useMemo } from 'react'
 import { clsx } from 'clsx'
-import { format, formatDistanceToNow } from 'date-fns'
-import { Panel } from './ui/Panel.js'
-import { Badge } from './ui/Badge.js'
-import { 
-  useTasks, 
-  useClients, 
-  useProjects, 
-  useAgents, 
-  useAgentStats, 
-  useEventsWithContext 
+import { format } from 'date-fns'
+import {
+  useTasks,
+  useAgents,
+  useAgentStats,
+  useEventsWithContext
 } from '../hooks/useSupabaseRealtime.js'
 import { getClientColor } from '../lib/clientColors.js'
 import { getAgentColor } from '../lib/agentColors.js'
@@ -31,10 +27,10 @@ const INITIAL_VISIBLE = 6
 const INCREMENT = 8
 
 const COLUMNS: Array<{ status: TaskStatus; label: string; accent: string; description: string }> = [
-  { status: 'todo',        label: 'Backlog',     accent: 'text-slate-500',   description: 'Queued operations waiting for resource allocation.' },
-  { status: 'in_progress', label: 'Active Ops',  accent: 'text-[#00D4FF]',   description: 'Live threads currently being processed by neural nodes.' },
-  { status: 'blocked',     label: 'Impediments', accent: 'text-rose-500',    description: 'Critical blocks requiring founder intervention or retry.' },
-  { status: 'done',        label: 'Success',     accent: 'text-emerald-500', description: 'Verified operational outputs and completed objectives.' },
+  { status: 'todo',        label: 'Backlog',     accent: 'text-slate-500',   description: 'Queued operations waiting for allocation.' },
+  { status: 'in_progress', label: 'Active Ops',  accent: 'text-[#00D4FF]',   description: 'Live threads processed by neural nodes.' },
+  { status: 'blocked',     label: 'Impediments', accent: 'text-rose-500',    description: 'Critical blocks requiring intervention.' },
+  { status: 'done',        label: 'Success',     accent: 'text-emerald-500', description: 'Verified operational outputs completed.' },
 ]
 
 const PRIORITY_STYLE: Record<number, string> = {
@@ -55,7 +51,7 @@ function getMeta(task: Task, key: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// TaskCard (Tactical Version)
+// TaskCard
 // ---------------------------------------------------------------------------
 
 function TaskCard({ 
@@ -86,15 +82,7 @@ function TaskCard({
         PRIORITY_STYLE[task.priority] || 'border-white/5'
       )}
     >
-      {/* Priority Glow */}
-      {isImportant && (
-        <div className={clsx(
-          "absolute -top-1 -left-1 w-2 h-2 rounded-full z-20",
-          task.priority === 1 ? "bg-rose-500 shadow-[0_0_8px_#f43f5e]" : "bg-orange-500 shadow-[0_0_8px_#f97316]"
-        )} />
-      )}
-
-      <div className="flex items-start justify-between gap-3 mb-3">
+    <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex-1 min-w-0">
           {clientName && clientColor && (
             <span className={clsx('text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-[0.2em] border mb-2 inline-block', clientColor.bg, clientColor.text, clientColor.border)}>
@@ -102,14 +90,13 @@ function TaskCard({
             </span>
           )}
           <h4 className={clsx(
-            "text-[13px] font-bold leading-snug transition-colors",
+            "text-[13px] font-bold leading-snug transition-colors truncate",
             isImportant ? "text-white" : "text-slate-300 group-hover:text-white"
           )}>
             {task.title}
           </h4>
         </div>
 
-        {/* Agent Presence Avatar */}
         {agent && agentColor && (
           <div className="group/avatar relative shrink-0">
             <button
@@ -121,9 +108,7 @@ function TaskCard({
               )}
             >
               {agent.name.split(' ').map(n => n[0]).join('')}
-              {isBusy && (
-                <div className="absolute inset-0 bg-amber-400/5 animate-pulse" />
-              )}
+              {isBusy && <div className="absolute inset-0 bg-amber-400/5 animate-pulse" />}
             </button>
             <div className="absolute bottom-full right-0 mb-2 whitespace-nowrap px-2 py-1 rounded bg-[#0A1628] border border-white/10 text-[9px] font-black text-white uppercase tracking-widest opacity-0 invisible group-hover/avatar:opacity-100 group-hover/avatar:visible transition-all z-[60] pointer-events-none shadow-2xl">
               {agent.name}
@@ -136,21 +121,19 @@ function TaskCard({
         )}
       </div>
 
-      {/* Live Node Log */}
       {task.status === 'in_progress' && lastRun && (
         <div className="mb-3 px-2 py-1.5 rounded bg-black/40 border border-white/5 font-mono text-[9px] text-emerald-400/80 overflow-hidden italic">
           <span className="text-slate-600 mr-1.5">[{new Date(lastRun.created_at).toLocaleTimeString('it-IT', { hour12: false })}]</span>
-          {lastRun.output_summary ? lastRun.output_summary.slice(0, 60) + '...' : 'Processing stream...'}
+          {lastRun.output_summary ? lastRun.output_summary.slice(0, 50) + '...' : 'Processing...'}
         </div>
       )}
 
-      {/* Footer Info */}
       <div className="flex flex-col gap-2 pt-3 border-t border-white/5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-[9px] font-mono text-slate-600 uppercase tracking-widest">{task.type}</span>
             <span className="w-1 h-1 rounded-full bg-slate-800" />
-            <span className="text-[9px] font-mono text-slate-500 font-bold uppercase tracking-tighter italic">
+            <span className="text-[9px] font-mono text-slate-500 font-bold uppercase tracking-tighter">
               {format(new Date(task.created_at), 'dd MMM HH:mm')}
             </span>
           </div>
@@ -161,7 +144,6 @@ function TaskCard({
             P{task.priority}
           </div>
         </div>
-        
         {agent && (
           <div className="flex items-center gap-1.5">
             <div className="w-1 h-3 rounded-full bg-[#00D4FF]/20" />
@@ -179,7 +161,7 @@ function TaskCard({
 // Column Header Component
 // ---------------------------------------------------------------------------
 
-function ColumnHeader({ config, count, total }: { config: typeof COLUMNS[0]; count: number; total: number }) {
+function ColumnHeader({ config, count }: { config: typeof COLUMNS[0]; count: number }) {
   const threatLevel = config.status === 'blocked' && count > 0 
     ? 'text-rose-500 animate-pulse' 
     : config.status === 'in_progress' && count > 0 
@@ -187,7 +169,7 @@ function ColumnHeader({ config, count, total }: { config: typeof COLUMNS[0]; cou
       : 'text-slate-500'
 
   return (
-    <div className="flex flex-col gap-1 group/col">
+    <div className="flex flex-col gap-1 shrink-0 bg-[#05080F]/80 backdrop-blur-md pb-2 z-10">
       <div className={clsx("flex items-center justify-between pb-3 border-b-2 transition-colors", config.accent.replace('text-', 'border-'))}>
         <div className="flex items-center gap-3">
           <h3 className={clsx("text-[11px] font-black uppercase tracking-[0.3em]", config.accent)}>{config.label}</h3>
@@ -195,9 +177,9 @@ function ColumnHeader({ config, count, total }: { config: typeof COLUMNS[0]; cou
             {count}
           </div>
         </div>
-        <Icon name="overview" size={12} className="text-slate-800 group-hover/col:text-slate-600 transition-colors" />
+        <Icon name="overview" size={12} className="text-slate-800" />
       </div>
-      <p className="text-[9px] text-slate-600 font-medium uppercase tracking-wider mt-1 px-1">{config.description}</p>
+      <p className="text-[9px] text-slate-600 font-medium uppercase tracking-wider mt-1 px-1 line-clamp-1">{config.description}</p>
     </div>
   )
 }
@@ -209,20 +191,14 @@ function ColumnHeader({ config, count, total }: { config: typeof COLUMNS[0]; cou
 export function TaskBoard() {
   const { data: tasks, loading, error } = useTasks()
   const { data: agents } = useAgents()
-  const { data: clients } = useClients()
-  const { data: projects } = useProjects()
   const { runCounts, lastRuns } = useAgentStats()
   const { data: events } = useEventsWithContext(50)
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
   
-  // Track visible count per status
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({
-    todo: INITIAL_VISIBLE,
-    in_progress: INITIAL_VISIBLE,
-    blocked: INITIAL_VISIBLE,
-    done: INITIAL_VISIBLE,
+    todo: INITIAL_VISIBLE, in_progress: INITIAL_VISIBLE, blocked: INITIAL_VISIBLE, done: INITIAL_VISIBLE,
   })
 
   const grouped = useMemo(() => {
@@ -233,19 +209,12 @@ export function TaskBoard() {
       },
       { todo: [], in_progress: [], done: [], blocked: [], cancelled: [] }
     )
-    Object.keys(map).forEach((k) => {
-      map[k as TaskStatus].sort((a, b) => a.priority - b.priority)
-    })
+    Object.keys(map).forEach((k) => map[k as TaskStatus].sort((a, b) => a.priority - b.priority))
     return map
   }, [tasks])
 
-  const loadMore = (status: TaskStatus) => {
-    setVisibleCounts(prev => ({ ...prev, [status]: prev[status] + INCREMENT }))
-  }
-
-  const resetCount = (status: TaskStatus) => {
-    setVisibleCounts(prev => ({ ...prev, [status]: INITIAL_VISIBLE }))
-  }
+  const loadMore = (status: TaskStatus) => setVisibleCounts(prev => ({ ...prev, [status]: prev[status] + INCREMENT }))
+  const resetCount = (status: TaskStatus) => setVisibleCounts(prev => ({ ...prev, [status]: INITIAL_VISIBLE }))
 
   if (loading) {
     return (
@@ -255,44 +224,42 @@ export function TaskBoard() {
     )
   }
 
-  if (error) return <div className="p-8 text-rose-400 font-bold uppercase tracking-widest text-xs">Critical Sync Failure: {error}</div>
+  if (error) return <div className="p-8 text-rose-400 font-bold uppercase tracking-widest text-xs">Sync Failure: {error}</div>
 
   return (
-    <div className="animate-fade-in space-y-10">
-      {/* Board Summary HUD */}
-      <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-8">
-        <div className="flex items-center gap-12 overflow-x-auto pb-2 md:pb-0 w-full md:w-auto">
+    <div className="h-[calc(100vh-110px)] flex flex-col space-y-6 animate-fade-in overflow-hidden">
+      
+      {/* Board Summary HUD (Fixed at top) */}
+      <div className="shrink-0 bg-white/[0.02] border border-white/5 rounded-2xl p-5 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="flex items-center gap-10 overflow-x-auto no-scrollbar">
           {COLUMNS.map(col => {
             const count = grouped[col.status].length
             return (
               <div key={col.status} className="flex flex-col shrink-0">
                 <div className="flex items-center gap-2">
-                  <span className={clsx("text-2xl font-black font-mono tracking-tighter", col.accent)}>{count}</span>
-                  {col.status === 'blocked' && count > 0 && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />}
+                  <span className={clsx("text-xl font-black font-mono tracking-tighter", col.accent)}>{count}</span>
+                  {col.status === 'blocked' && count > 0 && <span className="w-1 h-1 rounded-full bg-rose-500 animate-ping" />}
                 </div>
                 <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em]">{col.label}</span>
               </div>
             )
           })}
         </div>
-        
-        <div className="flex items-center gap-6 shrink-0">
+        <div className="flex items-center gap-6">
           <div className="text-right">
-            <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Global Load</p>
-            <p className="text-sm font-mono font-bold text-sky-400">{tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled').length} ACTIVE THREADS</p>
+            <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Grid Load</p>
+            <p className="text-xs font-mono font-bold text-sky-400 uppercase tracking-tight">{tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled').length} Active Processes</p>
           </div>
-          <div className="w-px h-8 bg-white/10" />
-          <div className="px-4 py-2 rounded-xl bg-black/40 border border-white/5 flex items-center gap-3">
-             <div className="flex gap-1">
-                {[1,2,3].map(i => <div key={i} className="w-1 h-3 bg-[#00D4FF]/40 rounded-full animate-pulse" style={{ animationDelay: `${i*200}ms` }} />)}
-             </div>
-             <span className="text-[10px] font-black text-[#00D4FF] uppercase tracking-widest italic">Sync Active</span>
+          <div className="w-px h-6 bg-white/10 hidden sm:block" />
+          <div className="hidden sm:flex px-3 py-1.5 rounded-lg bg-black/40 border border-white/5 items-center gap-2">
+             <span className="w-1 h-1 rounded-full bg-[#00D4FF] animate-pulse" />
+             <span className="text-[9px] font-black text-[#00D4FF] uppercase tracking-widest">Realtime Sync</span>
           </div>
         </div>
       </div>
 
-      {/* Kanban Matrix */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 items-start">
+      {/* Kanban Matrix (Scrollable columns) */}
+      <div className="flex-1 flex gap-6 overflow-x-auto pb-4 no-scrollbar">
         {COLUMNS.map(col => {
           const colTasks = grouped[col.status]
           const currentVisible = visibleCounts[col.status] || INITIAL_VISIBLE
@@ -300,88 +267,69 @@ export function TaskBoard() {
           const hasMore = colTasks.length > currentVisible
 
           return (
-            <div key={col.status} className="flex flex-col gap-6 group/column">
-              <ColumnHeader config={col} count={colTasks.length} total={tasks.length} />
+            <div key={col.status} className="flex-1 min-w-[300px] flex flex-col h-full bg-white/[0.01] rounded-2xl border border-white/[0.03] p-4 group/column">
+              <ColumnHeader config={col} count={colTasks.length} />
               
-              <div className="flex flex-col gap-4 min-h-[400px]">
+              {/* Individual Column Scroll Area */}
+              <div className="flex-1 overflow-y-auto mt-4 pr-1 space-y-3 custom-scrollbar scroll-smooth">
                 {visibleTasks.map(task => {
                   const assignee = agents.find(a => a.id === task.assignee_agent_id)
                   const run = task.assignee_agent_id ? lastRuns[task.assignee_agent_id]?.[0] : undefined
                   return (
                     <TaskCard 
-                      key={task.id} 
-                      task={task} 
-                      agent={assignee}
-                      lastRun={run}
-                      onSelect={setSelectedTask}
-                      onAgentClick={setSelectedAgent}
+                      key={task.id} task={task} agent={assignee} lastRun={run}
+                      onSelect={setSelectedTask} onAgentClick={setSelectedAgent}
                     />
                   )
                 })}
 
                 {colTasks.length === 0 && (
-                  <div className="py-16 border border-dashed border-white/5 rounded-2xl flex flex-col items-center justify-center gap-3 opacity-40">
-                    <Icon name="tasks" size={20} className="text-slate-800" />
-                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-[0.25em] italic">No Operational Data</span>
+                  <div className="py-12 border border-dashed border-white/5 rounded-xl flex flex-col items-center justify-center gap-3 opacity-30">
+                    <Icon name="tasks" size={16} className="text-slate-800" />
+                    <span className="text-[9px] font-black text-slate-700 uppercase tracking-widest">No Intel</span>
                   </div>
                 )}
 
-                <div className="space-y-2 mt-2">
+                {/* Inline Loading / Reset */}
+                <div className="pt-2 space-y-2 shrink-0">
                   {hasMore && (
                     <button
                       onClick={() => loadMore(col.status)}
-                      className={clsx(
-                        "w-full py-3 rounded-xl border border-white/5 bg-white/[0.02] text-[10px] font-black uppercase tracking-[0.2em] transition-all",
-                        "hover:bg-white/[0.05] hover:border-white/10 hover:text-white group/more"
-                      )}
+                      className="w-full py-2.5 rounded-lg border border-white/5 bg-white/[0.02] text-[9px] font-black uppercase tracking-[0.2em] hover:bg-[#00D4FF]/5 hover:text-[#00D4FF] transition-all group/more"
                     >
-                      <span className="flex items-center justify-center gap-2">
-                        Access Intel Cluster (+{Math.min(INCREMENT, colTasks.length - currentVisible)}) 
-                        <span className="text-lg group-hover/more:translate-y-0.5 transition-transform">↓</span>
-                      </span>
+                      Sync Cluster (+{Math.min(INCREMENT, colTasks.length - currentVisible)}) ↓
                     </button>
                   )}
-
                   {currentVisible > INITIAL_VISIBLE && (
-                    <button
-                      onClick={() => resetCount(col.status)}
-                      className="w-full py-2 text-[9px] font-black text-slate-600 uppercase tracking-widest hover:text-slate-400 transition-colors"
-                    >
-                      Reset Grid Sync ↑
+                    <button onClick={() => resetCount(col.status)} className="w-full py-1 text-[8px] font-black text-slate-700 uppercase tracking-widest hover:text-slate-400">
+                      Reset Sync ↑
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* Column Footer Summary */}
-              <div className="mt-2 flex items-center justify-between px-2 opacity-0 group-hover/column:opacity-100 transition-opacity">
-                 <span className="text-[8px] font-mono text-slate-700 uppercase">Sector: {col.status}</span>
-                 <div className="h-px flex-1 mx-4 bg-white/5" />
-                 <span className="text-[8px] font-mono text-slate-700 uppercase">Load: {Math.round((colTasks.length / (tasks.length || 1)) * 100)}%</span>
+              {/* Stats Footer (Optional summary) */}
+              <div className="pt-3 flex items-center justify-between border-t border-white/[0.03] mt-2 opacity-40">
+                 <span className="text-[8px] font-mono text-slate-600 uppercase">Load: {Math.round((colTasks.length / (tasks.length || 1)) * 100)}%</span>
+                 <span className="text-[8px] font-mono text-slate-600 uppercase">Sector: {col.status}</span>
               </div>
             </div>
           )
         })}
       </div>
 
-      {/* Sidebars */}
+      {/* Overlays */}
       {selectedTask && (
         <DetailSidebar
-          title="Operation Intel"
-          subtitle={`Task Priority P${selectedTask.priority} • ${selectedTask.status}`}
-          data={selectedTask}
-          onClose={() => setSelectedTask(null)}
+          title="Operation Intel" subtitle={`P${selectedTask.priority} • ${selectedTask.status}`}
+          data={selectedTask} onClose={() => setSelectedTask(null)}
         />
       )}
-
       {selectedAgent && (
         <AgentDetailSidebar
-          agent={selectedAgent}
-          lastRuns={lastRuns[selectedAgent.id] ?? []}
-          runCount={runCounts[selectedAgent.id] ?? 0}
-          activeTasks={tasks.filter(t => t.status === 'in_progress')}
-          recentEvents={events || []}
-          onClose={() => setSelectedAgent(null)}
+          agent={selectedAgent} lastRuns={lastRuns[selectedAgent.id] ?? []}
+          runCount={runCounts[selectedAgent.id] ?? 0} activeTasks={tasks.filter(t => t.status === 'in_progress')}
+          recentEvents={events || []} onClose={() => setSelectedAgent(null)}
         />
       )}
     </div>

@@ -133,6 +133,17 @@
 
 ## CHANGELOG
 
+### 2026-03-18 — Sessione 35: LandingPage delivered+invoiced + M7 validato + dashboard bugfix ✅
+
+- **P1 LandingPage APPROVED**: QA blocking issues analizzati come falsi positivi — "repo clean" = tutti i cambiamenti già committati (15 commit), scope mismatch non esiste (brief chiedeva ENTRAMBE testimonials + Perché sceglierci), deliverable completo (382 righe HTML, dark/light mode, testimonials, pricing, sezione why-us). Founder ha approvato il QA.
+- **QA task** `b9b121ea`: `requires_human_review → false`, evento `human_approved` registrato
+- **Progetto LandingPage** (Wawen22): `blocked → delivered → invoiced`, `contract_value_usd = $222`, evento `revenue_recorded` inserito
+- **M7 validato**: LandingPage è il primo deliverable custom software portato a `invoiced` con revenue reale ($222). Revenue loop completo funzionante.
+- **Task sintetici cleanup**: 2 task stuck in `todo` (NL verify session 31: `1b15df3d`, `4e24042a`) cancellati
+- **BUGFIX** `dashboard/src/components/TaskBoard.tsx`: rimossi import unused (`formatDistanceToNow`, `Panel`, `Badge`, `useClients`, `useProjects`), rimossi `clients`/`projects` unused, aggiunto `<div` mancante nel `return` di `TaskCard` (bug di sintassi JSX che rompeva il typecheck)
+- **BUGFIX** `dashboard/src/components/Overview.tsx`: rimossi import unused (`Stat`, `useRecentRuns`, tipo `Task`), fix `e.payload['message']` wrappato in `String()` per ReactNode
+- **VERIFY** `pnpm typecheck` verde su backend e dashboard
+
 ### 2026-03-18 — Sessione 34b: LandingPage retry verificato end-to-end ✅
 
 - **LandingPage** task `dev_general_2` (`0b019a0a`) ritentato con successo: completato (`done`), QA (`b9b121ea`) attivato automaticamente dal fix P1

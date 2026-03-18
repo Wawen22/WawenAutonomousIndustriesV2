@@ -179,7 +179,7 @@ export function App() {
         <main
           className={clsx(
             'flex-1 overflow-y-auto bg-grid',
-            'p-5 xl:p-6'
+            'p-4 xl:p-5'
           )}
           // Subtle radial gradient overlay for depth
           style={{

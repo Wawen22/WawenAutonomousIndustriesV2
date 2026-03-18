@@ -6,7 +6,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
-import { Stat } from './ui/Stat.js'
 import { Badge } from './ui/Badge.js'
 import { Panel } from './ui/Panel.js'
 import { Icon } from './ui/Icon.js'
@@ -15,12 +14,11 @@ import {
   useEventsWithContext,
   useTasks,
   useProjectState,
-  useRecentRuns,
   useAgentStats,
   usePayments
 } from '../hooks/useSupabaseRealtime.js'
 import { AgentDetailSidebar } from './AgentDetailSidebar.js'
-import type { Agent, AgentStatus, Task, SystemEventWithContext } from '../types/index.js'
+import type { Agent, AgentStatus, SystemEventWithContext } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Constants & Styles
@@ -125,7 +123,7 @@ function TerminalFeed({ events }: { events: SystemEventWithContext[] }) {
                 {e.type.toUpperCase()}
               </span>
               <span className="truncate">
-                {e.payload['message'] || JSON.stringify(e.payload).slice(0, 60)}
+                {String(e.payload['message'] || JSON.stringify(e.payload).slice(0, 60))}
               </span>
               {idx === 0 && <span className="animate-blink">_</span>}
             </div>
