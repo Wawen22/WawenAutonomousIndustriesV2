@@ -9,6 +9,16 @@ import { getModelForAgent, estimateCost } from '../config/models.js'
 import { recordRun } from './logger.js'
 import type { ModelRoutingContext, RunOutcome, TaskType } from '../types/index.js'
 
+const DEFAULT_RUN_TIMEOUT_MS = 180_000
+
+function getRunTimeoutMs(): number {
+  const raw = process.env['LLM_RUN_TIMEOUT_MS']
+  if (!raw) return DEFAULT_RUN_TIMEOUT_MS
+
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_RUN_TIMEOUT_MS
+}
+
 // ---------------------------------------------------------------------------
 // Client LiteLLM (usa l'SDK OpenAI — LiteLLM è compatibile)
 // ---------------------------------------------------------------------------
@@ -75,18 +85,25 @@ export async function runAgent(
   const model = getModelForAgent(routingCtx)
   const client = getClient()
   const startMs = Date.now()
+  const timeoutMs = getRunTimeoutMs()
 
   let outcome: RunOutcome = 'success'
   let errorMessage: string | undefined
   let content = ''
   let tokensInput = 0
   let tokensOutput = 0
+  const abortController = new AbortController()
+  const timeoutHandle = setTimeout(() => {
+    abortController.abort(`LLM run exceeded ${String(timeoutMs)}ms`)
+  }, timeoutMs)
 
   try {
     const completion = await client.chat.completions.create({
       model: model.id,
       messages,
       store: false,
+    }, {
+      signal: abortController.signal,
     })
 
     content = completion.choices[0]?.message?.content ?? ''
@@ -94,9 +111,22 @@ export async function runAgent(
     tokensOutput = completion.usage?.completion_tokens ?? 0
   } catch (err) {
     outcome = 'failure'
-    errorMessage = err instanceof Error ? err.message : String(err)
-    throw err
+    const rawMessage = err instanceof Error ? err.message : String(err)
+    const loweredMessage = rawMessage.toLowerCase()
+    const isTimeout =
+      loweredMessage.includes('timeout') ||
+      loweredMessage.includes('timed out') ||
+      loweredMessage.includes('abort')
+
+    errorMessage = isTimeout
+      ? `LLM run timed out after ${String(timeoutMs)}ms: ${rawMessage}`
+      : rawMessage
+
+    throw new Error(errorMessage, {
+      cause: err instanceof Error ? err : undefined,
+    })
   } finally {
+    clearTimeout(timeoutHandle)
     const durationMs = Date.now() - startMs
 
     // Log ogni run a Supabase (fire-and-forget)

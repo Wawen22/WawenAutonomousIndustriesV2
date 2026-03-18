@@ -9,7 +9,7 @@ import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 
 import { runAgent } from '../services/llm.js'
-import { updateTaskStatus } from '../services/supabase.js'
+import { updateProjectStatus, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
 import { getProjectWorkspacePath } from '../services/workspace.js'
 import type { Task } from '../types/index.js'
@@ -153,6 +153,7 @@ export async function runAnalystAgent(
 ): Promise<void> {
   log.info({ taskId: task.id, title: task.title }, 'Analyst Agent: starting')
 
+  const projectId = task.project_id ?? (task.metadata['project_id'] as string | undefined)
   const projectName = (task.metadata['project_name'] as string | undefined) ?? task.title
   const clientName = (task.metadata['client_name'] as string | undefined) ?? 'the client'
   const workspaceAbsPath = resolveWorkspacePath(task)
@@ -216,7 +217,12 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
       log.info({ analysisAbsPath }, 'Analyst: analysis.md written')
     }
 
-    await recordEvent('task_completed', {
+    // Analyst completes the consulting delivery package — move project to delivered
+    if (projectId) {
+      await updateProjectStatus(projectId, 'delivered')
+    }
+
+    await recordEvent('project_delivered', {
       agentId: 'analyst',
       taskId: task.id,
       payload: {
@@ -224,6 +230,7 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
         findings_count: analysis.keyFindings.length,
         recommendations_count: analysis.recommendations.length,
         analysis_path: analysisAbsPath,
+        ...(projectId ? { project_status: 'delivered' } : {}),
         model_used: result.modelId,
         cost_usd: result.costUsd,
       },
@@ -232,6 +239,13 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
     await updateTaskStatus(task.id, 'done')
 
     log.info({ taskId: task.id, analysisTitle: analysis.title }, 'Analyst Agent: done')
+
+    const clientSlug = (task.metadata['client_slug'] as string | undefined) ?? ''
+    const projectSlug = (task.metadata['project_slug'] as string | undefined) ?? ''
+    const invoicePrompt =
+      projectId && clientSlug && projectSlug
+        ? `\n💰 Pronto per la fattura: /invoice ${clientSlug}/${projectSlug}`
+        : ''
 
     const notifyLines = [
       `🔍 *Analyst — Report Pronto*`,
@@ -248,6 +262,8 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
       `✅ *Recommendations (${analysis.recommendations.length}):*`,
       ...analysis.recommendations.slice(0, 2).map((r) => `• ${r}`),
       analysisAbsPath ? `\n💾 Saved: \`${analysisAbsPath}\`` : '',
+      `\n📍 Project status: *delivered*`,
+      invoicePrompt,
     ].filter((l) => l !== '').join('\n')
 
     await notify(notifyLines)

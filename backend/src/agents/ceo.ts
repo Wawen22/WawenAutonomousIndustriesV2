@@ -14,6 +14,9 @@ import { runAnalystAgent } from './analyst.js'
 import { runMarketingStrategistAgent } from './marketing_strategist.js'
 import { runContentCreatorAgent } from './content_creator.js'
 import { runSocialManagerAgent } from './social_manager.js'
+import { runArchitectAgent } from './architect.js'
+import { runDevGeneralAgent } from './dev_general.js'
+import { runQaAgent } from './qa.js'
 import type { Task, TaskType, TaskPriority } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -26,10 +29,10 @@ Available agents:
 - dev_lead_saas   – Dev Lead SaaS: technical planning, sprint planning, subtask breakdown
 - dev_saas_1      – Developer SaaS #1: code implementation, tests, PRs
 - dev_saas_2      – Developer SaaS #2: boilerplate, docs, simple features
-- architect       – Architect: system design, tech stack decisions, diagrams
+- architect       – Architect: system design, repo-aware planning, execution architecture for website/app/automation/custom software delivery — USE THIS for client software projects that are not SaaS
 - dev_general_1   – Developer General #1: implementation, refactoring, debugging
 - dev_general_2   – Developer General #2: simple implementations, boilerplate
-- qa              – QA Agent: test writing, quality checklists, bug reports
+- qa              – QA Agent: quality gate, release review, bug reports
 - consulting_lead – Consulting Lead: client proposals, scope definition, consulting delivery pipeline — USE THIS for any client project task, consulting work, or proposal creation
 - analyst         – Analyst: market research, data gathering, competitive analysis, reports — USE THIS for standalone analysis tasks without a consulting proposal
 - marketing_strategist – Marketing Strategist: campaigns, funnels, positioning, content plans — USE THIS for project-scoped marketing, content, copywriting, launch or growth work
@@ -134,7 +137,8 @@ Valid taskType values: ${VALID_TASK_TYPES.join(', ')}
 
 Routing hints:
 - If the task is a client project with type consulting or ai, prefer consulting_lead unless it is pure standalone analysis.
-- If the task is for saas, app, website, or automation delivery, prefer pm_saas or dev_lead_saas unless it is clearly a single worker task.
+- If the task is for saas delivery, prefer pm_saas or dev_lead_saas unless it is clearly a single worker task.
+- If the task is for a client website, app, automation, portal, dashboard, internal tool, integration, or custom software project, prefer architect unless it is explicitly QA-only or a direct follow-up for a specific dev_general worker.
 - If the task is for marketing, content, copywriting, design, launches, funnels, or audience growth, prefer marketing_strategist for coordinated delivery. Use content_creator or social_manager directly only for clearly standalone execution.
 
 Respond with ONLY a JSON object — no markdown, no text outside JSON:
@@ -256,6 +260,19 @@ Analyze and delegate to the most appropriate agent.`
     } else if (delegation.delegateTo === 'social_manager') {
       void runSocialManagerAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'Social Manager Agent failed')
+      })
+    } else if (delegation.delegateTo === 'architect') {
+      void runArchitectAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Architect Agent failed')
+      })
+    } else if (delegation.delegateTo === 'dev_general_1' || delegation.delegateTo === 'dev_general_2') {
+      const workerAgentId = delegation.delegateTo
+      void runDevGeneralAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id, assignee: workerAgentId }, 'Dev General Agent failed')
+      })
+    } else if (delegation.delegateTo === 'qa') {
+      void runQaAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'QA Agent failed')
       })
     }
   } catch (err) {

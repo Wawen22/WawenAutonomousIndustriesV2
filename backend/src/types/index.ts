@@ -173,6 +173,8 @@ export type EventType =
   | 'system_startup'
   | 'system_shutdown'
   | 'founder_command'
+  | 'project_delivered'
+  | 'revenue_recorded'
 
 export interface SystemEvent {
   id: string
@@ -238,6 +240,7 @@ export type ProjectStatus =
   | 'active'
   | 'paused'
   | 'review'
+  | 'blocked'
   | 'delivered'
   | 'invoiced'
 

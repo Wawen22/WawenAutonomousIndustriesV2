@@ -73,7 +73,7 @@ Projects linked to a client, each with a workspace folder.
 | `name` | `text` | Display name |
 | `slug` | `text` | URL-safe identifier (unique per client) |
 | `type` | `text` | `website` \| `app` \| `saas` \| `consulting` \| `ai` \| `marketing` \| `content` \| `copywriting` \| `design` \| `automation` \| `other` |
-| `status` | `text` | `discovery` \| `active` \| `paused` \| `review` \| `delivered` \| `invoiced` |
+| `status` | `text` | `discovery` \| `active` \| `paused` \| `review` \| `blocked` \| `delivered` \| `invoiced` |
 | `workspace_path` | `text` | Relative path to project folder (e.g., `workspace/acme/website`) |
 | `repo_url` | `text` | Optional remote repo URL for software/SaaS projects |
 | `repo_local_path` | `text` | Optional absolute local path to the working repo |
@@ -88,6 +88,7 @@ Projects linked to a client, each with a workspace folder.
 Notes:
 - Repo columns are optional and intended for software/SaaS execution flows only.
 - Non-software projects (consulting, AI, marketing, content, copywriting, design) can omit repo context entirely.
+- `blocked` is used by the QA gate when a custom software delivery has severe issues that stop release.
 
 ---
 

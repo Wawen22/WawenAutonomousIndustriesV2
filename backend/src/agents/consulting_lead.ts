@@ -15,7 +15,7 @@ import { runAgent } from '../services/llm.js'
 import { createTask, updateProjectStatus, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
 import { getProjectWorkspacePath } from '../services/workspace.js'
-import type { Task } from '../types/index.js'
+import type { ProjectStatus, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Tipi
@@ -259,11 +259,14 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
       log.info({ analystTaskId: analystTask.id }, 'Consulting Lead: analyst sub-task created')
     }
 
+    // Move project to delivered (no analysis needed) or active (waiting for analyst)
+    const projectStatus: ProjectStatus = proposal.requiresAnalysis ? 'active' : 'delivered'
     if (projectId) {
-      await updateProjectStatus(projectId, 'active')
+      await updateProjectStatus(projectId, projectStatus)
     }
 
-    await recordEvent('task_completed', {
+    const finalEventType = projectStatus === 'delivered' ? 'project_delivered' : 'task_completed'
+    await recordEvent(finalEventType, {
       agentId: 'consulting_lead',
       taskId: task.id,
       payload: {
@@ -272,7 +275,7 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
         objectives_count: proposal.objectives.length,
         requires_analysis: proposal.requiresAnalysis,
         proposal_path: proposalAbsPath,
-        ...(projectId ? { project_status: 'active' } : {}),
+        ...(projectId ? { project_status: projectStatus } : {}),
         model_used: result.modelId,
         cost_usd: result.costUsd,
       },
@@ -290,6 +293,13 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
       deliverableLines.push(`_...e altri ${proposal.deliverables.length - 3}_`)
     }
 
+    const clientSlug = (task.metadata['client_slug'] as string | undefined) ?? ''
+    const projectSlug = (task.metadata['project_slug'] as string | undefined) ?? ''
+    const invoicePrompt =
+      projectStatus === 'delivered' && clientSlug && projectSlug
+        ? `\n💰 Pronto per la fattura: /invoice ${clientSlug}/${projectSlug}`
+        : ''
+
     const notifyLines = [
       `📄 *Consulting Lead — Proposta Pronta*`,
       ``,
@@ -304,6 +314,8 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
       `⏱ ${proposal.timeline}`,
       proposalAbsPath ? `\n💾 Saved: \`${proposalAbsPath}\`` : '',
       proposal.requiresAnalysis ? `\n🔍 Sub-task Analyst creato per analisi approfondita` : '',
+      `\n📍 Project status: *${projectStatus}*`,
+      invoicePrompt,
     ].filter((l) => l !== '').join('\n')
 
     await notify(notifyLines)

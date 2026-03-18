@@ -167,6 +167,60 @@ Neb → Telegram /task client/project ...
 → Dashboard deliverables panel shows generated assets
 ```
 
+### 5. Custom software delivery chain
+
+```
+Neb → Telegram /task client/project ...
+→ Telegram Handler enriches task metadata with client/project/workspace/repo context
+→ CEO Agent routes to architect for website/app/automation/custom software work
+→ Architect reads brief + real repo inventory/git status, writes architecture_plan.md, creates dev_general_* subtasks and stages QA
+→ Independent subtasks can start in parallel; if the linked repo is effectively empty, dev_general_1 owns bootstrap/foundation and dev_general_2 stays queued behind it
+→ Dev General workers inspect the linked repo, apply safe file edits, run defensive install/typecheck/build/test checks, write dev-general-*.md + repo-execution-*.md, and update PROGRESS.md
+→ When both dev_general workers reach a terminal state, QA is activated; if a prerequisite worker fails, dependent queued tasks are auto-blocked so the chain still closes cleanly
+→ QA re-checks git status plus applicable typecheck/build/test commands, merges repo blockers/warnings with the LLM review, writes qa_report.md, and sets project status to review / blocked / delivered
+→ Dashboard deliverables panel shows architecture, worker, repo execution, and QA artifacts
+```
+
+### 5b. Defensive repo execution rules
+
+For repo-aware software tasks, the backend does not execute arbitrary shell commands from the model.
+
+- File edits are limited to safe targeted operations inside `repo_local_path`
+- No delete/reset/deploy flow is allowed in the runtime
+- Shell execution is derived from discovered project scripts only
+- `install` runs only when dependencies appear missing
+- `typecheck`, `build`, and `test` run only where the script actually exists
+- Each LLM step in the software runtime has a hard timeout (`LLM_RUN_TIMEOUT_MS`, default 180s); timed out workers are moved to `blocked`
+- Each command produces summarized logging in `runs`, `events`, and deliverable reports
+
+### 6. Repo onboarding flow
+
+```
+Neb → Telegram /new_project client "Project Name" app
+→ backend creates workspace/client/project with brief.md + PROGRESS.md + deliverables/
+
+Neb → Telegram /link_repo client/project "/absolute/path with spaces" [branch] [repo_url]
+→ Telegram parser supports quoted absolute paths
+→ backend validates that the path exists and is a real git repo
+→ repo metadata is normalized and saved into supabase.projects
+
+or
+
+Neb → Telegram /link_repo client/project https://github.com/org/repo.git [branch]
+→ backend creates workspace/client/project/repo if needed
+→ backend clones the remote repo defensively into the canonical workspace repo path
+→ repo metadata is saved into supabase.projects
+
+or
+
+Neb → Telegram /init_repo client/project [repo_url] [branch]
+→ backend initializes workspace/client/project/repo
+→ optional origin remote is attached
+→ repo metadata is saved into supabase.projects
+```
+
+Canonical operating examples live in `docs/FOUNDER_OPERATIONS_PLAYBOOK.md`.
+
 ---
 
 ## Implemented Runtime Chains
@@ -176,10 +230,9 @@ The agent registry is broader than the current runtime. The following chains are
 - **SaaS delivery:** CEO → PM SaaS → Dev Lead SaaS → Dev SaaS workers
 - **Consulting delivery:** CEO → Consulting Lead → Analyst
 - **Marketing delivery:** CEO → Marketing Strategist → Content Creator / Social Manager
+- **Custom software delivery:** CEO → Architect → Dev General workers → QA
 
-The main missing execution chain is:
-
-- **Custom software delivery:** CEO → Architect / Dev General / QA for non-SaaS software projects
+When a software or SaaS project has `repo_local_path`, the worker runtime now becomes repo-aware instead of markdown-only: it reads the real codebase, can write focused file changes, executes defensive checks, persists repo execution summaries, and orchestrates workers according to real dependencies instead of blindly parallelizing all subtasks.
 
 ---
 
@@ -189,6 +242,7 @@ The main missing execution chain is:
 wai/
 ├── backend/src/
 │   ├── agents/           # Agent session managers + team configs
+│   │   └── software_repo_runtime.ts # Repo inspection, safe edits, and defensive check execution
 │   ├── config/
 │   │   ├── agents.ts     # Agent registry (id, role, model, tools)
 │   │   ├── models.ts     # Model registry + routing

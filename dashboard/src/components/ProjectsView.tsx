@@ -61,11 +61,15 @@ function fileIcon(name: string): string {
   if (name.endsWith('.pdf')) return '📕'
   if (name === 'proposal.md') return '📄'
   if (name === 'analysis.md') return '📊'
+  if (name === 'architecture_plan.md') return '🏗️'
+  if (name === 'qa_report.md') return '🧪'
   if (name === 'sprint_plan.md') return '🗺️'
+  if (name.startsWith('repo-execution')) return '⚙️'
   if (name.startsWith('marketing-plan')) return '📈'
   if (name.startsWith('content-package')) return '✍️'
   if (name.startsWith('social-calendar')) return '📣'
   if (name.startsWith('dev-saas')) return '💻'
+  if (name.startsWith('dev-general')) return '🛠️'
   return '📝'
 }
 
@@ -75,6 +79,7 @@ interface DeliverablesPanelProps {
 
 function DeliverablesPanel({ project }: DeliverablesPanelProps) {
   const { files, loading, error } = useDeliverables(project.workspace_path)
+  const hasRepoContext = Boolean(project.repo_local_path || project.repo_url)
 
   return (
     <div className="mt-3 border border-white/[0.06] rounded-lg bg-white/[0.02] p-4">
@@ -85,6 +90,43 @@ function DeliverablesPanel({ project }: DeliverablesPanelProps) {
         <span className="text-[10px] text-slate-600 font-mono">{project.workspace_path ?? '—'}</span>
       </div>
 
+      <div className="grid gap-3 md:grid-cols-2 mb-4">
+        <div className="rounded-lg border border-white/[0.06] bg-black/20 p-3">
+          <div className="text-[10px] uppercase tracking-wider font-semibold text-cyan-400 mb-2">
+            Repo Context
+          </div>
+          {hasRepoContext ? (
+            <div className="space-y-1 text-[11px] font-mono text-slate-300">
+              <div className="truncate" title={project.repo_local_path ?? ''}>
+                local: {project.repo_local_path ?? '—'}
+              </div>
+              <div>branch: {project.repo_default_branch ?? '—'}</div>
+              <div className="truncate" title={project.repo_url ?? ''}>
+                remote: {project.repo_url ?? '—'}
+              </div>
+              <div>provider: {project.repo_provider ?? '—'}</div>
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-500 font-mono">
+              No repo linked yet. Use `/link_repo` with an absolute path or repo URL, or `/init_repo`
+              to create `workspace/.../repo`.
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-white/[0.06] bg-black/20 p-3">
+          <div className="text-[10px] uppercase tracking-wider font-semibold text-amber-400 mb-2">
+            Founder Flow
+          </div>
+          <div className="space-y-1 text-[11px] font-mono text-slate-300">
+            <div>1. `/new_project client project type`</div>
+            <div>2. `/link_repo client/project ...` or `/init_repo client/project ...`</div>
+            <div>3. `/brief client/project ...`</div>
+            <div>4. `/task client/project ...`</div>
+          </div>
+        </div>
+      </div>
+
       {loading && (
         <p className="text-[11px] text-slate-600 font-mono animate-pulse">Loading…</p>
       )}
@@ -93,7 +135,7 @@ function DeliverablesPanel({ project }: DeliverablesPanelProps) {
       )}
       {!loading && !error && files.length === 0 && (
         <p className="text-[11px] text-slate-600 font-mono">
-          No deliverables yet — run an agent task on this project to generate files.
+          No deliverables yet — complete the onboarding flow and run an agent task on this project to generate files and repo execution reports.
         </p>
       )}
       {!loading && files.length > 0 && (
@@ -136,6 +178,7 @@ const STATUS_BADGE: Record<ProjectStatus, string> = {
   discovery: 'todo',
   paused:    'cancelled',
   review:    'in_progress',
+  blocked:   'blocked',
   delivered: 'info',
   invoiced:  'finance',
 }
@@ -217,7 +260,7 @@ function FilterBar({
 
       <select value={statusFilter} onChange={(e) => onStatus(e.target.value as ProjectStatus | AnyFilter)} className={selectClass}>
         <option value="all">All statuses</option>
-        {(['discovery','active','paused','review','delivered','invoiced'] as ProjectStatus[]).map((s) => (
+        {(['discovery','active','paused','review','blocked','delivered','invoiced'] as ProjectStatus[]).map((s) => (
           <option key={s} value={s}>{s}</option>
         ))}
       </select>

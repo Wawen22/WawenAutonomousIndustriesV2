@@ -7,6 +7,15 @@ import { mkdir, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { Bot, Context } from 'grammy'
 import { isAbsolute, join } from 'path'
+import {
+  addGitRemoteOrigin,
+  cloneGitRepository,
+  initGitRepository,
+  isDirectoryEmpty,
+  looksLikeRepoUrl,
+  resolveGitRepository,
+  tokenizeCommandArgs,
+} from './git.js'
 import { log, recordEvent } from './logger.js'
 import {
   createClient,
@@ -23,13 +32,16 @@ import {
   getTaskById,
   getTasksByStatus,
   updateAgentModel,
+  updateProjectContractValue,
   updateProjectRepo,
+  updateProjectStatus,
   updateProjectWorkspacePath,
   updateTaskStatus,
 } from './supabase.js'
 import {
   createClientWorkspace,
   createProjectWorkspace,
+  getProjectRepoPath,
   getProjectWorkspacePath,
   getRelativeProjectPath,
 } from './workspace.js'
@@ -58,6 +70,36 @@ function inferRepoProvider(repoUrl?: string): RepoProvider | undefined {
   if (lower.includes('gitlab')) return 'gitlab'
   if (lower.includes('bitbucket')) return 'bitbucket'
   return 'other'
+}
+
+function parseRepoCommandOptions(optionalArgs: string[]): {
+  repoDefaultBranch?: string
+  repoUrl?: string
+} {
+  if (optionalArgs.length > 2) {
+    throw new Error('Too many optional arguments.')
+  }
+
+  const [first, second] = optionalArgs
+
+  if (!first) return {}
+  if (!second) {
+    return looksLikeRepoUrl(first)
+      ? { repoUrl: first }
+      : { repoDefaultBranch: first }
+  }
+
+  if (looksLikeRepoUrl(first) && !looksLikeRepoUrl(second)) {
+    return { repoUrl: first, repoDefaultBranch: second }
+  }
+
+  if (!looksLikeRepoUrl(first) && looksLikeRepoUrl(second)) {
+    return { repoDefaultBranch: first, repoUrl: second }
+  }
+
+  throw new Error(
+    'Optional arguments must be [branch] [repo_url] or [repo_url] [branch].'
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -112,14 +154,17 @@ function registerHandlers(bot: Bot): void {
         '/task descrizione – Crea un task\n' +
         '/task client/project descrizione – Task con scope progetto\n' +
         '/brief client/project testo – Aggiorna brief.md del progetto\n' +
-        '/link\\_repo client/project /path/repo \\[branch\\] \\[repo\\_url\\] – Collega repo al progetto\n' +
+        '/link\\_repo client/project "/path con spazi" \\[branch\\] \\[repo\\_url\\] – Collega repo esistente\n' +
+        '/link\\_repo client/project https://repo.git \\[branch\\] – Clona repo nel workspace e la collega\n' +
+        '/init\\_repo client/project \\[repo\\_url\\] \\[branch\\] – Inizializza repo locale nel workspace\n' +
         '/approve task\\_id – Approva output\n' +
         '/reject task\\_id motivo – Rifiuta output\n\n' +
         '*Clients & Projects:*\n' +
         '/new\\_client nome \\[email\\] – Crea cliente\n' +
         '/new\\_project slug\\_cliente nome \\[tipo\\] – Crea progetto\n' +
         '/clients – Lista clienti\n' +
-        '/projects \\[client\\_slug\\] – Lista progetti\n\n' +
+        '/projects \\[client\\_slug\\] – Lista progetti\n' +
+        '/invoice client/project \\[amount\\_usd\\] – Fattura progetto consegnato\n\n' +
         '*System:*\n' +
         '/status – Stato del sistema\n' +
         '/logs – Eventi recenti\n' +
@@ -353,49 +398,297 @@ function registerHandlers(bot: Bot): void {
     }
   })
 
-  // /link_repo <client_slug>/<project_slug> <repo_local_path> [branch] [repo_url]
+  // /link_repo <client_slug>/<project_slug> <repo_local_path|repo_url> [branch] [repo_url]
   bot.command('link_repo', async (ctx) => {
     if (!requireFounder(ctx)) return
 
     const text = ctx.message?.text ?? ''
-    const args = text.replace(/^\/link_repo(?:@\S+)?/, '').trim().split(/\s+/).filter(Boolean)
+    let args: string[]
+
+    try {
+      args = tokenizeCommandArgs(text.replace(/^\/link_repo(?:@\S+)?/, '').trim())
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Invalid command arguments.'
+      await ctx.reply(`❌ ${msg}\nTip: wrap paths with spaces in double quotes.`, {
+        parse_mode: 'Markdown',
+      })
+      return
+    }
 
     if (args.length < 2) {
       await ctx.reply(
         'Usage:\n' +
-          '/link\\_repo client\\_slug/project\\_slug /absolute/repo/path \\[branch\\] \\[repo\\_url\\]\n\n' +
-          'Example:\n' +
-          '/link\\_repo acme-corp/landingpage /home/neb/repos/acme-landing main https://github.com/acme/landing',
+          '/link\\_repo client\\_slug/project\\_slug "/absolute/repo/path" \\[branch\\] \\[repo\\_url\\]\n' +
+          '/link\\_repo client\\_slug/project\\_slug https://github.com/org/repo.git \\[branch\\]\n\n' +
+          'Examples:\n' +
+          '/link\\_repo acme-corp/client-portal "/home/neb/repos/Client Portal" main\n' +
+          '/link\\_repo acme-corp/client-portal https://github.com/acme/client-portal.git main',
         { parse_mode: 'Markdown' }
       )
       return
     }
 
     const scope = args[0]!
-    const repoLocalPath = args[1]!
-    const repoDefaultBranch = args[2]
-    const repoUrl = args[3]
+    const repoSource = args[1]!
     const scopeMatch = scope.match(/^([a-z0-9-]+)\/([a-z0-9-]+)$/)
+    let repoDefaultBranch: string | undefined
+    let repoUrl: string | undefined
+
+    try {
+      const parsedOptions = parseRepoCommandOptions(args.slice(2))
+      repoDefaultBranch = parsedOptions.repoDefaultBranch
+      repoUrl = parsedOptions.repoUrl
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Invalid optional arguments.'
+      await ctx.reply(`❌ ${msg}`, { parse_mode: 'Markdown' })
+      return
+    }
 
     if (!scopeMatch) {
-      await ctx.reply('❌ Invalid scope. Usage: /link\\_repo client\\_slug/project\\_slug /absolute/repo/path', {
+      await ctx.reply('❌ Invalid scope. Usage: /link\\_repo client\\_slug/project\\_slug "/absolute/repo/path"', {
         parse_mode: 'Markdown',
       })
       return
     }
 
-    if (!isAbsolute(repoLocalPath)) {
-      await ctx.reply('❌ repo_local_path must be an absolute path.', { parse_mode: 'Markdown' })
+    const clientSlug = scopeMatch[1]!
+    const projectSlug = scopeMatch[2]!
+    const canonicalRepoPath = getProjectRepoPath(clientSlug, projectSlug)
+    const projectWorkspacePath = getProjectWorkspacePath(clientSlug, projectSlug)
+
+    try {
+      const client = await getClientBySlug(clientSlug)
+      if (!client) {
+        await ctx.reply(`❌ Client \`${clientSlug}\` not found.`, { parse_mode: 'Markdown' })
+        return
+      }
+
+      const project = await getProjectBySlug(client.id, projectSlug)
+      if (!project) {
+        await ctx.reply(`❌ Project \`${projectSlug}\` not found for client \`${clientSlug}\`.`, {
+          parse_mode: 'Markdown',
+        })
+          return
+      }
+
+      await mkdir(projectWorkspacePath, { recursive: true })
+
+      if (looksLikeRepoUrl(repoSource)) {
+        const remoteUrl = repoSource
+        let repoInfo:
+          | {
+              rootPath: string
+              currentBranch: string | null
+              originUrl: string | null
+            }
+          | null = null
+        let reusedExistingRepo = false
+
+        if (existsSync(canonicalRepoPath)) {
+          try {
+            repoInfo = await resolveGitRepository(canonicalRepoPath)
+            reusedExistingRepo = true
+          } catch {
+            if (!(await isDirectoryEmpty(canonicalRepoPath))) {
+              await ctx.reply(
+                `❌ Target path \`${canonicalRepoPath}\` already exists and is not an empty git repo.\n` +
+                  'WAI will not overwrite it automatically.',
+                { parse_mode: 'Markdown' }
+              )
+              return
+            }
+          }
+        }
+
+        if (!repoInfo) {
+          repoInfo = await cloneGitRepository(remoteUrl, canonicalRepoPath, repoDefaultBranch)
+        } else if (!repoInfo.originUrl) {
+          await addGitRemoteOrigin(repoInfo.rootPath, remoteUrl)
+          repoInfo = await resolveGitRepository(repoInfo.rootPath)
+        }
+
+        if (repoInfo.originUrl && repoInfo.originUrl !== remoteUrl) {
+          await ctx.reply(
+            `❌ Workspace repo already points to \`${repoInfo.originUrl}\`, not \`${remoteUrl}\`.\n` +
+              'WAI will not rewrite the remote automatically.',
+            { parse_mode: 'Markdown' }
+          )
+          return
+        }
+
+        const resolvedRepoUrl = repoInfo.originUrl ?? remoteUrl
+        const resolvedBranch = repoInfo.currentBranch ?? repoDefaultBranch
+        const repoProvider = inferRepoProvider(resolvedRepoUrl)
+
+        await updateProjectRepo(project.id, {
+          repo_local_path: repoInfo.rootPath,
+          repo_default_branch: resolvedBranch,
+          repo_url: resolvedRepoUrl,
+          repo_provider: repoProvider,
+        })
+
+        await recordEvent('founder_command', {
+          payload: {
+            command: 'link_repo',
+            mode: reusedExistingRepo ? 'link_existing_workspace_repo' : 'clone_remote',
+            project_id: project.id,
+            client_slug: clientSlug,
+            project_slug: projectSlug,
+            repo_local_path: repoInfo.rootPath,
+            repo_default_branch: resolvedBranch,
+            repo_url: resolvedRepoUrl,
+            repo_provider: repoProvider,
+            workspace_repo_path: canonicalRepoPath,
+          },
+        })
+
+        await ctx.reply(
+          `✅ *Repo ${reusedExistingRepo ? 'Linked' : 'Cloned & Linked'}*\n\n` +
+            `Client: ${client.name}\n` +
+            `Project: ${project.name}\n` +
+            `Repo Path: \`${repoInfo.rootPath}\`\n` +
+            `Branch: ${resolvedBranch ?? '—'}\n` +
+            `Repo URL: ${resolvedRepoUrl}\n` +
+            `Mode: ${reusedExistingRepo ? 'existing workspace checkout reused' : 'cloned into workspace/repo'}`,
+          { parse_mode: 'Markdown' }
+        )
+        return
+      }
+
+      if (!isAbsolute(repoSource)) {
+        await ctx.reply('❌ repo_local_path must be an absolute path. Quote it if it contains spaces.', {
+          parse_mode: 'Markdown',
+        })
+        return
+      }
+
+      if (!existsSync(repoSource)) {
+        await ctx.reply(`❌ Path \`${repoSource}\` does not exist on disk.`, { parse_mode: 'Markdown' })
+        return
+      }
+
+      let repoInfo: {
+        rootPath: string
+        currentBranch: string | null
+        originUrl: string | null
+      }
+
+      try {
+        repoInfo = await resolveGitRepository(repoSource)
+      } catch {
+        await ctx.reply(
+          `❌ Path \`${repoSource}\` exists, but it is not a git repository.\n` +
+            `Use /init\\_repo ${clientSlug}/${projectSlug} to create the canonical workspace repo, or point /link\\_repo to an existing git checkout.`,
+          { parse_mode: 'Markdown' }
+        )
+        return
+      }
+
+      if (repoUrl && repoInfo.originUrl && repoInfo.originUrl !== repoUrl) {
+        await ctx.reply(
+          `❌ Provided repo URL \`${repoUrl}\` does not match detected origin \`${repoInfo.originUrl}\`.`,
+          { parse_mode: 'Markdown' }
+        )
+        return
+      }
+
+      const resolvedRepoUrl = repoUrl ?? repoInfo.originUrl ?? undefined
+      const resolvedBranch = repoDefaultBranch ?? repoInfo.currentBranch ?? undefined
+      const repoProvider = inferRepoProvider(resolvedRepoUrl)
+
+      await updateProjectRepo(project.id, {
+        repo_local_path: repoInfo.rootPath,
+        repo_default_branch: resolvedBranch,
+        repo_url: resolvedRepoUrl,
+        repo_provider: repoProvider,
+      })
+
+      await recordEvent('founder_command', {
+        payload: {
+          command: 'link_repo',
+          mode: 'link_existing',
+          project_id: project.id,
+          client_slug: clientSlug,
+          project_slug: projectSlug,
+          provided_path: repoSource,
+          repo_local_path: repoInfo.rootPath,
+          repo_default_branch: resolvedBranch,
+          repo_url: resolvedRepoUrl,
+          repo_provider: repoProvider,
+        },
+      })
+
+      await ctx.reply(
+        `✅ *Repo Linked*\n\n` +
+          `Client: ${client.name}\n` +
+          `Project: ${project.name}\n` +
+          `Repo Path: \`${repoInfo.rootPath}\`\n` +
+          `Branch: ${resolvedBranch ?? '—'}\n` +
+          `Repo URL: ${resolvedRepoUrl ?? '—'}`,
+        { parse_mode: 'Markdown' }
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      log.error({ err, clientSlug, projectSlug, repoSource }, 'Failed to link repo')
+      await ctx.reply(`❌ Failed to link repo: ${msg}`)
+    }
+  })
+
+  // /init_repo <client_slug>/<project_slug> [repo_url] [branch]
+  bot.command('init_repo', async (ctx) => {
+    if (!requireFounder(ctx)) return
+
+    const text = ctx.message?.text ?? ''
+    let args: string[]
+
+    try {
+      args = tokenizeCommandArgs(text.replace(/^\/init_repo(?:@\S+)?/, '').trim())
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Invalid command arguments.'
+      await ctx.reply(`❌ ${msg}`, { parse_mode: 'Markdown' })
       return
     }
 
-    if (!existsSync(repoLocalPath)) {
-      await ctx.reply(`❌ Path \`${repoLocalPath}\` does not exist on disk.`, { parse_mode: 'Markdown' })
+    if (args.length < 1) {
+      await ctx.reply(
+        'Usage:\n' +
+          '/init\\_repo client\\_slug/project\\_slug \\[repo\\_url\\] \\[branch\\]\n' +
+          '/init\\_repo client\\_slug/project\\_slug \\[branch\\]\n\n' +
+          'Examples:\n' +
+          '/init\\_repo acme-corp/client-portal\n' +
+          '/init\\_repo acme-corp/client-portal https://github.com/acme/client-portal.git main',
+        { parse_mode: 'Markdown' }
+      )
+      return
+    }
+
+    const scope = args[0]!
+    const scopeMatch = scope.match(/^([a-z0-9-]+)\/([a-z0-9-]+)$/)
+
+    if (!scopeMatch) {
+      await ctx.reply('❌ Invalid scope. Usage: /init\\_repo client\\_slug/project\\_slug', {
+        parse_mode: 'Markdown',
+      })
+      return
+    }
+
+    let repoDefaultBranch: string | undefined
+    let repoUrl: string | undefined
+
+    try {
+      const parsedOptions = parseRepoCommandOptions(args.slice(1))
+      repoDefaultBranch = parsedOptions.repoDefaultBranch
+      repoUrl = parsedOptions.repoUrl
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Invalid optional arguments.'
+      await ctx.reply(`❌ ${msg}`, { parse_mode: 'Markdown' })
       return
     }
 
     const clientSlug = scopeMatch[1]!
     const projectSlug = scopeMatch[2]!
+    const projectWorkspacePath = getProjectWorkspacePath(clientSlug, projectSlug)
+    const canonicalRepoPath = getProjectRepoPath(clientSlug, projectSlug)
 
     try {
       const client = await getClientBySlug(clientSlug)
@@ -412,41 +705,88 @@ function registerHandlers(bot: Bot): void {
         return
       }
 
-      const repoProvider = inferRepoProvider(repoUrl)
+      await mkdir(projectWorkspacePath, { recursive: true })
+
+      let repoInfo:
+        | {
+            rootPath: string
+            currentBranch: string | null
+            originUrl: string | null
+          }
+        | null = null
+      let reusedExistingRepo = false
+
+      if (existsSync(canonicalRepoPath)) {
+        try {
+          repoInfo = await resolveGitRepository(canonicalRepoPath)
+          reusedExistingRepo = true
+        } catch {
+          if (!(await isDirectoryEmpty(canonicalRepoPath))) {
+            await ctx.reply(
+              `❌ Target path \`${canonicalRepoPath}\` already exists and is not empty.\n` +
+                'WAI will not run git init over existing files automatically.',
+              { parse_mode: 'Markdown' }
+            )
+            return
+          }
+        }
+      }
+
+      if (!repoInfo) {
+        repoInfo = await initGitRepository(canonicalRepoPath, repoDefaultBranch, repoUrl)
+      } else if (repoUrl && !repoInfo.originUrl) {
+        await addGitRemoteOrigin(repoInfo.rootPath, repoUrl)
+        repoInfo = await resolveGitRepository(repoInfo.rootPath)
+      }
+
+      if (repoUrl && repoInfo.originUrl && repoInfo.originUrl !== repoUrl) {
+        await ctx.reply(
+          `❌ Workspace repo already points to \`${repoInfo.originUrl}\`, not \`${repoUrl}\`.\n` +
+            'WAI will not rewrite the remote automatically.',
+          { parse_mode: 'Markdown' }
+        )
+        return
+      }
+
+      const resolvedRepoUrl = repoInfo.originUrl ?? repoUrl
+      const resolvedBranch = repoInfo.currentBranch ?? repoDefaultBranch
+      const repoProvider = inferRepoProvider(resolvedRepoUrl)
 
       await updateProjectRepo(project.id, {
-        repo_local_path: repoLocalPath,
-        repo_default_branch: repoDefaultBranch,
-        repo_url: repoUrl,
+        repo_local_path: repoInfo.rootPath,
+        repo_default_branch: resolvedBranch,
+        repo_url: resolvedRepoUrl,
         repo_provider: repoProvider,
       })
 
       await recordEvent('founder_command', {
         payload: {
-          command: 'link_repo',
+          command: 'init_repo',
+          mode: reusedExistingRepo ? 'link_existing_workspace_repo' : 'init_local',
           project_id: project.id,
           client_slug: clientSlug,
           project_slug: projectSlug,
-          repo_local_path: repoLocalPath,
-          repo_default_branch: repoDefaultBranch,
-          repo_url: repoUrl,
+          repo_local_path: repoInfo.rootPath,
+          repo_default_branch: resolvedBranch,
+          repo_url: resolvedRepoUrl,
           repo_provider: repoProvider,
+          workspace_repo_path: canonicalRepoPath,
         },
       })
 
       await ctx.reply(
-        `✅ *Repo Linked*\n\n` +
+        `✅ *Repo ${reusedExistingRepo ? 'Already Initialized & Linked' : 'Initialized & Linked'}*\n\n` +
           `Client: ${client.name}\n` +
           `Project: ${project.name}\n` +
-          `Repo Path: \`${repoLocalPath}\`\n` +
-          `Branch: ${repoDefaultBranch ?? '—'}\n` +
-          `Repo URL: ${repoUrl ?? '—'}`,
+          `Repo Path: \`${repoInfo.rootPath}\`\n` +
+          `Branch: ${resolvedBranch ?? '—'}\n` +
+          `Repo URL: ${resolvedRepoUrl ?? '—'}`,
         { parse_mode: 'Markdown' }
       )
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
-      log.error({ err, clientSlug, projectSlug, repoLocalPath }, 'Failed to link repo')
-      await ctx.reply(`❌ Failed to link repo: ${msg}`)
+      log.error({ err, clientSlug, projectSlug }, 'Failed to init repo')
+      await ctx.reply(`❌ Failed to init repo: ${msg}`)
     }
   })
 
@@ -631,15 +971,25 @@ function registerHandlers(bot: Bot): void {
     if (!requireFounder(ctx)) return
 
     const text = ctx.message?.text ?? ''
-    const args = text.replace('/new_client', '').trim().split(/\s+/)
-    const name = args[0]
+    let args: string[]
+
+    try {
+      args = tokenizeCommandArgs(text.replace(/^\/new_client(?:@\S+)?/, '').trim())
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Invalid command arguments.'
+      await ctx.reply(`❌ ${msg}`, { parse_mode: 'Markdown' })
+      return
+    }
+
+    const lastArg = args[args.length - 1]
+    const email = lastArg && lastArg.includes('@') ? lastArg : undefined
+    const name = (email ? args.slice(0, -1) : args).join(' ').trim()
 
     if (!name) {
       await ctx.reply('Usage: /new\\_client <name> \\[email\\]\nExample: /new\\_client "Acme Corp" info@acme.com', { parse_mode: 'Markdown' })
       return
     }
 
-    const email = args[1] ?? undefined
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
     try {
@@ -676,7 +1026,16 @@ function registerHandlers(bot: Bot): void {
     if (!requireFounder(ctx)) return
 
     const text = ctx.message?.text ?? ''
-    const args = text.replace('/new_project', '').trim().split(/\s+/)
+    let args: string[]
+
+    try {
+      args = tokenizeCommandArgs(text.replace(/^\/new_project(?:@\S+)?/, '').trim())
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Invalid command arguments.'
+      await ctx.reply(`❌ ${msg}`, { parse_mode: 'Markdown' })
+      return
+    }
+
     const clientSlug = args[0]
 
     // Last arg is type if it matches known types
@@ -791,7 +1150,17 @@ function registerHandlers(bot: Bot): void {
       }
 
       const statusIcon = (s: string) =>
-        s === 'active' ? '🟢' : s === 'delivered' ? '✅' : s === 'paused' ? '⏸' : s === 'invoiced' ? '💰' : '🔵'
+        s === 'active'
+          ? '🟢'
+          : s === 'delivered'
+            ? '✅'
+            : s === 'blocked'
+              ? '⛔'
+              : s === 'paused'
+                ? '⏸'
+                : s === 'invoiced'
+                  ? '💰'
+                  : '🔵'
 
       const lines = projects.map((p) => {
         const repoMarker = p.repo_local_path ? ' — 🔗 repo linked' : ''
@@ -803,6 +1172,121 @@ function registerHandlers(bot: Bot): void {
     } catch (err) {
       log.error({ err }, 'Failed to list projects')
       await ctx.reply('❌ Failed to list projects.')
+    }
+  })
+
+  // /invoice <client_slug>/<project_slug> [amount_usd]
+  // Marks a project as invoiced and optionally sets contract_value_usd.
+  bot.command('invoice', async (ctx) => {
+    if (!requireFounder(ctx)) return
+
+    const text = ctx.message?.text ?? ''
+    const parts = text.replace(/^\/invoice(?:@\S+)?/, '').trim().split(/\s+/)
+    const scope = parts[0]
+
+    if (!scope) {
+      await ctx.reply(
+        'Usage: /invoice client\\_slug/project\\_slug \\[amount\\_usd\\]\n\n' +
+          'Examples:\n' +
+          '/invoice acme\\-corp/landing\\-page\n' +
+          '/invoice acme\\-corp/landing\\-page 2500',
+        { parse_mode: 'Markdown' }
+      )
+      return
+    }
+
+    const scopeMatch = scope.match(/^([a-z0-9-]+)\/([a-z0-9-]+)$/)
+    if (!scopeMatch) {
+      await ctx.reply('❌ Invalid format. Use: /invoice client\\_slug/project\\_slug', {
+        parse_mode: 'Markdown',
+      })
+      return
+    }
+
+    const clientSlug = scopeMatch[1]!
+    const projectSlug = scopeMatch[2]!
+    const rawAmount = parts[1]
+    const amountUsd = rawAmount ? Number.parseFloat(rawAmount) : undefined
+
+    if (rawAmount !== undefined && (Number.isNaN(amountUsd) || (amountUsd !== undefined && amountUsd < 0))) {
+      await ctx.reply('❌ Invalid amount. Must be a positive number (e.g. 2500 or 1499.99).', {
+        parse_mode: 'Markdown',
+      })
+      return
+    }
+
+    try {
+      const client = await getClientBySlug(clientSlug)
+      if (!client) {
+        await ctx.reply(`❌ Client \`${clientSlug}\` not found.`, { parse_mode: 'Markdown' })
+        return
+      }
+
+      const project = await getProjectBySlug(client.id, projectSlug)
+      if (!project) {
+        await ctx.reply(
+          `❌ Project \`${projectSlug}\` not found for client \`${clientSlug}\`.`,
+          { parse_mode: 'Markdown' }
+        )
+        return
+      }
+
+      if (project.status === 'invoiced') {
+        await ctx.reply(
+          `⚠️ Project *${project.name}* is already invoiced.\n` +
+            `Contract value: $${project.contract_value_usd.toFixed(2)}`,
+          { parse_mode: 'Markdown' }
+        )
+        return
+      }
+
+      const allowedStatuses = ['delivered', 'review', 'blocked', 'active']
+      if (!allowedStatuses.includes(project.status)) {
+        await ctx.reply(
+          `❌ Project is in status *${project.status}* and cannot be invoiced.\n` +
+            `Invoiceable statuses: delivered, review, blocked, active`,
+          { parse_mode: 'Markdown' }
+        )
+        return
+      }
+
+      await updateProjectStatus(project.id, 'invoiced')
+
+      const finalAmount =
+        amountUsd !== undefined ? amountUsd : project.contract_value_usd
+      if (amountUsd !== undefined) {
+        await updateProjectContractValue(project.id, amountUsd)
+      }
+
+      await recordEvent('revenue_recorded', {
+        payload: {
+          command: 'invoice',
+          project_id: project.id,
+          client_id: client.id,
+          client_slug: clientSlug,
+          project_slug: projectSlug,
+          project_name: project.name,
+          client_name: client.name,
+          previous_status: project.status,
+          contract_value_usd: finalAmount,
+          issued_by: 'founder',
+        },
+      })
+
+      log.info({ projectId: project.id, clientSlug, projectSlug, amountUsd: finalAmount }, 'Project invoiced')
+
+      await ctx.reply(
+        `💰 *Project Invoiced*\n\n` +
+          `Client: ${client.name}\n` +
+          `Project: ${project.name}\n` +
+          `Status: invoiced\n` +
+          `Contract value: $${finalAmount.toFixed(2)}`,
+        { parse_mode: 'Markdown' }
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      log.error({ err, clientSlug, projectSlug }, 'Failed to invoice project')
+      await ctx.reply(`❌ Failed to invoice project: ${msg}`)
     }
   })
 

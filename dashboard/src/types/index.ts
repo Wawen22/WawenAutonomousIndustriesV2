@@ -80,6 +80,7 @@ export type ProjectStatus =
   | 'active'
   | 'paused'
   | 'review'
+  | 'blocked'
   | 'delivered'
   | 'invoiced'
 

@@ -135,6 +135,31 @@ export async function updateTaskStatus(id: string, status: TaskStatus): Promise<
   if (error) throw new Error(`Failed to update task status: ${error.message}`)
 }
 
+export async function transitionTaskStatus(
+  id: string,
+  fromStatus: TaskStatus,
+  toStatus: TaskStatus
+): Promise<boolean> {
+  const updates: Partial<Task> = {
+    status: toStatus,
+    updated_at: new Date().toISOString(),
+  }
+
+  if (toStatus === 'done') {
+    updates.completed_at = new Date().toISOString()
+  }
+
+  const { data, error } = await getSupabaseClient()
+    .from('tasks')
+    .update(updates)
+    .eq('id', id)
+    .eq('status', fromStatus)
+    .select('id')
+
+  if (error) throw new Error(`Failed to transition task status: ${error.message}`)
+  return Array.isArray(data) && data.length > 0
+}
+
 export async function getTaskById(id: string): Promise<Task | null> {
   const { data, error } = await getSupabaseClient()
     .from('tasks')
@@ -320,6 +345,15 @@ export async function updateProjectStatus(id: string, status: ProjectStatus): Pr
     .eq('id', id)
 
   if (error) throw new Error(`Failed to update project status: ${error.message}`)
+}
+
+export async function updateProjectContractValue(id: string, contractValueUsd: number): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('projects')
+    .update({ contract_value_usd: contractValueUsd })
+    .eq('id', id)
+
+  if (error) throw new Error(`Failed to update project contract value: ${error.message}`)
 }
 
 export async function updateProjectRepo(id: string, input: UpdateProjectRepoInput): Promise<void> {

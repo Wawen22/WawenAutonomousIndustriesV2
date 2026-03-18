@@ -18,6 +18,7 @@ import {
 import { log, recordEvent } from '../services/logger.js'
 import { getProjectWorkspacePath } from '../services/workspace.js'
 import { runDevSaasAgent } from './dev_saas.js'
+import { repoNeedsBootstrap } from './software_delivery_utils.js'
 import type { Task } from '../types/index.js'
 
 interface ImplementationTask {
@@ -218,6 +219,7 @@ export async function runDevLeadSaasAgent(
   const repoLocalPath = task.metadata['repo_local_path'] as string | undefined
   const repoDefaultBranch = task.metadata['repo_default_branch'] as string | undefined
   const workspaceAbsPath = await resolveWorkspacePath(task, projectId)
+  const bootstrapRepo = await repoNeedsBootstrap(repoLocalPath)
 
   const systemPrompt = `You are the Dev Lead SaaS Agent of WAI (Wawen Autonomous Industries).
 Your role: read a user story from PM SaaS, create a structured technical sprint plan, and split execution into exactly two implementation tasks.
@@ -251,6 +253,7 @@ Constraints:
 - Always return exactly 2 implementationTasks.
 - One task must be assigned to dev_saas_1 and the other to dev_saas_2.
 - Keep the plan implementation-oriented and grounded in the user story.
+- If the repo is effectively empty, make dev_saas_1 own the bootstrap/foundation work and dev_saas_2 own work that can start only after that base exists.
 - Prefer WAI stack defaults unless the task clearly requires something else.`
 
   const userMessage = [
@@ -262,6 +265,7 @@ Constraints:
     storyPoints ? `Story points: ${storyPoints}` : '',
     repoLocalPath ? `Repo local path: ${repoLocalPath}` : '',
     repoDefaultBranch ? `Repo default branch: ${repoDefaultBranch}` : '',
+    bootstrapRepo ? `Repo state: bootstrap needed (empty or near-empty repo)` : '',
     ``,
     `Create a sprint plan with technical approach, stack recommendation, breakdown, and implementation tasks.`,
   ].filter(Boolean).join('\n')
@@ -305,8 +309,23 @@ Constraints:
     }
 
     const createdImplementationTasks: Array<{ id: string; assignee: string; title: string }> = []
+    const createdTaskIdsByAssignee = new Map<string, string>()
+    const orderedImplementationTasks = [...sprintPlan.implementationTasks].sort((a, b) =>
+      a.assignee.localeCompare(b.assignee)
+    )
 
-    for (const implementationTask of sprintPlan.implementationTasks) {
+    for (const implementationTask of orderedImplementationTasks) {
+      const dependencyTaskIds =
+        bootstrapRepo && implementationTask.assignee === 'dev_saas_2'
+          ? [createdTaskIdsByAssignee.get('dev_saas_1')].filter(
+              (value): value is string => typeof value === 'string' && value.length > 0
+            )
+          : []
+      const dependencyReason =
+        dependencyTaskIds.length > 0
+          ? 'Repo bootstrap required before supporting SaaS implementation can start.'
+          : undefined
+
       const createdTask = await createTask({
         title: implementationTask.title.substring(0, 100),
         description: [
@@ -341,18 +360,24 @@ Constraints:
           tech_stack: sprintPlan.techStack,
           implementation_owner: implementationTask.assignee,
           implementation_acceptance_criteria: implementationTask.acceptanceCriteria,
+          ...(dependencyTaskIds.length > 0 ? { dependency_task_ids: dependencyTaskIds } : {}),
+          ...(dependencyReason ? { dependency_reason: dependencyReason } : {}),
+          orchestration_mode: dependencyTaskIds.length > 0 ? 'sequential' : 'parallel',
         },
       })
 
+      createdTaskIdsByAssignee.set(implementationTask.assignee, createdTask.id)
       createdImplementationTasks.push({
         id: createdTask.id,
         assignee: implementationTask.assignee,
         title: implementationTask.title,
       })
 
-      void runDevSaasAgent(createdTask, notify).catch((err: unknown) => {
-        log.error({ err, subtaskId: createdTask.id, assignee: implementationTask.assignee }, 'Dev SaaS Agent failed')
-      })
+      if (dependencyTaskIds.length === 0) {
+        void runDevSaasAgent(createdTask, notify).catch((err: unknown) => {
+          log.error({ err, subtaskId: createdTask.id, assignee: implementationTask.assignee }, 'Dev SaaS Agent failed')
+        })
+      }
     }
 
     if (projectId) {
@@ -376,7 +401,10 @@ Constraints:
     await updateTaskStatus(task.id, 'done')
 
     const taskList = createdImplementationTasks
-      .map((item) => `• \`${item.assignee}\` → ${item.title}`)
+      .map((item) => {
+        const isQueued = bootstrapRepo && item.assignee === 'dev_saas_2'
+        return `• \`${item.assignee}\` → ${item.title}${isQueued ? ' *(queued after bootstrap)*' : ''}`
+      })
       .join('\n')
 
     await notify(
@@ -403,6 +431,8 @@ Constraints:
       payload: { error: errorMessage },
       severity: 'error',
     })
+
+    await updateTaskStatus(task.id, 'blocked').catch(() => {})
 
     await notify(`❌ *Dev Lead SaaS Error*\n\nTask: ${task.title}\nError: ${errorMessage}`)
 

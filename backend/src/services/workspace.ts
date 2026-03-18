@@ -28,6 +28,10 @@ export function getProjectWorkspacePath(clientSlug: string, projectSlug: string)
   return join(WORKSPACE_ROOT, clientSlug, projectSlug)
 }
 
+export function getProjectRepoPath(clientSlug: string, projectSlug: string): string {
+  return join(getProjectWorkspacePath(clientSlug, projectSlug), 'repo')
+}
+
 /** Relative path stored in Supabase (portable across machines) */
 export function getRelativeProjectPath(clientSlug: string, projectSlug: string): string {
   return `workspace/${clientSlug}/${projectSlug}`

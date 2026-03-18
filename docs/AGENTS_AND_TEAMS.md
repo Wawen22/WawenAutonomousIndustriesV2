@@ -44,11 +44,12 @@ CEO Agent (GPT-5.4)
 - **Type:** Human super-user (not an LLM agent)
 - **Interface:** Telegram Bot, WAI Dashboard, direct DB
 - **Permissions:** Full system access
-- **Commands:** `/task`, `/assign_model`, `/status`, `/logs`, `/budget`, `/approve`, `/reject`
+- **Commands:** `/new_client`, `/new_project`, `/link_repo`, `/init_repo`, `/brief`, `/task`, `/projects`, `/clients`, `/assign_model`, `/status`, `/logs`, `/budget`, `/approve`, `/reject`
+- **Operational Guide:** `docs/FOUNDER_OPERATIONS_PLAYBOOK.md`
 
 ---
 
-## Runtime Implementation Status (2026-03-17)
+## Runtime Implementation Status (2026-03-18)
 
 Important: the backend currently marks all registered agents as `online` at startup. That means the agent exists in the registry and is reachable from the system perspective. It does **not** automatically mean the agent already has a dedicated autonomous runtime loop implemented.
 
@@ -57,12 +58,12 @@ Important: the backend currently marks all registered agents as `online` at star
 | `ceo` | configured | ✅ implemented | Delegation loop active |
 | `pm_saas` | configured | ✅ implemented | User story generation active |
 | `dev_lead_saas` | configured | ✅ implemented | Sprint planning + worker orchestration active |
-| `dev_saas_1`, `dev_saas_2` | configured | ✅ implemented | Worker runtime active; writes implementation deliverables |
+| `dev_saas_1`, `dev_saas_2` | configured | ✅ implemented | Worker runtime active; can read/edit linked repos, run defensive checks, and writes implementation + `repo-execution-*.md` deliverables |
 | `consulting_lead` | configured | ✅ implemented | Proposal delivery active |
 | `analyst` | configured | ✅ implemented | Analysis delivery active |
-| `architect` | configured | ⬜ not yet implemented | Registry/model/tools only |
-| `dev_general_1`, `dev_general_2` | configured | ⬜ not yet implemented | Registry/model/tools only |
-| `qa` | configured | ⬜ not yet implemented | Registry/model/tools only |
+| `architect` | configured | ✅ implemented | Architecture plan + worker orchestration active; reads real repo inventory/git status when linked |
+| `dev_general_1`, `dev_general_2` | configured | ✅ implemented | Worker runtime active; can read/edit linked repos, run defensive checks, and writes custom software + `repo-execution-*.md` deliverables |
+| `qa` | configured | ✅ implemented | QA gate active; re-checks linked repo state, writes `qa_report.md`, and sets final project status |
 | `marketing_strategist` | configured | ✅ implemented | Marketing plan + worker orchestration active |
 | `content_creator` | configured | ✅ implemented | Content package delivery active |
 | `social_manager` | configured | ✅ implemented | Social calendar delivery active |
@@ -89,6 +90,7 @@ Responsible for WAI's own SaaS products: from idea to deployed product.
 - **Model:** GPT-5.4
 - **Tools:** Supabase, GitHub, Shell (read-only)
 - **Outputs:** Technical specs, task breakdowns, PR reviews
+- **Orchestration:** Independent implementation subtasks may run in parallel; if the linked repo is empty and needs bootstrap, `dev_saas_1` owns the foundation phase and `dev_saas_2` is queued until that dependency closes
 
 ### Dev SaaS
 - **ID:** `dev_saas_1`, `dev_saas_2` (scalable)
@@ -96,6 +98,8 @@ Responsible for WAI's own SaaS products: from idea to deployed product.
 - **Model:** GPT-5.4 (complex features) | Gemini 2.5 Flash (boilerplate, docs)
 - **Tools:** GitHub, Shell, Vercel CLI, Supabase, File system
 - **Outputs:** Working code, passing tests, merged PRs
+- **Runtime:** If `repo_local_path` is present, workers inspect the real repo, apply safe file edits, run defensive `install`/`typecheck`/`build`/`test` checks only where scripts exist, and save both implementation deliverables and `repo-execution-*.md` summaries
+- **Failure handling:** If the predecessor worker fails on a queued bootstrap chain, the dependent task is automatically marked `blocked` instead of remaining `todo`
 
 ---
 
@@ -109,18 +113,23 @@ Handles custom software projects for clients or internal tooling.
 - **Model:** GPT-5.4
 - **Tools:** Supabase, GitHub, Browser (research)
 - **Outputs:** Architecture docs, ADRs, component diagrams
+- **Runtime:** Reads `brief.md` plus linked repo inventory/git status when present, writes `deliverables/architecture_plan.md`, creates worker tasks for `dev_general_1` and `dev_general_2`, stages QA
+- **Orchestration:** Independent subtasks can run in parallel, but on empty/bootstrap repos the architect queues `dev_general_2` behind `dev_general_1` with explicit dependency metadata
 
 ### Dev General
 - **ID:** `dev_general_1`, `dev_general_2` (scalable)
 - **Role:** Implementation, refactoring, debugging
 - **Model:** GPT-5.4 (complex) | Gemini 2.5 Flash (simple)
 - **Tools:** GitHub, Shell, File system, Supabase
+- **Runtime:** Produces `dev-general-*.md` implementation deliverables, can edit the linked repo with safe targeted file operations, runs defensive `install`/`typecheck`/`build`/`test` checks where applicable, writes `repo-execution-*.md`, updates `PROGRESS.md`, and activates the QA gate once sibling worker tasks reach a terminal state
+- **Failure handling:** If a dependency fails or times out, downstream queued worker tasks are moved to `blocked` automatically so the chain can still close via QA instead of stalling
 
 ### QA Agent
 - **ID:** `qa`
 - **Role:** Test writing, test execution, quality checklists, bug reports
 - **Model:** Gemini 2.5 Flash
 - **Tools:** Shell (test runner), GitHub, Supabase
+- **Runtime:** Reviews architecture plus worker outputs, re-checks linked repo git status and applicable `typecheck`/`build`/`test` commands, distinguishes blocking issues vs warnings, writes `deliverables/qa_report.md`, and sets project status to `review`, `blocked`, or `delivered`
 
 ---
 
@@ -203,6 +212,11 @@ Keeps WAI running smoothly, solvent, and well-documented.
 4. **Worker → Team Lead**: Worker updates task status and reports output
 5. **Team Lead → CEO**: Lead reports completion or escalates blockers
 6. **CEO → Neb**: CEO summarizes and notifies via Telegram
+
+Rule of thumb for orchestration:
+- Different teams or truly independent subtasks may run in parallel.
+- Worker subtasks with explicit dependencies remain queued until prerequisites are terminal.
+- If a prerequisite is `blocked`, the dependent task is auto-blocked rather than left pending forever.
 
 ### Escalation Triggers
 
