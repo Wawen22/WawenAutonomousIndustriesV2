@@ -8,7 +8,7 @@ import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 
 import { runAgent } from '../services/llm.js'
-import { updateProjectStatus, updateTaskStatus } from '../services/supabase.js'
+import { updateProjectStatus, updateTaskRequiresHumanReview, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
 import { appendProjectProgress } from '../services/workspace.js'
 import {
@@ -361,14 +361,36 @@ Constraints:
       },
     })
 
-    await updateTaskStatus(task.id, 'done')
+    // When QA blocks a project, escalate to the founder for human review
+    // instead of closing the task. The task surfaces in the Founder Ops
+    // "Pending Review" inbox so Neb can Approve or Reject it.
+    if (finalRecommendation === 'blocked') {
+      await updateTaskRequiresHumanReview(task.id, true)
+      await updateTaskStatus(task.id, 'blocked')
+      await recordEvent('human_review_requested', {
+        agentId: 'qa',
+        taskId: task.id,
+        payload: {
+          title: task.title,
+          assignee: 'qa',
+          delegator: task.delegator_agent_id ?? null,
+          reason: 'QA found blocking issues — founder review required before delivery',
+          blocking_issues: mergedBlockingIssues,
+        },
+        severity: 'warning',
+      })
+    } else {
+      await updateTaskStatus(task.id, 'done')
+    }
 
     const clientSlug = (task.metadata['client_slug'] as string | undefined) ?? ''
     const projectSlug = (task.metadata['project_slug'] as string | undefined) ?? ''
-    const invoicePrompt =
+    const founderHint =
       projectStatus === 'delivered' && clientSlug && projectSlug
         ? `\n💰 Pronto per la fattura: /invoice ${clientSlug}/${projectSlug}`
-        : ''
+        : projectStatus === 'blocked'
+          ? `\n⚠️ Richiesta revisione founder — vai in Founder Ops → Pending Review\nTask ID: \`${task.id.slice(0, 8)}\``
+          : ''
 
     const lines = [
       `🧪 *QA — Report Ready*`,
@@ -382,7 +404,7 @@ Constraints:
         : '',
       qaReportPath ? `\n💾 Saved: \`${qaReportPath}\`` : '',
       `\n📍 Project status: *${projectStatus}*`,
-      invoicePrompt,
+      founderHint,
     ].filter((line) => line !== '').join('\n')
 
     await notify(lines)

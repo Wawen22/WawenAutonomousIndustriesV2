@@ -11,7 +11,8 @@ import type { AgentMemory } from '../types/index.js'
 const MEMORY_VECTOR_DIM = 256
 const DEFAULT_MEMORY_LIMIT = 5
 const DEFAULT_MEMORY_TTL_DAYS = 30
-const DEFAULT_MIN_SIMILARITY = 0.18
+const DEFAULT_MIN_SIMILARITY = 0.25
+const DEDUP_SIMILARITY_THRESHOLD = 0.65
 const MAX_MEMORY_CONTENT_CHARS = 2_400
 const MAX_PROMPT_MEMORY_CHARS = 700
 
@@ -122,13 +123,28 @@ export async function createAgentMemory(input: CreateAgentMemoryInput): Promise<
   const normalizedContent = normalizeForMemory(input.content)
   if (normalizedContent.length < 40) return null
 
-  const embedding = createEmbedding(normalizedContent)
+  // Deduplication: skip saving if a very similar active memory already exists
+  // for this agent. Uses a high threshold to avoid dropping genuinely distinct memories.
+  const queryEmbedding = vectorToSqlLiteral(createEmbedding(normalizedContent))
+  const { data: existingMatches, error: recallErr } = await getSupabaseClient().rpc('match_agent_memories', {
+    p_agent_id: input.agentId,
+    p_query_embedding: queryEmbedding,
+    p_match_count: 1,
+  })
+
+  if (!recallErr && Array.isArray(existingMatches) && existingMatches.length > 0) {
+    const top = existingMatches[0] as AgentMemoryMatch
+    if (top.similarity >= DEDUP_SIMILARITY_THRESHOLD && isActiveMemory(top)) {
+      return null // Near-duplicate detected — skip insert
+    }
+  }
+
   const { data, error } = await getSupabaseClient()
     .from('agent_memories')
     .insert({
       agent_id: input.agentId,
       content: normalizedContent,
-      embedding: vectorToSqlLiteral(embedding),
+      embedding: queryEmbedding,
       ttl: input.ttl ?? getDefaultTtl(),
     })
     .select('id, agent_id, content, created_at, ttl')

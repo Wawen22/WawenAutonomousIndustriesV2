@@ -246,6 +246,15 @@ export async function getChildTasks(parentTaskId: string): Promise<Task[]> {
   return data as Task[]
 }
 
+export async function updateTaskRequiresHumanReview(taskId: string, value: boolean): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('tasks')
+    .update({ requires_human_review: value, updated_at: new Date().toISOString() })
+    .eq('id', taskId)
+
+  if (error) throw new Error(`Failed to update task requires_human_review: ${error.message}`)
+}
+
 export async function assignTask(taskId: string, agentId: string): Promise<void> {
   const { error } = await getSupabaseClient()
     .from('tasks')

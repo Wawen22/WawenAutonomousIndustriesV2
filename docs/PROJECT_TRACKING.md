@@ -123,7 +123,7 @@
 
 | ID | Title | Owner | Notes |
 |----|-------|-------|-------|
-| B001 | Tune memory relevance, summarization, and TTL policies | architect | Follow-up optimization after T066 |
+| B001 | Tune memory relevance, summarization, and TTL policies | architect | ✅ Done (sessione 34): dedup + min_similarity 0.25 |
 | B002 | Add Ollama local model support | dev_general_1 | Phase 3 |
 | B003 | Build Consulting delivery pipeline | consulting_lead | Q2 |
 | B004 | Marketing automation: blog → social | content_creator | Q2 |
@@ -132,6 +132,15 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-18 — Sessione 34: P1 QA retry fix + B001 memory tuning + P3 human_review wiring ✅
+
+- **P1 BUG FIX** `backend/src/agents/dev_general.ts` — `processDevGeneralFollowUps` ora tenta `transitionTaskStatus(qaTask.id, 'blocked', 'in_progress')` se il primo tentativo `'todo'→'in_progress'` fallisce; fix critico per il retry flow: quando dev_general_2 viene ritentato e la QA era `blocked`, la QA viene ora correttamente attivata
+- **B001** `backend/src/services/memory.ts` — deduplication: prima di inserire una nuova memoria, il sistema richiama `match_agent_memories` con soglia `0.65`; se esiste già una memoria attiva molto simile, la nuova viene scartata; `DEFAULT_MIN_SIMILARITY` alzato da `0.18` a `0.25`; aggiunta costante `DEDUP_SIMILARITY_THRESHOLD = 0.65`
+- **P3** `backend/src/services/supabase.ts` — aggiunto helper `updateTaskRequiresHumanReview(taskId, value)`
+- **P3** `backend/src/agents/qa.ts` — quando `finalRecommendation === 'blocked'`: imposta `requires_human_review = true` sul task QA, mantiene il task in stato `blocked` (invece di chiuderlo `done`), emette evento `human_review_requested` con `severity: 'warning'`; la QA task appare ora nella sezione `Pending Review` della Founder Ops view; notifica Telegram aggiornata con hint founder
+- **BUGFIX** `dashboard/src/components/Overview.tsx` — rimossi import inutilizzati (`Stat`, `useRecentRuns`, tipo `Task`); fix tipo `e.payload['message']` wrappato in `String()` per compatibilità ReactNode
+- **VERIFY** `pnpm typecheck` verde su backend e dashboard
 
 ### 2026-03-18 — Sessione 33: T074 + T078 + T073 ✅
 

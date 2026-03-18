@@ -221,7 +221,12 @@ async function processDevGeneralFollowUps(
     return { qaActivated: false, startedDependentTasks, blockedDependentTasks }
   }
 
-  const claimed = await transitionTaskStatus(qaTask.id, 'todo', 'in_progress')
+  // Try to claim the QA task from either 'todo' (normal path) or 'blocked'
+  // (retry path — QA was previously blocked and needs to be re-activated).
+  let claimed = await transitionTaskStatus(qaTask.id, 'todo', 'in_progress')
+  if (!claimed && qaTask.status === 'blocked') {
+    claimed = await transitionTaskStatus(qaTask.id, 'blocked', 'in_progress')
+  }
   if (!claimed) {
     return { qaActivated: false, startedDependentTasks, blockedDependentTasks }
   }
