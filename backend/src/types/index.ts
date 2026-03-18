@@ -183,6 +183,10 @@ export type EventType =
   | 'founder_command'
   | 'project_delivered'
   | 'revenue_recorded'
+  | 'payment_received'
+  | 'ops_alert'
+  | 'finance_report_generated'
+  | 'hr_digest_generated'
 
 export interface SystemEvent {
   id: string
@@ -289,6 +293,28 @@ export interface UpdateProjectRepoInput {
   repo_local_path?: string | undefined
   repo_default_branch?: string | undefined
   repo_provider?: RepoProvider | undefined
+}
+
+// --- Payments ---
+
+export interface Payment {
+  id: string
+  project_id: string
+  amount_usd: number
+  currency: string
+  notes: string | null
+  received_at: string
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export interface CreatePaymentInput {
+  project_id: string
+  amount_usd: number
+  currency?: string | undefined
+  notes?: string | undefined
+  metadata?: Record<string, unknown>
+  received_at?: string | undefined
 }
 
 // --- Project State ---

@@ -153,13 +153,18 @@ discovery → active → review → delivered → invoiced
 | `review` | Internal review or QA gate is running, or fixes are still needed before release |
 | `blocked` | Severe issues found by QA are stopping release |
 | `delivered` | Delivery package passed QA (software) or all consulting deliverables produced; ready for client handoff |
-| `invoiced` | Revenue recorded via `/invoice` — terminal revenue state |
+| `invoiced` | Revenue billed via `/invoice`; actual cash received is tracked separately in `payments` |
 
 ### Revenue Flow
 
 When a project reaches `delivered` (or stays at `review`/`blocked` in some cases), the delivery chain notifies Neb with a `/invoice client/project [amount_usd]` shortcut.
 
-Invoicing transitions the project to `invoiced`, sets `contract_value_usd`, and fires a `revenue_recorded` event.
+Revenue is now split into two separate signals:
+
+- **Invoiced revenue**: `/invoice` transitions the project to `invoiced`, sets `contract_value_usd`, and emits `revenue_recorded`.
+- **Paid revenue**: `/mark_paid client/project amount_usd` inserts one row into `payments` and emits `payment_received`.
+
+This allows partial payments and accurate outstanding balance tracking in the Revenue dashboard.
 
 Chains that produce `delivered` automatically:
 - **Custom Software**: QA → `delivered` (pass) / `blocked` / `review`

@@ -89,6 +89,30 @@ Notes:
 - Repo columns are optional and intended for software/SaaS execution flows only.
 - Non-software projects (consulting, AI, marketing, content, copywriting, design) can omit repo context entirely.
 - `blocked` is used by the QA gate when a custom software delivery has severe issues that stop release.
+- `invoiced` means the revenue has been billed; cash actually received is tracked separately in `payments`.
+
+---
+
+### `payments`
+
+Cash receipts linked to invoiced projects. This is the canonical source for money actually received.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `uuid` PK | Auto-generated |
+| `project_id` | `uuid` FK→projects | Related invoiced project |
+| `amount_usd` | `numeric` | Positive payment amount in USD |
+| `currency` | `text` | Currently fixed to `USD` |
+| `notes` | `text` | Optional founder/internal note |
+| `received_at` | `timestamptz` | When the payment was received |
+| `metadata` | `jsonb` | Extra context (`source`, command, etc.) |
+| `created_at` | `timestamptz` | Record creation time |
+
+**RLS:** `anon` SELECT, `authenticated` SELECT, `service_role` full access.
+
+Notes:
+- Multiple partial payments per project are supported.
+- `/invoice` records billed revenue on `projects.contract_value_usd`; `/mark_paid` inserts one row per cash receipt into `payments`.
 
 ---
 
@@ -181,6 +205,8 @@ High-level audit log of important system events.
 - `human_review_requested`, `human_approved`, `human_rejected`
 - `run_completed`, `run_failed`
 - `system_startup`, `system_shutdown`
+- `founder_command`, `project_delivered`, `revenue_recorded`, `payment_received`
+- `ops_alert`, `finance_report_generated`, `hr_digest_generated`
 
 ---
 
@@ -208,6 +234,7 @@ Aggregate state of WAI as a whole.
 ```
 clients ←────────── projects (client_id)
 projects ←────────── tasks (project_id)
+projects ←────────── payments (project_id)
 agents ←────────── tasks (assignee_agent_id, delegator_agent_id)
 agents ←────────── runs (agent_id)
 agents ←────────── agent_memories (agent_id)
@@ -231,6 +258,7 @@ The following tables have Realtime enabled and are subscribed to by the Dashboar
 | `tasks` | INSERT, UPDATE | Task Board (Kanban) |
 | `events` | INSERT | Event Timeline |
 | `runs` | INSERT | Cost Panel, Agent Activity |
+| `payments` | INSERT, UPDATE | Revenue View |
 | `agent_memories` | INSERT, UPDATE | Memory View |
 | `project_state` | UPDATE | Header stats |
 | `clients` | INSERT, UPDATE | Clients View |
@@ -246,7 +274,7 @@ All tables have RLS enabled. Policies:
 |------|--------|
 | `service_role` | Full access (backend uses this) |
 | `anon` | No access (public not allowed) |
-| `authenticated` | Read-only on `agents`, `tasks`, `events`, `project_state`, `agent_memories` (dashboard user) |
+| `authenticated` | Read-only on `agents`, `tasks`, `events`, `project_state`, `agent_memories`, `clients`, `projects`, `payments` |
 
 Agent-specific write policies are enforced at the service layer (not Supabase RLS) since all backend calls use `service_role`.
 

@@ -1,7 +1,20 @@
+// ============================================================
+// WAI Dashboard – Agent List View
+// List of all agents grouped by team.
+// Unified sidebar on click.
+// ============================================================
+
+import { useState } from 'react'
 import { clsx } from 'clsx'
 import { Panel } from './ui/Panel.js'
 import { Badge } from './ui/Badge.js'
-import { useAgents } from '../hooks/useSupabaseRealtime.js'
+import { 
+  useAgents, 
+  useAgentStats, 
+  useTasks, 
+  useEventsWithContext 
+} from '../hooks/useSupabaseRealtime.js'
+import { AgentDetailSidebar } from './AgentDetailSidebar.js'
 import type { Agent, AgentStatus, AgentTeam } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -35,15 +48,16 @@ const MODEL_COLOR: Record<string, string> = {
 // AgentCard
 // ---------------------------------------------------------------------------
 
-function AgentCard({ agent }: { agent: Agent }) {
+function AgentCard({ agent, onClick }: { agent: Agent; onClick: (a: Agent) => void }) {
   const teamMeta = TEAM_META[agent.team] ?? { label: agent.team, accent: 'text-slate-400 border-slate-400/30' }
   const modelStyle = MODEL_COLOR[agent.model_id] ?? 'text-slate-400 bg-white/5 ring-1 ring-white/10'
 
   return (
-    <div
+    <button
+      onClick={() => onClick(agent)}
       className={clsx(
-        'group relative rounded-xl border border-white/[0.07] bg-[#0A1628] p-4',
-        'hover:border-white/[0.13] hover:bg-[#0F2040]/60 transition-all duration-200',
+        'group relative rounded-xl border border-white/[0.07] bg-[#0A1628] p-4 text-left w-full transition-all duration-200',
+        'hover:border-white/[0.13] hover:bg-[#0F2040]/60',
         agent.status === 'online' && 'hover:shadow-glow-emerald',
         agent.status === 'error'  && STATUS_GLOW.error
       )}
@@ -82,7 +96,7 @@ function AgentCard({ agent }: { agent: Agent }) {
             modelStyle
           )}
         >
-          {agent.model_id}
+          {agent.model_id.split('-')[0].toUpperCase()}
         </span>
       </div>
 
@@ -93,7 +107,7 @@ function AgentCard({ agent }: { agent: Agent }) {
         </span>
         <span className="text-[10px] text-slate-600 font-mono">{agent.id}</span>
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -101,7 +115,7 @@ function AgentCard({ agent }: { agent: Agent }) {
 // Team section header
 // ---------------------------------------------------------------------------
 
-function TeamSection({ team, agents }: { team: AgentTeam; agents: Agent[] }) {
+function TeamSection({ team, agents, onAgentClick }: { team: AgentTeam; agents: Agent[]; onAgentClick: (a: Agent) => void }) {
   const meta = TEAM_META[team]
   const onlineCount = agents.filter((a) => a.status === 'online').length
 
@@ -117,7 +131,7 @@ function TeamSection({ team, agents }: { team: AgentTeam; agents: Agent[] }) {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {agents.map((agent) => (
-          <AgentCard key={agent.id} agent={agent} />
+          <AgentCard key={agent.id} agent={agent} onClick={onAgentClick} />
         ))}
       </div>
     </div>
@@ -130,6 +144,10 @@ function TeamSection({ team, agents }: { team: AgentTeam; agents: Agent[] }) {
 
 export function AgentList() {
   const { data: agents, loading, error } = useAgents()
+  const { runCounts, lastRuns } = useAgentStats()
+  const { data: tasks } = useTasks('in_progress')
+  const { data: events } = useEventsWithContext(50)
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
 
   if (loading) {
     return (
@@ -182,8 +200,20 @@ export function AgentList() {
 
       {/* Teams */}
       {TEAM_ORDER.filter((t) => (byTeam[t]?.length ?? 0) > 0).map((team) => (
-        <TeamSection key={team} team={team} agents={byTeam[team]!} />
+        <TeamSection key={team} team={team} agents={byTeam[team]!} onAgentClick={setSelectedAgent} />
       ))}
+
+      {/* Unified Sidebar */}
+      {selectedAgent && (
+        <AgentDetailSidebar
+          agent={selectedAgent}
+          lastRuns={lastRuns[selectedAgent.id] ?? []}
+          runCount={runCounts[selectedAgent.id] ?? 0}
+          activeTasks={tasks || []}
+          recentEvents={events || []}
+          onClose={() => setSelectedAgent(null)}
+        />
+      )}
     </div>
   )
 }

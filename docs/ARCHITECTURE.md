@@ -150,11 +150,35 @@ Dev Agent session (OpenClaw)
 ```
 [Cron: every 1 hour]
 Finance Agent
-→ SELECT SUM(cost_usd) FROM supabase.runs WHERE created_at > now() - interval '1 month'
-→ Compare to MONTHLY_BUDGET_USD
-→ If > threshold: INSERT alert into supabase.events
-→ Send Telegram notification to Neb
-→ UPDATE supabase.project_state SET monthly_cost = ...
+→ checkBudget() in backend/src/services/budget.ts
+→ SELECT real runs from supabase.runs
+→ Compare month-to-date cost to MONTHLY_BUDGET_USD
+→ If > threshold: INSERT budget alert event + notify Neb
+→ Once per ISO week: aggregate weekly runs/cost by agent and model
+→ INSERT finance_report_generated event
+→ Send weekly cost report to Neb
+```
+
+### 3b. Ops Agent monitors stuck execution
+
+```
+[Cron: every 15 minutes]
+Ops Agent
+→ SELECT tasks WHERE status IN ('in_progress','blocked') AND updated_at older than 30 min
+→ SELECT latest unresolved agent_error events older than 30 min
+→ INSERT ops_alert events into supabase.events
+→ Send Telegram alerts to Neb for stuck tasks / agents
+```
+
+### 3c. HR Agent builds team digest
+
+```
+[Cron: every 6 hours]
+HR Agent
+→ Aggregate last-7-day tasks, runs, and warning/error events by team
+→ Build weekly digest (completed tasks, active load, failures, busiest agent)
+→ INSERT hr_digest_generated event
+→ Send weekly digest to Neb once per ISO week
 ```
 
 ### 4. Marketing / content delivery chain
@@ -224,6 +248,38 @@ Neb → Telegram /init_repo client/project [repo_url] [branch]
 
 Canonical operating examples live in `docs/FOUNDER_OPERATIONS_PLAYBOOK.md`.
 
+### 7. Revenue recording flow
+
+```
+Neb → Telegram /invoice client/project [amount]
+→ backend moves project.status → invoiced
+→ backend updates projects.contract_value_usd
+→ INSERT revenue_recorded event
+
+Neb → Telegram /mark_paid client/project amount
+→ backend INSERT into supabase.payments
+→ INSERT payment_received event
+→ Dashboard Revenue view computes invoiced vs paid vs outstanding
+```
+
+### 8. CEO status reporting flow
+
+```
+Neb → Telegram /status
+or
+Neb → natural language query ("come stai?", "status sistema")
+→ backend uses shared status_report builder
+→ reads project_state + live tasks + monthly runs cost + revenue_recorded events + payments + recent error events
+→ returns a single compact report with:
+   - current milestone
+   - active tasks
+   - blocked tasks
+   - monthly invoiced revenue
+   - monthly paid revenue
+   - recent errors
+   - problematic agents
+```
+
 ---
 
 ## Implemented Runtime Chains
@@ -234,6 +290,9 @@ The agent registry is broader than the current runtime. The following chains are
 - **Consulting delivery:** CEO → Consulting Lead → Analyst
 - **Marketing delivery:** CEO → Marketing Strategist → Content Creator / Social Manager
 - **Custom software delivery:** CEO → Architect → Dev General workers → QA
+- **Ops monitoring:** scheduled Ops runtime + explicit `ops` task handling
+- **Finance reporting:** scheduled Finance runtime + explicit `finance` task handling
+- **HR reporting:** scheduled HR runtime + explicit `hr` task handling
 
 When a software or SaaS project has `repo_local_path`, the worker runtime now becomes repo-aware instead of markdown-only: it reads the real codebase, can write focused file changes, executes defensive checks, persists repo execution summaries, and orchestrates workers according to real dependencies instead of blindly parallelizing all subtasks.
 

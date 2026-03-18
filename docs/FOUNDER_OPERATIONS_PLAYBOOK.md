@@ -199,7 +199,7 @@ For software/SaaS projects with `repo_local_path`, the downstream workers now:
 
 ### `/invoice`
 
-Moves a project to `invoiced` status and records revenue. Can be used once a project reaches `delivered`, `review`, `blocked`, or `active`.
+Moves a project to `invoiced` status and records billed revenue. Can be used once a project reaches `delivered`, `review`, `blocked`, or `active`.
 
 ```text
 /invoice acmecorp/client-portal
@@ -214,6 +214,10 @@ Behavior:
 - Fires a `revenue_recorded` event in Supabase
 - Confirms to Neb with client, project, and final contract value
 
+Important:
+- `/invoice` means **fatturato**.
+- Cash actually received is tracked separately with `/mark_paid`.
+
 When to use:
 - After QA marks a software project `delivered` — notification includes `/invoice` prompt
 - After consulting_lead (or analyst) completes a consulting delivery — notification includes `/invoice` prompt
@@ -221,6 +225,22 @@ When to use:
 - After all marketing workers finish and project moves to `review` — notification includes `/invoice` prompt
 
 All four delivery chains now send the `/invoice` prompt automatically. Neb just needs to confirm the amount and send the command.
+
+### `/mark_paid`
+
+Records money actually received from an already invoiced project.
+
+```text
+/mark_paid acmecorp/client-portal 500
+/mark_paid acmecorp/client-portal 2500
+```
+
+Behavior:
+- Validates the project exists and is already `invoiced`
+- Inserts a row in `payments`
+- Supports partial payments across multiple commands
+- Fires a `payment_received` event in Supabase
+- Confirms to Neb the amount received, total paid so far, and remaining outstanding balance
 
 ### `/approve` and `/reject`
 
@@ -250,6 +270,15 @@ Operational monitoring commands.
 /logs
 /budget
 ```
+
+`/status` now returns a compact executive snapshot with:
+- current milestone
+- active tasks
+- blocked tasks
+- monthly invoiced revenue
+- monthly paid revenue
+- recent errors
+- problematic agents
 
 ---
 

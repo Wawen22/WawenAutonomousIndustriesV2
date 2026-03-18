@@ -38,6 +38,7 @@ CEO Agent (GPT-5.4)
 - **Manages:** All team leads
 - **Trigger:** New tasks from Neb, daily review cron, agent escalations
 - **Permissions:** Read all tables; write to `tasks`, `events`; cannot override model assignments
+- **Reporting:** `/status` and NL `status_report` now include active/blocked tasks, monthly invoiced vs paid revenue, recent errors, and problematic agents
 
 ### Founder (Neb)
 - **ID:** `founder`
@@ -67,9 +68,9 @@ Important: the backend currently marks all registered agents as `online` at star
 | `marketing_strategist` | configured | ✅ implemented | Marketing plan + worker orchestration active |
 | `content_creator` | configured | ✅ implemented | Content package delivery active |
 | `social_manager` | configured | ✅ implemented | Social calendar delivery active |
-| `ops` | configured | ⬜ not yet implemented | Monitoring role defined, no autonomous loop yet |
-| `finance` | configured | ⚠️ partial | Budget monitor exists; dedicated finance agent runtime loop not implemented |
-| `hr` | configured | ⬜ not yet implemented | Registry/model/tools only |
+| `ops` | configured | ✅ implemented | Runtime monitora task/agent stuck >30 min, registra `ops_alert` e notifica Neb |
+| `finance` | configured | ✅ implemented | Runtime esegue `checkBudget()`, genera report settimanale su `runs`, registra `finance_report_generated` |
+| `hr` | configured | ✅ implemented | Runtime aggrega `tasks/runs/events`, genera digest settimanale e registra `hr_digest_generated` |
 
 ---
 
@@ -188,6 +189,7 @@ Keeps WAI running smoothly, solvent, and well-documented.
 - **Model:** Gemini 2.5 Flash
 - **Tools:** Supabase, Shell, Telegram notify
 - **Cron:** Every 15 minutes health check
+- **Runtime:** monitora task `in_progress` / `blocked` fermi oltre soglia e agenti con `agent_error` non recuperato; emette `ops_alert` e notifica Neb; può anche eseguire snapshot on-demand se delegato dal CEO
 
 ### Finance Agent
 - **ID:** `finance`
@@ -195,12 +197,14 @@ Keeps WAI running smoothly, solvent, and well-documented.
 - **Model:** GPT-5.4 (for report synthesis)
 - **Tools:** Supabase (runs table), Email, Telegram notify
 - **Cron:** Hourly cost check; monthly report on 1st of month
+- **Runtime:** esegue `checkBudget()` dal service `budget.ts`, aggiorna `project_state.monthly_cost_usd`, genera un report settimanale reale su costi/runs per agente e modello, e supporta task finance espliciti
 
 ### HR Agent
 - **ID:** `hr`
 - **Role:** Agent documentation, role definitions, process docs, onboarding new agents
 - **Model:** Gemini 2.5 Flash
 - **Tools:** Supabase, File system
+- **Runtime:** aggrega attività team da `tasks`, `runs`, `events`, genera weekly digest utile per Neb e supporta task HR espliciti
 
 ---
 

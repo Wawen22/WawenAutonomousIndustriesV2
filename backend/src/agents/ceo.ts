@@ -18,6 +18,9 @@ import { runSocialManagerAgent } from './social_manager.js'
 import { runArchitectAgent } from './architect.js'
 import { runDevGeneralAgent } from './dev_general.js'
 import { runQaAgent } from './qa.js'
+import { runOpsAgent } from './ops.js'
+import { runFinanceAgent } from './finance.js'
+import { runHrAgent } from './hr.js'
 import type { Task, TaskType, TaskPriority } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -291,6 +294,18 @@ Analyze and delegate to the most appropriate agent.`
     } else if (delegation.delegateTo === 'qa') {
       void runQaAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'QA Agent failed')
+      })
+    } else if (delegation.delegateTo === 'ops') {
+      void runOpsAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Ops Agent failed')
+      })
+    } else if (delegation.delegateTo === 'finance') {
+      void runFinanceAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Finance Agent failed')
+      })
+    } else if (delegation.delegateTo === 'hr') {
+      void runHrAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'HR Agent failed')
       })
     }
   } catch (err) {

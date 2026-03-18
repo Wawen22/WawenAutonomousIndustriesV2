@@ -10,6 +10,7 @@ import type {
   AgentRun,
   AgentRunWithContext,
   Client,
+  Payment,
   Project,
   ProjectState,
   SystemEvent,
@@ -198,6 +199,19 @@ export function useInvoicedProjects() {
   }, [])
 
   return useRealtimeTable<Project>('projects', fetchProjects)
+}
+
+export function usePayments() {
+  const fetchPayments = useCallback(async (): Promise<Payment[]> => {
+    const { data, error } = await supabase
+      .from('payments')
+      .select('*')
+      .order('received_at', { ascending: false })
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Payment[]
+  }, [])
+
+  return useRealtimeTable<Payment>('payments', fetchPayments)
 }
 
 export function useAgentMemories(limit = 500, agentId?: string) {

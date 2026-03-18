@@ -93,7 +93,10 @@
 | T056 | TaskBoard improvements: client/project context + filter bar | ✅ Done | Claude | 2 | TaskCard mostra client chip + project chip da metadata; routing agent chain; expand on click; FilterBar con search/client/project/agent; Done capped a 12 task |
 | T057 | Dashboard UX: per-client dynamic colors + Runs/Activity/Overview context | ✅ Done | Claude | 2 | Palette deterministica 8 colori per cliente; RunsView mostra client+project chip + filtro cliente; EventTimeline mostra client chip; Overview ActiveTaskCard mostra cliente |
 | T058 | Fixed deliverable filenames + Project Files tab in dashboard | ✅ Done | Claude | 2 | Tutti gli agenti usano filename fisso (dev-general-1.md, marketing-plan.md, ecc.); backend scansiona anche repo/ per file codice; tab "Output Files" → "Project Files" mostra file da output/ e repo/ con badge origine |
-| T059 | E2E test bootstrap nuovo cliente | ⬜ Todo | Neb | 1 | Test manuale via Telegram: nuovo cliente+progetto → CEO → Architect → dev_general_1 crea index.html reale in bootstrap mode |
+| T059 | E2E test bootstrap nuovo cliente | ✅ Done | Codex | 1 | Verificato founder flow NL reale: cliente+progetto `website` → CEO → Architect → dev_general_1/2 → QA → `review`; `repo/index.html`, `qa_report.md`, API Project Files e dipendenze ok |
+| T069 | Ops / Finance / HR runtime minimi ma reali | ✅ Done | Codex | 1 | `ops.ts`, `finance.ts`, `hr.ts` live nel repo; monitor/report/digest reali, eventi Supabase, notifiche Neb e wiring startup + task runtime smoke-tested |
+| T070 | CEO status report arricchito | ✅ Done | Codex | 2 | `/status` e il path NL `status_report` usano un builder unico con task attivi/bloccati, fatturato mese, incassato mese, milestone corrente, errori recenti e agenti problematici |
+| T072 | Revenue correctness: invoiced vs paid | ✅ Done | Codex | 1 | Migration `payments` applicata sul cloud; `/invoice` + `/mark_paid` verificati live con riga reale in `payments`, eventi coerenti e revenue split operativo |
 | T060 | CEO update_brief action | ✅ Done | Claude | 2 | `ceo_intake.ts`: nuova action `update_brief` — legge brief.md esistente e fa append sezione datata; LLM sceglie write_brief per nuovi progetti, update_brief per follow-up |
 | T061 | Scaffold tipo-aware in initWorkspaceRepo | ✅ Done | Claude | 2 | `software_repo_runtime.ts`: `writeTypeAwareStubs()` scrive nel repo iniziale — website: index.html+style.css+script.js; app/saas: package.json+src/index.ts+tsconfig.json; marketing/content: brief-template.md |
 | T062 | HTML preview inline in ProjectsView | ✅ Done | Claude | 3 | `index.ts`: endpoint GET /api/file?path= per servire file testo/HTML; `ProjectsView.tsx`: pulsante Preview per .html → iframe sandboxed collassabile nel pannello Project Files |
@@ -119,6 +122,23 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-18 — Sessione 29: T072 live verify + T070 ✅
+
+- **T072** migration `supabase/migrations/006_payments.sql` applicata sul Supabase cloud `wai-v2` e verificata live: sul progetto test `t059-e2e-202603181823/revenue-website-202603181823` il founder flow ha registrato `/invoice ... 1200` → `project.status = invoiced`, `contract_value_usd = 1200`, poi `/mark_paid ... 400` → riga reale in `payments`, evento `payment_received`, totale pagato `$400`, outstanding `$800`
+- **VERIFY T072** eseguito con handler Telegram reale inizializzato via `grammy` e query dirette Supabase: confermati `revenue_recorded`, `payment_received`, `payments.amount_usd = 400` e coerenza dei numeri che alimentano la Revenue view
+- **T070** nuovo builder condiviso `backend/src/services/status_report.ts`: `/status` e il path NL `status_report` ora riportano milestone corrente, task attivi, task bloccati, revenue mese fatturato vs incassato, errori recenti e agenti problematici
+- **FIX** `project_state.current_milestone` nel DB cloud era ancora fermo a `M1 - Local Development Stack`; riallineato a `M7 - First revenue-generating output` e seed aggiornato per nuovi bootstrap
+- **VERIFY** `pnpm typecheck` verde su backend e dashboard
+
+### 2026-03-18 — Sessione 28: T059 + T069 + T072 (partial) ✅
+
+- **T059** E2E founder flow NL reale verificato su progetto `website`: creato cliente/progetto/brief/task in un unico messaggio, chain completa `CEO → Architect → dev_general_1 → dev_general_2 → QA`, repo auto-init con 3 commit, `workspace/.../repo/index.html` reale, `qa_report.md` presente, file visibile nell’API `/api/deliverables` che alimenta il tab **Project Files**, stato finale `review` e nessun task/dipendenza appesa
+- **T069** nuovi runtime reali `backend/src/agents/ops.ts`, `backend/src/agents/finance.ts`, `backend/src/agents/hr.ts`: Ops monitora task/agent stuck oltre soglia e notifica Neb; Finance esegue `checkBudget()` + report settimanale su `runs`; HR genera team digest su `tasks/runs/events`; tutti e 3 registrano run/eventi su Supabase e supportano anche task espliciti delegati dal CEO
+- **WIRE** `backend/src/index.ts` ora avvia `startOpsMonitor(sendTelegramNotification)`, `startFinanceRuntime(sendTelegramNotification)` e `startHrRuntime(sendTelegramNotification)`; `backend/src/agents/ceo.ts` può invocare direttamente `ops`, `finance` e `hr`
+- **VERIFY T069** smoke test reale con task creati per `ops`, `finance`, `hr`: tutti chiusi in `done`; Ops ha rilevato task storici bloccati e notificato; Finance ha prodotto report costi settimanale su run reali; HR ha prodotto digest team reale
+- **T072 (partial)** aggiunti `supabase/migrations/006_payments.sql`, tipi/service `payments`, comando founder `/mark_paid client/project amount`, evento `payment_received`, hook dashboard `usePayments()` e nuova Revenue view con distinzione **fatturato / incassato / saldo**
+- **LIMIT** la migration `006_payments.sql` non è stata applicata al Supabase cloud in questa sessione, quindi `/mark_paid` e la lettura live di `payments` sono pronti nel codice ma non ancora verificati end-to-end sul database remoto
 
 ### 2026-03-18 — Sessione 27: T066 — Agent memory system ✅
 

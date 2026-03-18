@@ -18,19 +18,19 @@ import {
 } from './git.js'
 import { log, recordEvent } from './logger.js'
 import {
+  createPayment,
   createClient,
   createProject,
   createTask,
-  getAgents,
   getClientBySlug,
   getClients,
   getMonthlyCost,
+  getPaymentsByProject,
   getProjectBySlug,
   getProjectState,
   getProjectsByClient,
   getRecentEvents,
   getTaskById,
-  getTasksByStatus,
   updateAgentModel,
   updateProjectContractValue,
   updateProjectRepo,
@@ -46,6 +46,7 @@ import {
   getRelativeProjectPath,
 } from './workspace.js'
 import { setModelOverride } from '../config/models.js'
+import { buildSystemStatusReport } from './status_report.js'
 import { runCeoAgent } from '../agents/ceo.js'
 import { runCeoNaturalLanguageHandler } from '../agents/ceo_intake.js'
 import type { CreateTaskInput, ProjectType, RepoProvider } from '../types/index.js'
@@ -167,7 +168,8 @@ function registerHandlers(bot: Bot): void {
         '/new\\_project slug\\_cliente nome \\[tipo\\] – Crea progetto\n' +
         '/clients – Lista clienti\n' +
         '/projects \\[client\\_slug\\] – Lista progetti\n' +
-        '/invoice client/project \\[amount\\_usd\\] – Fattura progetto consegnato\n\n' +
+        '/invoice client/project \\[amount\\_usd\\] – Fattura progetto consegnato\n' +
+        '/mark\\_paid client/project amount\\_usd – Registra pagamento ricevuto\n\n' +
         '*System:*\n' +
         '/status – Stato del sistema\n' +
         '/logs – Eventi recenti\n' +
@@ -798,24 +800,7 @@ function registerHandlers(bot: Bot): void {
     if (!requireFounder(ctx)) return
 
     try {
-      const [agents, state, inProgress] = await Promise.all([
-        getAgents(),
-        getProjectState(),
-        getTasksByStatus('in_progress'),
-      ])
-
-      const onlineCount = agents.filter((a) => a.status === 'online').length
-      const statusLines = [
-        `*WAI System Status*`,
-        ``,
-        `Phase: ${state?.phase ?? 'unknown'}`,
-        `Milestone: ${state?.current_milestone ?? 'none'}`,
-        `Agents online: ${onlineCount}/${agents.length}`,
-        `Tasks in progress: ${inProgress.length}`,
-        `Monthly cost: $${(state?.monthly_cost_usd ?? 0).toFixed(2)} / $${state?.monthly_budget_usd ?? 500}`,
-      ]
-
-      await ctx.reply(statusLines.join('\n'), { parse_mode: 'Markdown' })
+      await ctx.reply(await buildSystemStatusReport(), { parse_mode: 'Markdown' })
     } catch (err) {
       log.error({ err }, 'Failed to get status')
       await ctx.reply('❌ Failed to get status.')
@@ -1290,6 +1275,119 @@ function registerHandlers(bot: Bot): void {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       log.error({ err, clientSlug, projectSlug }, 'Failed to invoice project')
       await ctx.reply(`❌ Failed to invoice project: ${msg}`)
+    }
+  })
+
+  // /mark_paid <client_slug>/<project_slug> <amount_usd>
+  // Records cash actually received after invoicing.
+  bot.command('mark_paid', async (ctx) => {
+    if (!requireFounder(ctx)) return
+
+    const text = ctx.message?.text ?? ''
+    const parts = text.replace(/^\/mark_paid(?:@\S+)?/, '').trim().split(/\s+/)
+    const scope = parts[0]
+    const rawAmount = parts[1]
+
+    if (!scope || !rawAmount) {
+      await ctx.reply(
+        'Usage: /mark\\_paid client\\_slug/project\\_slug amount\\_usd\n\n' +
+          'Examples:\n' +
+          '/mark\\_paid acme\\-corp/landing\\-page 500\n' +
+          '/mark\\_paid acme\\-corp/landing\\-page 2500',
+        { parse_mode: 'Markdown' }
+      )
+      return
+    }
+
+    const scopeMatch = scope.match(/^([a-z0-9-]+)\/([a-z0-9-]+)$/)
+    if (!scopeMatch) {
+      await ctx.reply('❌ Invalid format. Use: /mark\\_paid client\\_slug/project\\_slug amount', {
+        parse_mode: 'Markdown',
+      })
+      return
+    }
+
+    const amountUsd = Number.parseFloat(rawAmount)
+    if (Number.isNaN(amountUsd) || amountUsd <= 0) {
+      await ctx.reply('❌ Invalid amount. Must be a positive number (e.g. 500 or 1499.99).', {
+        parse_mode: 'Markdown',
+      })
+      return
+    }
+
+    const clientSlug = scopeMatch[1]!
+    const projectSlug = scopeMatch[2]!
+
+    try {
+      const client = await getClientBySlug(clientSlug)
+      if (!client) {
+        await ctx.reply(`❌ Client \`${clientSlug}\` not found.`, { parse_mode: 'Markdown' })
+        return
+      }
+
+      const project = await getProjectBySlug(client.id, projectSlug)
+      if (!project) {
+        await ctx.reply(
+          `❌ Project \`${projectSlug}\` not found for client \`${clientSlug}\`.`,
+          { parse_mode: 'Markdown' }
+        )
+        return
+      }
+
+      if (project.status !== 'invoiced') {
+        await ctx.reply(
+          `❌ Project *${project.name}* is in status *${project.status}*.\n` +
+            'Use `/invoice client/project amount` first, then `/mark_paid` when cash is actually received.',
+          { parse_mode: 'Markdown' }
+        )
+        return
+      }
+
+      const payment = await createPayment({
+        project_id: project.id,
+        amount_usd: amountUsd,
+        metadata: {
+          command: 'mark_paid',
+          issued_by: 'founder',
+          client_slug: clientSlug,
+          project_slug: projectSlug,
+        },
+      })
+
+      const payments = await getPaymentsByProject(project.id)
+      const totalPaid = payments.reduce((sum, row) => sum + (row.amount_usd ?? 0), 0)
+      const outstanding = Math.max((project.contract_value_usd ?? 0) - totalPaid, 0)
+
+      await recordEvent('payment_received', {
+        payload: {
+          payment_id: payment.id,
+          project_id: project.id,
+          client_id: client.id,
+          client_slug: clientSlug,
+          project_slug: projectSlug,
+          project_name: project.name,
+          client_name: client.name,
+          amount_usd: amountUsd,
+          total_paid_usd: totalPaid,
+          outstanding_usd: outstanding,
+          contract_value_usd: project.contract_value_usd,
+          issued_by: 'founder',
+        },
+      })
+
+      await ctx.reply(
+        `💵 *Payment Recorded*\n\n` +
+          `Client: ${client.name}\n` +
+          `Project: ${project.name}\n` +
+          `Received: $${amountUsd.toFixed(2)}\n` +
+          `Total paid: $${totalPaid.toFixed(2)}\n` +
+          `Outstanding: $${outstanding.toFixed(2)}`,
+        { parse_mode: 'Markdown' }
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      log.error({ err, clientSlug, projectSlug, amountUsd }, 'Failed to record payment')
+      await ctx.reply(`❌ Failed to record payment: ${msg}`)
     }
   })
 

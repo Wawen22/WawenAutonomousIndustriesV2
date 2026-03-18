@@ -138,6 +138,17 @@ export interface AgentMemory {
   ttl: string | null
 }
 
+export interface Payment {
+  id: string
+  project_id: string
+  amount_usd: number
+  currency: string
+  notes: string | null
+  received_at: string
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
 export interface ProjectState {
   id: number
   version: string

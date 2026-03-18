@@ -6,14 +6,14 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { clsx } from 'clsx'
-import { createPortal } from 'react-dom'
 import {
   useAgents,
   useAgentStats,
   useTasks,
   useEventsWithContext,
 } from '../hooks/useSupabaseRealtime.js'
-import type { Agent, AgentStatus, AgentTeam, AgentRun, Task, SystemEventWithContext } from '../types/index.js'
+import { AgentDetailSidebar } from './AgentDetailSidebar.js'
+import type { Agent, AgentStatus, AgentTeam, AgentRun } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -56,16 +56,6 @@ function agentActivityState(agent: Agent, lastRun: AgentRun | undefined, nowMs: 
   }
   return 'idle'
 }
-
-function eventPayloadSummary(payload: Record<string, unknown>): string {
-  const msg = payload['message'] ?? payload['description'] ?? payload['summary'] ?? payload['text']
-  if (typeof msg === 'string' && msg.trim()) return msg.slice(0, 120)
-  return JSON.stringify(payload).slice(0, 120)
-}
-
-// ---------------------------------------------------------------------------
-// Agent avatar (initials + model color)
-// ---------------------------------------------------------------------------
 
 function AgentAvatar({ agent, size = 'md' }: { agent: Agent; size?: 'sm' | 'md' }) {
   const initials = agent.name
@@ -328,184 +318,6 @@ function OfficeQuiet() {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Severity color helper
-// ---------------------------------------------------------------------------
-
-function severityColor(s: string): string {
-  if (s === 'error' || s === 'critical') return 'text-rose-400'
-  if (s === 'warning') return 'text-amber-400'
-  return 'text-slate-500'
-}
-
-// ---------------------------------------------------------------------------
-// Desk modal (slide-in from right)
-// ---------------------------------------------------------------------------
-
-function DeskModal({
-  agent,
-  lastRuns,
-  runCount,
-  activeTasks,
-  recentEvents,
-  onClose,
-}: {
-  agent: Agent
-  lastRuns: AgentRun[]
-  runCount: number
-  activeTasks: Task[]
-  recentEvents: SystemEventWithContext[]
-  onClose: () => void
-}) {
-  const teamMeta = TEAM_META[agent.team] ?? TEAM_META.ops
-  const modelStyle = MODEL_BADGE[agent.model_id] ?? { text: 'text-slate-400', bg: 'bg-slate-400/10' }
-  const myTasks = activeTasks.filter((t) => t.assignee_agent_id === agent.id)
-  const myEvents = recentEvents.filter((e) => e.agent_id === agent.id).slice(0, 6)
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <div
-        className="relative w-[380px] h-full bg-[#070C1A] border-l border-white/[0.08] flex flex-col shadow-[-20px_0_60px_rgba(0,0,0,0.5)] animate-slide-up"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className={clsx('px-5 py-4 border-b border-white/[0.07] flex items-center gap-3', teamMeta.bg)}>
-          <div className={clsx('w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm border', modelStyle.bg, modelStyle.text,
-            agent.model_id === 'gpt-5.4' ? 'border-[#00D4FF]/20' : 'border-violet-400/20'
-          )}>
-            {agent.name.split(/\s+/).filter(Boolean).slice(0,2).map(w => w[0]?.toUpperCase() ?? '').join('')}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', STATUS_DOT[agent.status])} />
-              <h2 className="text-sm font-bold text-white truncate">{agent.name}</h2>
-            </div>
-            <p className={clsx('text-[10px] font-semibold uppercase tracking-wider mt-0.5', teamMeta.color)}>
-              {teamMeta.label}
-            </p>
-          </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors text-xl leading-none flex-shrink-0">✕</button>
-        </div>
-
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
-
-          {/* Role */}
-          <div>
-            <p className="text-[10px] text-slate-600 uppercase tracking-wider font-bold mb-1.5">Role</p>
-            <p className="text-xs text-slate-300 leading-relaxed">{agent.role}</p>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-lg border border-white/[0.07] bg-white/[0.03] p-3 text-center">
-              <p className="text-lg font-bold text-white">{runCount}</p>
-              <p className="text-[9px] text-slate-600 uppercase tracking-wide mt-0.5">Runs</p>
-            </div>
-            <div className="rounded-lg border border-white/[0.07] bg-white/[0.03] p-3 text-center">
-              <p className="text-lg font-bold text-white">{myTasks.length}</p>
-              <p className="text-[9px] text-slate-600 uppercase tracking-wide mt-0.5">Active</p>
-            </div>
-            <div className={clsx('rounded-lg border border-white/[0.07] p-3 text-center', modelStyle.bg)}>
-              <p className={clsx('text-[10px] font-bold font-mono', modelStyle.text)}>
-                {agent.model_id === 'gpt-5.4' ? 'GPT-5.4' : 'Gemini'}
-              </p>
-              <p className="text-[9px] text-slate-600 uppercase tracking-wide mt-0.5">Model</p>
-            </div>
-          </div>
-
-          {/* Active tasks */}
-          {myTasks.length > 0 && (
-            <div>
-              <p className="text-[10px] text-slate-600 uppercase tracking-wider font-bold mb-2">Active Tasks</p>
-              <div className="space-y-1.5">
-                {myTasks.slice(0, 3).map((t) => (
-                  <div key={t.id} className="rounded-lg border border-amber-400/20 bg-amber-400/[0.04] px-3 py-2">
-                    <p className="text-[11px] text-white font-medium truncate">{t.title}</p>
-                    <p className="text-[9px] text-slate-600 font-mono mt-0.5">{t.type}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Last runs */}
-          <div>
-            <p className="text-[10px] text-slate-600 uppercase tracking-wider font-bold mb-2">Last Runs</p>
-            {lastRuns.length === 0 ? (
-              <p className="text-[11px] text-slate-700 italic">No runs yet</p>
-            ) : (
-              <div className="space-y-2">
-                {lastRuns.map((run) => (
-                  <div key={run.id} className="rounded-lg border border-white/[0.07] bg-white/[0.03] p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={clsx(
-                        'text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded font-mono',
-                        run.outcome === 'success' ? 'bg-emerald-400/10 text-emerald-400' :
-                        run.outcome === 'failure' ? 'bg-rose-400/10 text-rose-400' :
-                        'bg-amber-400/10 text-amber-400',
-                      )}>
-                        {run.outcome}
-                      </span>
-                      <span className="text-[9px] text-slate-600 font-mono">
-                        {new Date(run.created_at).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 line-clamp-2 leading-relaxed">
-                      {run.output_summary || run.input_summary || '—'}
-                    </p>
-                    <p className="text-[9px] text-slate-700 font-mono mt-1">
-                      ${run.cost_usd.toFixed(4)} · {run.duration_ms}ms
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Recent events */}
-          {myEvents.length > 0 && (
-            <div>
-              <p className="text-[10px] text-slate-600 uppercase tracking-wider font-bold mb-2">Recent Events</p>
-              <div className="space-y-1.5">
-                {myEvents.map((ev) => (
-                  <div key={ev.id} className="rounded border border-white/[0.05] bg-white/[0.02] px-3 py-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className={clsx('text-[9px] font-mono font-semibold truncate', severityColor(ev.severity))}>
-                        {ev.type}
-                      </span>
-                      <span className="text-[9px] text-slate-700 font-mono flex-shrink-0">
-                        {new Date(ev.created_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    {Object.keys(ev.payload).length > 0 && (
-                      <p className="text-[9px] text-slate-600 mt-0.5 line-clamp-1">
-                        {eventPayloadSummary(ev.payload)}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
 export function VirtualOfficeView() {
   const { data: agents, loading, error } = useAgents()
   const { runCounts, lastRuns } = useAgentStats()
@@ -607,9 +419,9 @@ export function VirtualOfficeView() {
         />
       ))}
 
-      {/* Desk modal */}
+      {/* Agent Detail Sidebar */}
       {selectedAgent && (
-        <DeskModal
+        <AgentDetailSidebar
           agent={selectedAgent}
           lastRuns={lastRuns[selectedAgent.id] ?? []}
           runCount={runCounts[selectedAgent.id] ?? 0}

@@ -10,11 +10,13 @@ import type {
   AgentStatus,
   Client,
   CreateClientInput,
+  CreatePaymentInput,
   CreateProjectInput,
   CreateTaskInput,
   LogEventInput,
   LogRunInput,
   ModelConfig,
+  Payment,
   Project,
   RepoProvider,
   ProjectStatus,
@@ -375,6 +377,49 @@ export async function updateProjectRepo(id: string, input: UpdateProjectRepoInpu
     .eq('id', id)
 
   if (error) throw new Error(`Failed to update project repo: ${error.message}`)
+}
+
+// ---------------------------------------------------------------------------
+// Payment Queries
+// ---------------------------------------------------------------------------
+
+export async function createPayment(input: CreatePaymentInput): Promise<Payment> {
+  const { data, error } = await getSupabaseClient()
+    .from('payments')
+    .insert({
+      project_id: input.project_id,
+      amount_usd: input.amount_usd,
+      currency: input.currency ?? 'USD',
+      notes: input.notes ?? null,
+      received_at: input.received_at ?? new Date().toISOString(),
+      metadata: input.metadata ?? {},
+    })
+    .select()
+    .single()
+
+  if (error) throw new Error(`Failed to create payment: ${error.message}`)
+  return data as Payment
+}
+
+export async function getPayments(): Promise<Payment[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('payments')
+    .select('*')
+    .order('received_at', { ascending: false })
+
+  if (error) throw new Error(`Failed to get payments: ${error.message}`)
+  return (data ?? []) as Payment[]
+}
+
+export async function getPaymentsByProject(projectId: string): Promise<Payment[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('payments')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('received_at', { ascending: false })
+
+  if (error) throw new Error(`Failed to get payments for project ${projectId}: ${error.message}`)
+  return (data ?? []) as Payment[]
 }
 
 // ---------------------------------------------------------------------------

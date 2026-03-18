@@ -13,14 +13,10 @@ import {
   createClient,
   createProject,
   createTask,
-  getAgents,
   getClientBySlug,
   getClients,
-  getMonthlyCost,
   getProjectBySlug,
   getProjectsByClient,
-  getProjectState,
-  getTasksByStatus,
   updateProjectWorkspacePath,
 } from '../services/supabase.js'
 import {
@@ -30,6 +26,7 @@ import {
   getProjectWorkspacePath,
 } from '../services/workspace.js'
 import { log, recordEvent } from '../services/logger.js'
+import { buildSystemStatusReport } from '../services/status_report.js'
 import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import { runCeoAgent } from './ceo.js'
 import type { Client, ProjectType } from '../types/index.js'
@@ -246,26 +243,7 @@ async function executeAction(
 
     // ── status_report ─────────────────────────────────────────────────────
     case 'status_report': {
-      const [agents, state, inProgress, todo] = await Promise.all([
-        getAgents(),
-        getProjectState(),
-        getTasksByStatus('in_progress'),
-        getTasksByStatus('todo'),
-      ])
-      const cost = await getMonthlyCost()
-      const onlineCount = (agents as Array<{ status: string }>).filter((a) => a.status === 'online').length
-      const budget = state?.monthly_budget_usd ?? 500
-      const pct = Math.round((cost / budget) * 100)
-      const bar = '█'.repeat(Math.floor(pct / 10)) + '░'.repeat(10 - Math.floor(pct / 10))
-      return [
-        `*WAI — Status Report*`,
-        ``,
-        `🎯 Milestone: ${state?.current_milestone ?? 'none'}`,
-        `🤖 Agents online: ${onlineCount}/${agents.length}`,
-        `⚡ Tasks in progress: ${inProgress.length}`,
-        `📋 Tasks in coda: ${todo.length}`,
-        `💸 Budget mensile: [${bar}] ${pct}% ($${cost.toFixed(2)} / $${budget})`,
-      ].join('\n')
+      return buildSystemStatusReport()
     }
 
     // ── create_client ─────────────────────────────────────────────────────

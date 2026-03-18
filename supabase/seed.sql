@@ -98,7 +98,7 @@ ON CONFLICT (id) DO UPDATE SET
 -- ============================================================
 
 INSERT INTO project_state (id, version, phase, active_agents_count, monthly_cost_usd, monthly_budget_usd, total_tasks_done, current_milestone)
-VALUES (1, '0.1.0', 'local', 0, 0, 500, 0, 'M1 - Local Development Stack')
+VALUES (1, '0.1.0', 'local', 0, 0, 500, 0, 'M7 - First revenue-generating output')
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================

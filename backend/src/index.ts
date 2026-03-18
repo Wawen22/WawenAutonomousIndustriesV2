@@ -7,12 +7,14 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { log, recordEvent } from './services/logger.js'
-import { getTelegramBot } from './services/telegram.js'
-import { startBudgetMonitor } from './services/budget.js'
+import { getTelegramBot, sendTelegramNotification } from './services/telegram.js'
 import { updateAgentStatus, getProjectState } from './services/supabase.js'
 import { getAllAgentIds } from './config/agents.js'
 import { pingLiteLLM } from './services/llm.js'
 import { getWorkspaceRoot } from './services/workspace.js'
+import { startOpsMonitor } from './agents/ops.js'
+import { startFinanceRuntime } from './agents/finance.js'
+import { startHrRuntime } from './agents/hr.js'
 
 async function main(): Promise<void> {
   const PORT = parseInt(process.env['PORT'] ?? '3001', 10)
@@ -327,8 +329,10 @@ async function main(): Promise<void> {
     log.warn('LiteLLM not reachable — model calls will fail until it is up')
   }
 
-  // --- Start budget monitor (every hour) ---
-  startBudgetMonitor(3_600_000)
+  // --- Start Ops / Finance / HR runtimes ---
+  startOpsMonitor(sendTelegramNotification)
+  startFinanceRuntime(sendTelegramNotification)
+  startHrRuntime(sendTelegramNotification)
 
   // --- Project state summary ---
   try {
