@@ -2,6 +2,7 @@ import { clsx } from 'clsx'
 
 export type IconName =
   | 'overview' | 'agents' | 'tasks' | 'activity' | 'costs' | 'runs' | 'clients' | 'projects' | 'revenue'
+  | 'team' | 'office' | 'memory'
   | 'chevron-left' | 'chevron-right'
   | 'check' | 'x' | 'clock' | 'zap' | 'arrow-right' | 'info' | 'alert'
   | 'cpu' | 'dollar' | 'trending-up' | 'refresh' | 'folder' | 'building'
@@ -186,6 +187,35 @@ export function Icon({ name, size = 16, className }: IconProps) {
         <svg {...p}>
           <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
           <path d="M20 9l2 3-2 3" />
+        </svg>
+      )
+    case 'team':
+      return (
+        <svg {...p}>
+          <circle cx="12" cy="6" r="2" />
+          <path d="M12 8v4" />
+          <circle cx="6" cy="14" r="2" />
+          <circle cx="18" cy="14" r="2" />
+          <path d="M12 12l-6 2M12 12l6 2" />
+        </svg>
+      )
+    case 'office':
+      return (
+        <svg {...p}>
+          <rect x="2" y="7" width="20" height="14" rx="2" />
+          <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+          <path d="M12 12v3" />
+          <path d="M8 12v3" />
+          <path d="M16 12v3" />
+        </svg>
+      )
+    case 'memory':
+      return (
+        <svg {...p}>
+          <path d="M4 4h16v4H4z" />
+          <path d="M4 12h16v4H4z" />
+          <path d="M8 4v4M12 4v4M16 4v4M8 12v4M12 12v4M16 12v4" />
+          <path d="M4 8v4M20 8v4" />
         </svg>
       )
     default:

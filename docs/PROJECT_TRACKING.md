@@ -98,6 +98,9 @@
 | T061 | Scaffold tipo-aware in initWorkspaceRepo | ✅ Done | Claude | 2 | `software_repo_runtime.ts`: `writeTypeAwareStubs()` scrive nel repo iniziale — website: index.html+style.css+script.js; app/saas: package.json+src/index.ts+tsconfig.json; marketing/content: brief-template.md |
 | T062 | HTML preview inline in ProjectsView | ✅ Done | Claude | 3 | `index.ts`: endpoint GET /api/file?path= per servire file testo/HTML; `ProjectsView.tsx`: pulsante Preview per .html → iframe sandboxed collassabile nel pannello Project Files |
 | T063 | Unified file viewer in ProjectsView | ✅ Done | Claude | 2 | Viewer per tutti i tipi: HTML in repo/→iframe con CSS/JS via /api/repo static route; .md→rendered markdown; code→pre/code; click su qualsiasi riga per aprire |
+| T064 | Team Org screen | ✅ Done | Claude | 1 | `TeamOrgView.tsx`: org chart Neb→CEO→teams; avatar generativi; status+model badge; slide-in panel con runs+tasks; `useAgentStats` hook; sidebar entry |
+| T065 | Virtual Office screen | ✅ Done | Claude | 2 | `VirtualOfficeView.tsx`: grid di scrivania per team; monitor animato (typing dots); Neb CEO Corner; easter egg "Office is quiet"; modale click con runs+tasks+events; realtime via hook |
+| T066 | Memory system (backend + UI) | ⬜ Todo | Claude | 3 | Prossima sessione |
 
 ---
 
@@ -114,6 +117,20 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-18 — Sessione 24k: T065 — Virtual Office + rimozione Agents view ✅
+
+- **T065** `dashboard/src/components/VirtualOfficeView.tsx` — nuovo componente: Neb CEO Corner (carta speciale ambra in cima); grid di scrivania per ogni agente organizzata per team con header; componente `Monitor` (frame + screen + stand) con 3 stati: `working` (typing dots animati + glow), `recent` (run < 60s fa), `idle` (schermo spento); `AgentDesk` clicabile per ogni agente; `DeskModal` slide-in con portal su `document.body` (task attivi, ultimi 3 runs, ultimi 6 eventi per agente); easter egg "Office is quiet... 🌙" se tutti idle; `nowMs` state aggiornato ogni 10s per typing detection senza dati nuovi
+- **T065** `dashboard/src/components/Sidebar.tsx` — rimossa voce `agents` da ViewId + NAV_ITEMS; Team e Office spostate sopra Tasks; ordine sidebar: Overview → Team → Office → Tasks → Clients → Projects → Revenue → Memory → Activity → Costs → Runs
+- **T065** `dashboard/src/App.tsx` — rimosso import AgentList; rimosso `agents` da VIEW_META e switch; aggiunto import VirtualOfficeView; case `office` punta a VirtualOfficeView
+
+### 2026-03-18 — Sessione 24k: T064 — Team Org View ✅
+
+- **T064** `dashboard/src/components/TeamOrgView.tsx` — nuovo componente org chart: Neb (Founder) in cima → CEO → 5 team in colonne; avatar generativi (iniziali + colore da model); status dot (online/busy/offline/error); model badge (GPT-5.4/Gemini); run count da `useAgentStats`; click su qualsiasi nodo → slide-in panel (ruolo, stats, task attivi, ultimi 3 runs); linee di connessione gerarchiche; colori per team (emerald=software, violet=saas, amber=marketing, cyan=consulting, cyan=executive)
+- **T064** `dashboard/src/hooks/useSupabaseRealtime.ts` — aggiunto `useAgentStats()`: fetch top-500 runs → conta per agent_id + raccoglie ultimi 3 run per agent; subscription realtime su `runs`
+- **T064** `dashboard/src/components/ui/Icon.tsx` — aggiunti icon `team`, `office`, `memory`
+- **T064** `dashboard/src/components/Sidebar.tsx` — ViewId esteso con `team | office | memory`; NAV_ITEMS aggiornati
+- **T064** `dashboard/src/App.tsx` — import TeamOrgView; VIEW_META per team/office/memory; case switch
 
 ### 2026-03-18 — Sessione 24j: T063b — File viewer modale ✅
 

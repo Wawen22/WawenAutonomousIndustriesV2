@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { clsx } from 'clsx'
 import { Sidebar, type ViewId } from './components/Sidebar.js'
 import { Overview } from './components/Overview.js'
-import { AgentList } from './components/AgentList.js'
 import { TaskBoard } from './components/TaskBoard.js'
 import { EventTimeline } from './components/EventTimeline.js'
 import { CostPanel } from './components/CostPanel.js'
@@ -10,6 +9,8 @@ import { RunsView } from './components/RunsView.js'
 import { ClientsView } from './components/ClientsView.js'
 import { ProjectsView } from './components/ProjectsView.js'
 import { RevenueView } from './components/RevenueView.js'
+import { TeamOrgView } from './components/TeamOrgView.js'
+import { VirtualOfficeView } from './components/VirtualOfficeView.js'
 
 // ---------------------------------------------------------------------------
 // View metadata
@@ -17,7 +18,6 @@ import { RevenueView } from './components/RevenueView.js'
 
 const VIEW_META: Record<ViewId, { title: string; description: string }> = {
   overview: { title: 'Overview',       description: 'System command center'                        },
-  agents:   { title: 'Agent Fleet',    description: 'All agents and their status'                  },
   tasks:    { title: 'Task Board',     description: 'Task pipeline — Kanban view'                  },
   clients:  { title: 'Clients',        description: 'Client registry — prospects and active deals' },
   projects: { title: 'Projects',       description: 'All projects — filterable by client / status' },
@@ -25,6 +25,9 @@ const VIEW_META: Record<ViewId, { title: string; description: string }> = {
   activity: { title: 'Activity Log',   description: 'Real-time system event timeline'              },
   costs:    { title: 'Costs & Runs',   description: 'Budget, model usage, run history'             },
   runs:     { title: 'Runs',           description: 'All agent runs — filterable by agent, model, outcome' },
+  team:     { title: 'Team Org',       description: 'WAI org chart — Neb → CEO → teams → agents'           },
+  office:   { title: 'Virtual Office', description: 'Digital office — agent desks, activity, realtime'     },
+  memory:   { title: 'Memory',         description: 'Agent memory documents — search & browse'              },
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +85,6 @@ function Topbar({ view }: { view: ViewId }) {
 function ViewContent({ view }: { view: ViewId }) {
   switch (view) {
     case 'overview':  return <Overview />
-    case 'agents':    return <AgentList />
     case 'tasks':     return <TaskBoard />
     case 'clients':   return <ClientsView />
     case 'projects':  return <ProjectsView />
@@ -90,6 +92,9 @@ function ViewContent({ view }: { view: ViewId }) {
     case 'activity':  return <EventTimeline />
     case 'costs':     return <CostPanel />
     case 'runs':      return <RunsView />
+    case 'team':      return <TeamOrgView />
+    case 'office':    return <VirtualOfficeView />
+    case 'memory':    return <div className="flex items-center justify-center h-40 text-slate-600 text-sm">Memory System — coming soon (T066)</div>
   }
 }
 

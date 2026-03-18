@@ -182,6 +182,49 @@ export function useInvoicedProjects() {
   return useRealtimeTable<Project>('projects', fetchProjects)
 }
 
+/** Per-agent run counts (total) and last 3 runs — for Team Org view. */
+export function useAgentStats() {
+  const [runCounts, setRunCounts] = useState<Record<string, number>>({})
+  const [lastRuns, setLastRuns] = useState<Record<string, AgentRun[]>>({})
+  const [loading, setLoading] = useState(true)
+
+  const fetch = useCallback(async () => {
+    try {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('runs')
+        .select('id, agent_id, model_id, input_summary, output_summary, outcome, created_at, cost_usd, duration_ms, tokens_input, tokens_output, tools_used, task_id, error_message')
+        .order('created_at', { ascending: false })
+        .limit(500)
+      if (error) throw new Error(error.message)
+      const runs = (data ?? []) as AgentRun[]
+      const counts: Record<string, number> = {}
+      const last: Record<string, AgentRun[]> = {}
+      for (const run of runs) {
+        counts[run.agent_id] = (counts[run.agent_id] ?? 0) + 1
+        if (!last[run.agent_id]) last[run.agent_id] = []
+        if (last[run.agent_id].length < 3) last[run.agent_id].push(run)
+      }
+      setRunCounts(counts)
+      setLastRuns(last)
+    } catch {
+      // silently ignore; stats are supplementary
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetch()
+    const ch = supabase.channel('realtime-agent-stats')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'runs' }, () => { void fetch() })
+      .subscribe()
+    return () => { void supabase.removeChannel(ch) }
+  }, [fetch])
+
+  return { runCounts, lastRuns, loading }
+}
+
 export function useProjectState() {
   const [state, setState] = useState<ProjectState | null>(null)
   const [loading, setLoading] = useState(true)
