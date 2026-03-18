@@ -1,9 +1,15 @@
+// ============================================================
+// WAI Dashboard – Founder Action Center (T070)
+// High-tension decision HQ for the only human in the system.
+// ============================================================
+
 import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { format, formatDistanceToNow } from 'date-fns'
 import { Panel } from './ui/Panel.js'
 import { Badge } from './ui/Badge.js'
 import { Stat } from './ui/Stat.js'
+import { Icon } from './ui/Icon.js'
 import {
   useClients,
   useEventsWithContext,
@@ -36,58 +42,22 @@ interface OutstandingRow {
   lastPaymentAt: string | null
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function getMeta(task: Task, key: string): string {
   const value = task.metadata[key]
   return typeof value === 'string' && value.trim() ? value.trim() : ''
 }
 
 function formatUsd(amount: number): string {
-  return `$${amount.toFixed(2)}`
+  return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
 }
 
-function projectStatusVariant(status: ProjectStatus): string {
-  switch (status) {
-    case 'review':
-      return 'in_progress'
-    case 'blocked':
-      return 'blocked'
-    case 'delivered':
-      return 'done'
-    case 'active':
-      return 'dev'
-    case 'invoiced':
-      return 'finance'
-    default:
-      return 'default'
-  }
-}
-
-function founderEventVariant(type: string): string {
-  switch (type) {
-    case 'human_review_requested':
-      return 'in_progress'
-    case 'task_unblocked':
-      return 'info'
-    case 'human_approved':
-      return 'done'
-    case 'human_rejected':
-      return 'blocked'
-    case 'revenue_recorded':
-      return 'finance'
-    case 'payment_received':
-      return 'finance'
-    default:
-      return 'default'
-  }
-}
-
-function parsePromptAmount(raw: string | null): number | null {
-  if (raw === null) return null
-  const normalized = raw.trim().replace(',', '.')
-  if (!normalized) return null
-  const amount = Number(normalized)
-  return Number.isFinite(amount) ? amount : Number.NaN
-}
+// ---------------------------------------------------------------------------
+// API Calls
+// ---------------------------------------------------------------------------
 
 async function runFounderTaskAction(taskId: string, action: FounderTaskAction, reason?: string): Promise<string> {
   const response = await fetch(`${BACKEND_URL}/api/founder/task-action`, {
@@ -95,670 +65,306 @@ async function runFounderTaskAction(taskId: string, action: FounderTaskAction, r
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ taskId, action, reason }),
   })
-
   const payload = await response.json() as { error?: string; message?: string }
-  if (!response.ok) {
-    throw new Error(payload.error ?? 'Founder task action failed')
-  }
+  if (!response.ok) throw new Error(payload.error ?? 'Action failed')
   return payload.message ?? 'Action completed.'
 }
 
-async function runFounderRevenueAction(
-  action: FounderRevenueAction,
-  clientSlug: string,
-  projectSlug: string,
-  amountUsd?: number
-): Promise<string> {
+async function runFounderRevenueAction(action: FounderRevenueAction, clientSlug: string, projectSlug: string, amountUsd?: number): Promise<string> {
   const response = await fetch(`${BACKEND_URL}/api/founder/revenue-action`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, clientSlug, projectSlug, amountUsd }),
   })
-
   const payload = await response.json() as { error?: string; message?: string }
-  if (!response.ok) {
-    throw new Error(payload.error ?? 'Founder revenue action failed')
-  }
+  if (!response.ok) throw new Error(payload.error ?? 'Action failed')
   return payload.message ?? 'Action completed.'
 }
 
-function aggregatePayments(payments: Payment[]): Map<string, { paidUsd: number; lastPaymentAt: string | null }> {
-  const map = new Map<string, { paidUsd: number; lastPaymentAt: string | null }>()
+// ---------------------------------------------------------------------------
+// Sub-components: Strategic UI
+// ---------------------------------------------------------------------------
 
-  for (const payment of payments) {
-    const current = map.get(payment.project_id) ?? { paidUsd: 0, lastPaymentAt: null }
-    const nextLastPaymentAt =
-      !current.lastPaymentAt || new Date(payment.received_at).getTime() > new Date(current.lastPaymentAt).getTime()
-        ? payment.received_at
-        : current.lastPaymentAt
-
-    map.set(payment.project_id, {
-      paidUsd: current.paidUsd + (payment.amount_usd ?? 0),
-      lastPaymentAt: nextLastPaymentAt,
-    })
-  }
-
-  return map
-}
-
-function FounderOpsTaskCard({
-  task,
-  state,
-  onRetry,
-  onReject,
-}: {
-  task: Task
-  state: ActionState | undefined
-  onRetry: (task: Task) => Promise<void>
-  onReject: (task: Task) => Promise<void>
-}) {
-  const clientName = getMeta(task, 'client_name')
-  const projectName = getMeta(task, 'project_name')
-  const projectType = getMeta(task, 'project_type')
-  const clientColor = clientName ? getClientColor(clientName) : null
-  const retryCount = typeof task.metadata['retry_count'] === 'number' ? task.metadata['retry_count'] : null
-  const rawError = getMeta(task, 'blocked_reason') || getMeta(task, 'error')
-  const blockedReason = rawError || [
-    'Agent runtime failed or timed out (no error detail captured).',
-    `Assignee: ${task.assignee_agent_id ?? 'none'}.`,
-    retryCount !== null ? `Retry count: ${retryCount}.` : '',
-    'Use Retry to re-dispatch, or Cancel to close.',
-  ].filter(Boolean).join(' ')
-
+function BlockedAlertCard({ task, state, onRetry, onReject }: { task: Task; state?: ActionState; onRetry: any; onReject: any }) {
+  const rawError = getMeta(task, 'blocked_reason') || getMeta(task, 'error') || 'Critical node failure'
+  
   return (
-    <div className="rounded-xl border border-orange-500/20 bg-orange-950/10 p-3 space-y-2.5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1.5">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <Badge variant="blocked">blocked</Badge>
-            <Badge variant={`p${task.priority}`}>P{task.priority}</Badge>
-            <span className="text-[10px] font-mono text-slate-500">{task.id.slice(0, 8)}</span>
-          </div>
-
-          {(clientName || projectName) && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {clientName && clientColor && (
-                <span
-                  className={clsx(
-                    'text-[10px] font-mono px-1.5 py-0.5 rounded border',
-                    clientColor.bg,
-                    clientColor.border,
-                    clientColor.text
-                  )}
-                >
-                  {clientName}
-                </span>
-              )}
-              {projectName && (
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/40 text-cyan-300">
-                  {projectType ? `${projectName} · ${projectType}` : projectName}
-                </span>
-              )}
-            </div>
-          )}
-
-          <p className="text-sm font-medium text-white leading-snug">{task.title}</p>
+    <div className="relative group overflow-hidden rounded-2xl border-2 border-rose-500/30 bg-rose-500/[0.03] p-5 transition-all hover:bg-rose-500/[0.06]">
+      <div className="absolute top-0 right-0 p-4 opacity-20 group-hover:opacity-40 transition-opacity">
+        <Icon name="alert" size={40} className="text-rose-500" />
+      </div>
+      
+      <div className="relative z-10 space-y-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-2 w-2 rounded-full bg-rose-500 animate-ping" />
+          <h4 className="text-[10px] font-black text-rose-500 uppercase tracking-[0.3em]">Emergency Directive Required</h4>
         </div>
 
-        <div className="text-right flex-shrink-0">
-          <div className="text-[10px] text-slate-500 font-mono">
-            {formatDistanceToNow(new Date(task.updated_at), { addSuffix: true })}
-          </div>
-          <div className="text-[11px] text-orange-300 font-mono mt-1">
-            {task.assignee_agent_id ?? 'unassigned'}
-          </div>
+        <div className="space-y-1">
+          <h3 className="text-lg font-black text-white leading-tight uppercase italic">{task.title}</h3>
+          <p className="text-[11px] text-slate-400 font-mono">NODE: {task.assignee_agent_id?.toUpperCase() || 'UNASSIGNED'} • ID: {task.id.slice(0,8)}</p>
         </div>
+
+        <div className="bg-black/40 border border-rose-500/20 rounded-xl p-3 font-mono text-[11px] text-rose-200/80 leading-relaxed italic">
+          &gt; ERROR_LOG: {rawError}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => onRetry(task)}
+            disabled={state?.pending}
+            className="flex-1 bg-white text-black font-black text-[11px] uppercase py-3 rounded-xl hover:bg-[#00D4FF] transition-all disabled:opacity-50"
+          >
+            {state?.pending ? 'Processing...' : 'Force Retry'}
+          </button>
+          <button 
+            onClick={() => onReject(task)}
+            disabled={state?.pending}
+            className="px-6 border-2 border-rose-500/40 text-rose-500 font-black text-[11px] uppercase py-3 rounded-xl hover:bg-rose-500 hover:text-white transition-all disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+        {state?.message && <p className="text-[10px] text-emerald-400 font-mono font-bold">✓ {state.message}</p>}
+        {state?.error && <p className="text-[10px] text-rose-400 font-mono font-bold">⚠ {state.error}</p>}
       </div>
-
-      <p className="text-[11px] text-orange-300/85 font-mono whitespace-pre-wrap break-words">
-        {blockedReason}
-      </p>
-
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => void onRetry(task)}
-          disabled={state?.pending}
-          className="px-2.5 py-1.5 rounded-md text-[11px] font-mono border border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50 transition-colors"
-        >
-          {state?.pending ? 'Retrying…' : 'Retry'}
-        </button>
-        <button
-          onClick={() => void onReject(task)}
-          disabled={state?.pending}
-          className="px-2.5 py-1.5 rounded-md text-[11px] font-mono border border-rose-500/25 text-rose-300 hover:bg-rose-500/10 disabled:opacity-50 transition-colors"
-        >
-          {state?.pending ? 'Cancelling…' : 'Cancel'}
-        </button>
-      </div>
-
-      {state?.message && <p className="text-[11px] text-emerald-400 font-mono">{state.message}</p>}
-      {state?.error && <p className="text-[11px] text-rose-400 font-mono">{state.error}</p>}
     </div>
   )
 }
 
-function ReviewTaskCard({
-  task,
-  state,
-  onApprove,
-  onReject,
-}: {
-  task: Task
-  state: ActionState | undefined
-  onApprove: (task: Task) => Promise<void>
-  onReject: (task: Task) => Promise<void>
-}) {
-  const clientName = getMeta(task, 'client_name')
-  const projectName = getMeta(task, 'project_name')
-  const projectType = getMeta(task, 'project_type')
-  const clientColor = clientName ? getClientColor(clientName) : null
-
+function ReviewRequestCard({ task, state, onApprove, onReject }: { task: Task; state?: ActionState; onApprove: any; onReject: any }) {
   return (
-    <div className="rounded-xl border border-violet-500/20 bg-violet-950/10 p-3 space-y-2.5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1.5">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <Badge variant="in_progress">review</Badge>
-            <Badge variant={`p${task.priority}`}>P{task.priority}</Badge>
-            <span className="text-[10px] font-mono text-slate-500">{task.id.slice(0, 8)}</span>
+    <div className="relative rounded-2xl border border-violet-500/30 bg-violet-500/[0.03] p-5 space-y-4 hover:bg-violet-500/[0.06] transition-all">
+      <div className="flex justify-between items-start">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Badge variant="in_progress">HUMAN_REVIEW</Badge>
+            <span className="text-[9px] font-mono text-slate-600">REQ_AT: {format(new Date(task.updated_at), 'HH:mm:ss')}</span>
           </div>
-
-          {(clientName || projectName) && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {clientName && clientColor && (
-                <span
-                  className={clsx(
-                    'text-[10px] font-mono px-1.5 py-0.5 rounded border',
-                    clientColor.bg,
-                    clientColor.border,
-                    clientColor.text
-                  )}
-                >
-                  {clientName}
-                </span>
-              )}
-              {projectName && (
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/40 text-cyan-300">
-                  {projectType ? `${projectName} · ${projectType}` : projectName}
-                </span>
-              )}
-            </div>
-          )}
-
-          <p className="text-sm font-medium text-white leading-snug">{task.title}</p>
-          {task.description && (
-            <p className="text-[11px] text-slate-400 font-mono line-clamp-2">{task.description}</p>
-          )}
+          <h3 className="text-base font-black text-white uppercase">{task.title}</h3>
         </div>
-
-        <div className="text-right flex-shrink-0">
-          <div className="text-[10px] text-slate-500 font-mono">
-            {formatDistanceToNow(new Date(task.updated_at), { addSuffix: true })}
-          </div>
-          <div className="text-[11px] text-violet-300 font-mono mt-1">
-            {task.assignee_agent_id ?? 'unassigned'}
-          </div>
+        <div className="w-10 h-10 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center font-black text-xs text-violet-400">
+          {task.assignee_agent_id?.slice(0,2).toUpperCase()}
         </div>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => void onApprove(task)}
-          disabled={state?.pending}
-          className="px-2.5 py-1.5 rounded-md text-[11px] font-mono border border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50 transition-colors"
+      <p className="text-[11px] text-slate-400 leading-relaxed line-clamp-2 italic font-medium">"{task.description}"</p>
+
+      <div className="flex gap-2">
+        <button 
+          onClick={() => onApprove(task)}
+          className="flex-1 bg-violet-500 text-white font-black text-[10px] uppercase py-2.5 rounded-lg hover:bg-violet-400 transition-all shadow-[0_0_15px_rgba(139,92,246,0.3)]"
         >
-          {state?.pending ? 'Approving…' : 'Approve'}
+          Approve Work
         </button>
-        <button
-          onClick={() => void onReject(task)}
-          disabled={state?.pending}
-          className="px-2.5 py-1.5 rounded-md text-[11px] font-mono border border-rose-500/25 text-rose-300 hover:bg-rose-500/10 disabled:opacity-50 transition-colors"
+        <button 
+          onClick={() => onReject(task)}
+          className="px-4 border border-violet-500/30 text-violet-400 font-black text-[10px] uppercase py-2.5 rounded-lg hover:bg-violet-500/10 transition-all"
         >
-          {state?.pending ? 'Rejecting…' : 'Reject'}
+          Reject
         </button>
       </div>
-
-      {state?.message && <p className="text-[11px] text-emerald-400 font-mono">{state.message}</p>}
-      {state?.error && <p className="text-[11px] text-rose-400 font-mono">{state.error}</p>}
     </div>
   )
 }
 
-function InvoiceQueueCard({
-  project,
-  clientName,
-  clientSlug,
-  state,
-  onInvoice,
-}: {
-  project: Project
-  clientName: string
-  clientSlug: string
-  state: ActionState | undefined
-  onInvoice: (project: Project, clientSlug: string) => Promise<void>
-}) {
-  return (
-    <div className="rounded-xl border border-cyan-500/15 bg-cyan-950/10 p-3 space-y-2.5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <Badge variant={projectStatusVariant(project.status)}>{project.status}</Badge>
-            <Badge variant="default">{project.type}</Badge>
-          </div>
-          <p className="text-sm font-medium text-white">{project.name}</p>
-          <p className="text-[11px] text-slate-500 font-mono">{clientName} · {clientSlug}/{project.slug}</p>
-        </div>
-
-        <div className="text-right flex-shrink-0">
-          <div className="text-[10px] text-slate-500 font-mono">contract</div>
-          <div className="text-sm font-bold text-emerald-400 font-mono">{formatUsd(project.contract_value_usd ?? 0)}</div>
-        </div>
-      </div>
-
-      <button
-        onClick={() => void onInvoice(project, clientSlug)}
-        disabled={state?.pending}
-        className="px-2.5 py-1.5 rounded-md text-[11px] font-mono border border-cyan-500/25 text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-50 transition-colors"
-      >
-        {state?.pending ? 'Invoicing…' : 'Invoice'}
-      </button>
-
-      {state?.message && <p className="text-[11px] text-emerald-400 font-mono">{state.message}</p>}
-      {state?.error && <p className="text-[11px] text-rose-400 font-mono">{state.error}</p>}
-    </div>
-  )
-}
-
-function OutstandingCard({
-  row,
-  state,
-  onMarkPaid,
-}: {
-  row: OutstandingRow
-  state: ActionState | undefined
-  onMarkPaid: (row: OutstandingRow) => Promise<void>
-}) {
-  return (
-    <div className="rounded-xl border border-emerald-500/15 bg-emerald-950/10 p-3 space-y-2.5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <Badge variant="finance">invoiced</Badge>
-            <Badge variant={row.outstandingUsd > 0 ? 'warning' : 'done'}>
-              {row.outstandingUsd > 0 ? 'outstanding' : 'paid'}
-            </Badge>
-          </div>
-          <p className="text-sm font-medium text-white">{row.project.name}</p>
-          <p className="text-[11px] text-slate-500 font-mono">{row.clientName} · {row.clientSlug}/{row.project.slug}</p>
-        </div>
-
-        <div className="text-right flex-shrink-0 space-y-1">
-          <div className="text-[10px] text-slate-500 font-mono">outstanding</div>
-          <div className="text-sm font-bold text-amber-400 font-mono">{formatUsd(row.outstandingUsd)}</div>
-          <div className="text-[10px] text-cyan-300 font-mono">paid {formatUsd(row.paidUsd)}</div>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-[10px] text-slate-500 font-mono">
-          Last payment: {row.lastPaymentAt ? format(new Date(row.lastPaymentAt), 'MMM d, yyyy') : '—'}
-        </div>
-        <button
-          onClick={() => void onMarkPaid(row)}
-          disabled={state?.pending || row.outstandingUsd <= 0}
-          className="px-2.5 py-1.5 rounded-md text-[11px] font-mono border border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50 transition-colors"
-        >
-          {state?.pending ? 'Recording…' : 'Mark Paid'}
-        </button>
-      </div>
-
-      {state?.message && <p className="text-[11px] text-emerald-400 font-mono">{state.message}</p>}
-      {state?.error && <p className="text-[11px] text-rose-400 font-mono">{state.error}</p>}
-    </div>
-  )
-}
-
-function FounderEventRow({ event }: { event: SystemEventWithContext }) {
-  const clientName = typeof event.task?.metadata?.['client_name'] === 'string' ? event.task.metadata['client_name'] : null
-  const projectName = typeof event.task?.metadata?.['project_name'] === 'string' ? event.task.metadata['project_name'] : null
-
-  return (
-    <div className="py-2 border-b border-white/[0.04] last:border-0">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <Badge variant={founderEventVariant(event.type)}>{event.type}</Badge>
-          <span className="text-[11px] text-slate-300 truncate">{String(event.payload['title'] ?? event.payload['project_name'] ?? event.type)}</span>
-        </div>
-        <span className="text-[10px] text-slate-600 font-mono whitespace-nowrap">
-          {formatDistanceToNow(new Date(event.created_at), { addSuffix: true })}
-        </span>
-      </div>
-
-      {(clientName || projectName) && (
-        <p className="mt-1 text-[10px] text-slate-500 font-mono">
-          {[clientName, projectName].filter(Boolean).join(' / ')}
-        </p>
-      )}
-    </div>
-  )
-}
+// ---------------------------------------------------------------------------
+// Main Component
+// ---------------------------------------------------------------------------
 
 export function FounderOpsView() {
-  const { data: blockedTasks, loading: tasksLoading, error: tasksError } = useTasks('blocked')
-  const { data: reviewTasks, loading: reviewLoading, error: reviewError } = useReviewRequestedTasks()
-  const { data: projects, loading: projectsLoading, error: projectsError } = useProjects()
+  const { data: blockedTasks, loading: tasksLoading } = useTasks('blocked')
+  const { data: reviewTasks, loading: reviewLoading } = useReviewRequestedTasks()
+  const { data: projects, loading: projectsLoading } = useProjects()
   const { data: clients } = useClients()
-  const { data: payments, loading: paymentsLoading, error: paymentsError } = usePayments()
-  const { data: events } = useEventsWithContext(80)
+  const { data: payments, loading: paymentsLoading } = usePayments()
+  const { data: events } = useEventsWithContext(50)
   const { state: projectState } = useProjectState()
+  
   const [actionStates, setActionStates] = useState<Record<string, ActionState>>({})
 
-  const clientMap = useMemo(() => {
-    return new Map(clients.map((client) => [client.id, client]))
-  }, [clients])
-
-  const invoiceQueue = useMemo(() => {
-    return projects
-      .filter((project) => project.status !== 'invoiced' && ['review', 'delivered', 'blocked', 'active'].includes(project.status))
-      .map((project) => ({
-        project,
-        client: clientMap.get(project.client_id),
-      }))
-      .filter((entry) => Boolean(entry.client))
-      .sort((a, b) => new Date(b.project.created_at).getTime() - new Date(a.project.created_at).getTime())
-  }, [clientMap, projects])
-
-  const paymentMap = useMemo(() => aggregatePayments(payments), [payments])
-
-  const outstandingRows = useMemo<OutstandingRow[]>(() => {
-    return projects
-      .filter((project) => project.status === 'invoiced')
-      .map((project) => {
-        const paymentState = paymentMap.get(project.id)
-        const paidUsd = paymentState?.paidUsd ?? 0
-        const outstandingUsd = Math.max((project.contract_value_usd ?? 0) - paidUsd, 0)
-        const client = clientMap.get(project.client_id)
-        return {
-          project,
-          clientName: client?.name ?? '—',
-          clientSlug: client?.slug ?? '',
-          paidUsd,
-          outstandingUsd,
-          lastPaymentAt: paymentState?.lastPaymentAt ?? null,
-        }
-      })
-      .filter((row) => row.clientSlug && row.outstandingUsd > 0)
-      .sort((a, b) => b.outstandingUsd - a.outstandingUsd)
-  }, [clientMap, paymentMap, projects])
-
-  const founderEvents = useMemo(() => {
-    const allowed = new Set(['human_review_requested', 'task_unblocked', 'human_approved', 'human_rejected', 'revenue_recorded', 'payment_received'])
-    return events.filter((event) => allowed.has(event.type)).slice(0, 12)
-  }, [events])
+  const clientMap = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients])
 
   const totals = useMemo(() => {
-    const outstandingUsd = outstandingRows.reduce((sum, row) => sum + row.outstandingUsd, 0)
+    const outstandingUsd = projects
+      .filter(p => p.status === 'invoiced')
+      .reduce((sum, p) => {
+        const paid = payments.filter(pay => pay.project_id === p.id).reduce((s, pay) => s + (pay.amount_usd ?? 0), 0)
+        return sum + Math.max((p.contract_value_usd ?? 0) - paid, 0)
+      }, 0)
+
     return {
       blocked: blockedTasks.length,
       pendingReview: reviewTasks.length,
-      invoiceable: invoiceQueue.length,
-      outstandingProjects: outstandingRows.length,
       outstandingUsd,
     }
-  }, [blockedTasks.length, reviewTasks.length, invoiceQueue.length, outstandingRows])
-
-  function setPendingState(key: string) {
-    setActionStates((current) => ({
-      ...current,
-      [key]: { pending: true, message: null, error: null },
-    }))
-  }
-
-  function setSuccessState(key: string, message: string) {
-    setActionStates((current) => ({
-      ...current,
-      [key]: { pending: false, message, error: null },
-    }))
-  }
-
-  function setErrorState(key: string, error: string) {
-    setActionStates((current) => ({
-      ...current,
-      [key]: { pending: false, message: null, error },
-    }))
-  }
-
-  async function handleApprove(task: Task) {
-    const key = `task:${task.id}`
-    const reason = window.prompt('Optional approval note?', '')
-    if (reason === null) return
-
-    try {
-      setPendingState(key)
-      const message = await runFounderTaskAction(task.id, 'approve', reason || undefined)
-      setSuccessState(key, message)
-    } catch (err) {
-      setErrorState(key, err instanceof Error ? err.message : 'Unknown error')
-    }
-  }
-
-  async function handleRetry(task: Task) {
-    const key = `task:${task.id}`
-    const reason = window.prompt('Optional retry note for the agent?', '')
-    if (reason === null) return
-
-    try {
-      setPendingState(key)
-      const message = await runFounderTaskAction(task.id, 'retry', reason || undefined)
-      setSuccessState(key, message)
-    } catch (err) {
-      setErrorState(key, err instanceof Error ? err.message : 'Unknown error')
-    }
-  }
-
-  async function handleReject(task: Task) {
-    const key = `task:${task.id}`
-    const reason = window.prompt('Reason for cancelling this task?', 'Founder cancelled blocked task')
-    if (reason === null) return
-
-    try {
-      setPendingState(key)
-      const message = await runFounderTaskAction(task.id, 'reject', reason || undefined)
-      setSuccessState(key, message)
-    } catch (err) {
-      setErrorState(key, err instanceof Error ? err.message : 'Unknown error')
-    }
-  }
-
-  async function handleInvoice(project: Project, clientSlug: string) {
-    const key = `project:invoice:${project.id}`
-    const raw = window.prompt(
-      `Invoice amount for ${clientSlug}/${project.slug}`,
-      project.contract_value_usd > 0 ? String(project.contract_value_usd) : ''
-    )
-    const amount = parsePromptAmount(raw)
-    if (amount === null) return
-    if (!Number.isFinite(amount)) {
-      setErrorState(key, 'Invalid invoice amount')
-      return
-    }
-
-    try {
-      setPendingState(key)
-      const message = await runFounderRevenueAction('invoice', clientSlug, project.slug, amount)
-      setSuccessState(key, message)
-    } catch (err) {
-      setErrorState(key, err instanceof Error ? err.message : 'Unknown error')
-    }
-  }
-
-  async function handleMarkPaid(row: OutstandingRow) {
-    const key = `project:paid:${row.project.id}`
-    const raw = window.prompt(
-      `Payment received for ${row.clientSlug}/${row.project.slug}`,
-      row.outstandingUsd > 0 ? String(row.outstandingUsd) : ''
-    )
-    const amount = parsePromptAmount(raw)
-    if (amount === null) return
-    if (!Number.isFinite(amount)) {
-      setErrorState(key, 'Invalid payment amount')
-      return
-    }
-
-    try {
-      setPendingState(key)
-      const message = await runFounderRevenueAction('mark_paid', row.clientSlug, row.project.slug, amount)
-      setSuccessState(key, message)
-    } catch (err) {
-      setErrorState(key, err instanceof Error ? err.message : 'Unknown error')
-    }
-  }
+  }, [blockedTasks, reviewTasks, projects, payments])
 
   const loading = tasksLoading || reviewLoading || projectsLoading || paymentsLoading
-  const error = tasksError ?? reviewError ?? projectsError ?? paymentsError
+
+  async function handleAction(key: string, fn: () => Promise<string>) {
+    setActionStates(s => ({ ...s, [key]: { pending: true, message: null, error: null } }))
+    try {
+      const msg = await fn()
+      setActionStates(s => ({ ...s, [key]: { pending: false, message: msg, error: null } }))
+    } catch (err) {
+      setActionStates(s => ({ ...s, [key]: { pending: false, message: null, error: err instanceof Error ? err.message : 'Unknown' } }))
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <div className="w-12 h-12 border-4 border-[#00D4FF]/20 border-t-[#00D4FF] rounded-full animate-spin" />
+        <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Accessing Secure Founder Node...</p>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h2 className="text-sm font-bold text-white">Founder Ops</h2>
-          <p className="text-[11px] text-slate-600 mt-0.5">
-            Decision queue per Neb: blocked tasks, invoice queue, outstanding payments.
-          </p>
-        </div>
-        <div className="max-w-xl rounded-xl border border-cyan-500/15 bg-cyan-950/10 px-3 py-2">
-          <p className="text-[11px] text-cyan-200 font-medium">M7 clarification</p>
-          <p className="text-[10px] text-slate-500 mt-1 leading-relaxed font-mono">
-            In dev, this board validates a revenue-ready founder loop on test data.
-            Real external revenue only starts when Neb runs the same flow on an actual paying client.
-          </p>
-          <p className="text-[10px] text-slate-600 mt-1 font-mono">
-            Current milestone: {projectState?.current_milestone ?? 'M7 - First revenue-generating output'}
-          </p>
+    <div className="space-y-8 animate-fade-in pb-20">
+      
+      {/* ── Command Header ── */}
+      <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-[#070C1A] p-8">
+        <div className="absolute inset-0 bg-gradient-to-r from-[#00D4FF]/5 via-transparent to-transparent pointer-events-none" />
+        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
+          <div className="flex items-center gap-6">
+            <div className="w-20 h-20 rounded-2xl bg-amber-400/10 border-2 border-amber-400/40 flex items-center justify-center relative shadow-[0_0_30px_rgba(251,191,36,0.15)]">
+               <span className="text-4xl font-black text-amber-400 italic">N</span>
+               <div className="absolute -top-2 -right-2 px-2 py-0.5 rounded bg-rose-500 text-white text-[8px] font-black uppercase animate-pulse">Root</div>
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-white uppercase tracking-tighter italic">Central Command</h1>
+              <p className="text-[11px] text-slate-500 font-mono tracking-widest mt-1 uppercase">Authentication Verified: Neb (Founder)</p>
+            </div>
+          </div>
+
+          <div className="flex gap-4">
+            <div className="text-right">
+              <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Milestone Target</p>
+              <p className="text-sm font-mono font-bold text-cyan-400 uppercase">{projectState?.current_milestone?.split(' - ')[0] || 'M7'}</p>
+            </div>
+            <div className="w-px h-8 bg-white/10" />
+            <div className="text-right">
+              <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Uncollected Capital</p>
+              <p className="text-sm font-mono font-bold text-emerald-400 uppercase">{formatUsd(totals.outstandingUsd)}</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat label="Blocked Tasks" value={String(totals.blocked)} color="amber" />
-        <Stat label="Pending Review" value={String(totals.pendingReview)} color="violet" />
-        <Stat label="Ready To Invoice" value={String(totals.invoiceable)} color="cyan" />
-        <Stat label="Outstanding Invoices" value={String(totals.outstandingProjects)} color="violet" />
-        <Stat label="Outstanding USD" value={formatUsd(totals.outstandingUsd)} color="emerald" />
-      </div>
-
-      {loading && (
-        <Panel title="Founder Queue" accent="cyan">
-          <p className="text-[11px] text-slate-600 font-mono animate-pulse py-6">Caricamento founder action center…</p>
-        </Panel>
-      )}
-
-      {error && (
-        <Panel title="Founder Queue" accent="rose">
-          <p className="text-[11px] text-rose-400 font-mono py-6">Errore: {error}</p>
-        </Panel>
-      )}
-
-      {!loading && !error && (
-        <div className="grid grid-cols-1 xl:grid-cols-[1.15fr,0.85fr] gap-5">
-          <div className="space-y-5">
-            <Panel title={`Blocked Tasks (${blockedTasks.length})`} accent="amber">
-              <div className="space-y-3">
-                {blockedTasks.length === 0 && (
-                  <p className="text-[11px] text-slate-600 font-mono py-4">
-                    Nessuna task bloccata. Se qualcosa si rompe, comparirà qui con Retry / Cancel immediati.
-                  </p>
-                )}
-
-                {blockedTasks.map((task) => (
-                  <FounderOpsTaskCard
-                    key={task.id}
-                    task={task}
-                    state={actionStates[`task:${task.id}`]}
-                    onRetry={handleRetry}
-                    onReject={handleReject}
+      {/* ── Tactical Grid ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Urgent Operations (Blocked + Reviews) */}
+        <div className="lg:col-span-2 space-y-8">
+          
+          {/* Emergency Directives (Blocked) */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-black text-white uppercase tracking-[0.3em] flex items-center gap-3">
+                <Icon name="alert" size={14} className="text-rose-500" />
+                Active Impediments
+              </h2>
+              <span className="text-[10px] font-mono text-slate-600 uppercase font-bold">{blockedTasks.length} CRITICAL</span>
+            </div>
+            
+            <div className="grid grid-cols-1 gap-4">
+              {blockedTasks.length === 0 ? (
+                <div className="py-12 rounded-2xl border-2 border-dashed border-white/5 flex items-center justify-center grayscale opacity-30">
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">No blockages detected in neural grid</p>
+                </div>
+              ) : (
+                blockedTasks.map(t => (
+                  <BlockedAlertCard 
+                    key={t.id} task={t} state={actionStates[`task:${t.id}`]}
+                    onRetry={(task: Task) => handleAction(`task:${task.id}`, () => runFounderTaskAction(task.id, 'retry'))}
+                    onReject={(task: Task) => handleAction(`task:${task.id}`, () => runFounderTaskAction(task.id, 'reject'))}
                   />
-                ))}
-              </div>
-            </Panel>
+                ))
+              )}
+            </div>
+          </section>
 
-            <Panel title={`Pending Review (${reviewTasks.length})`} accent="violet">
-              <div className="space-y-3">
-                {reviewTasks.length === 0 && (
-                  <p className="text-[11px] text-slate-600 font-mono py-4">
-                    Nessuna task in attesa di approvazione founder. Le task create con <span className="text-violet-400">requires_human_review = true</span> compariranno qui.
-                  </p>
-                )}
-
-                {reviewTasks.map((task) => (
-                  <ReviewTaskCard
-                    key={task.id}
-                    task={task}
-                    state={actionStates[`task:${task.id}`]}
-                    onApprove={handleApprove}
-                    onReject={handleReject}
-                  />
-                ))}
-              </div>
-            </Panel>
-
-            <Panel title={`Ready To Invoice (${invoiceQueue.length})`} accent="cyan">
-              <div className="space-y-3">
-                {invoiceQueue.length === 0 && (
-                  <p className="text-[11px] text-slate-600 font-mono py-4">
-                    Nessun progetto in review/delivered/blocked/active da fatturare adesso.
-                  </p>
-                )}
-
-                {invoiceQueue.map(({ project, client }) => (
-                  <InvoiceQueueCard
-                    key={project.id}
-                    project={project}
-                    clientName={client?.name ?? '—'}
-                    clientSlug={client?.slug ?? ''}
-                    state={actionStates[`project:invoice:${project.id}`]}
-                    onInvoice={handleInvoice}
-                  />
-                ))}
-              </div>
-            </Panel>
-          </div>
-
-          <div className="space-y-5">
-            <Panel title={`Outstanding Payments (${outstandingRows.length})`} accent="emerald">
-              <div className="space-y-3">
-                {outstandingRows.length === 0 && (
-                  <p className="text-[11px] text-slate-600 font-mono py-4">
-                    Nessun outstanding aperto. I progetti invoiced e non ancora fully paid compariranno qui.
-                  </p>
-                )}
-
-                {outstandingRows.map((row) => (
-                  <OutstandingCard
-                    key={row.project.id}
-                    row={row}
-                    state={actionStates[`project:paid:${row.project.id}`]}
-                    onMarkPaid={handleMarkPaid}
-                  />
-                ))}
-              </div>
-            </Panel>
-
-            <Panel title="Recent Founder Decisions" accent="violet">
-              <div className="space-y-0">
-                {founderEvents.length === 0 && (
-                  <p className="text-[11px] text-slate-600 font-mono py-4">
-                    Nessuna founder decision recente registrata.
-                  </p>
-                )}
-
-                {founderEvents.map((event) => (
-                  <FounderEventRow key={event.id} event={event} />
-                ))}
-              </div>
-            </Panel>
-          </div>
+          {/* Executive Approvals */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-black text-white uppercase tracking-[0.3em] flex items-center gap-3">
+                <Icon name="check" size={14} className="text-violet-400" />
+                Human Validation
+              </h2>
+              <span className="text-[10px] font-mono text-slate-600 uppercase font-bold">{reviewTasks.length} PENDING</span>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {reviewTasks.map(t => (
+                <ReviewRequestCard 
+                  key={t.id} task={t} state={actionStates[`task:${t.id}`]}
+                  onApprove={(task: Task) => handleAction(`task:${task.id}`, () => runFounderTaskAction(task.id, 'approve'))}
+                  onReject={(task: Task) => handleAction(`task:${task.id}`, () => runFounderTaskAction(task.id, 'reject'))}
+                />
+              ))}
+              {reviewTasks.length === 0 && (
+                <div className="col-span-full py-8 text-center opacity-30">
+                  <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest italic">All agent outputs verified</p>
+                </div>
+              )}
+            </div>
+          </section>
         </div>
-      )}
+
+        {/* Intelligence Side-bar (Revenue + Decisions) */}
+        <div className="space-y-8">
+          
+          {/* Revenue Pipeline */}
+          <Panel title="Revenue Pipeline" accent="emerald">
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px] font-black uppercase">
+                  <span className="text-slate-500">Pipeline Health</span>
+                  <span className="text-emerald-400">Optimal</span>
+                </div>
+                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 shadow-[0_0_10px_#10b981]" style={{ width: '75%' }} />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {projects.filter(p => p.status === 'delivered' || p.status === 'review').slice(0,3).map(p => (
+                  <div key={p.id} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 group hover:border-emerald-500/20 transition-all">
+                    <div>
+                      <p className="text-[11px] font-bold text-white truncate uppercase">{p.name}</p>
+                      <p className="text-[9px] text-slate-600 font-mono mt-0.5">{clientMap.get(p.client_id)?.name}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[11px] font-mono font-black text-emerald-400">{formatUsd(p.contract_value_usd || 0)}</p>
+                      <button className="text-[8px] font-black text-[#00D4FF] uppercase tracking-tighter mt-1 opacity-0 group-hover:opacity-100 transition-opacity">Generate Invoice</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Panel>
+
+          {/* Executive Decision Log */}
+          <Panel title="Recent Override Log" accent="violet">
+            <div className="space-y-0 h-[300px] overflow-y-auto custom-scrollbar">
+              {events.filter(e => e.type.includes('human_') || e.type.includes('task_unblocked')).slice(0, 10).map(e => (
+                <div key={e.id} className="py-3 border-b border-white/5 last:border-0 flex items-start gap-3">
+                  <div className="w-1 h-1 rounded-full bg-violet-500 mt-1.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline gap-2">
+                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-tight truncate">{e.type.replace(/_/g, ' ')}</p>
+                      <span className="text-[8px] text-slate-600 font-mono whitespace-nowrap">{formatDistanceToNow(new Date(e.created_at), { addSuffix: true })}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-medium italic mt-0.5 line-clamp-1">{String(e.payload['message'] || e.payload['title'] || '')}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </div>
+      </div>
     </div>
   )
 }
