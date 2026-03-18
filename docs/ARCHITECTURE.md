@@ -252,11 +252,19 @@ Canonical operating examples live in `docs/FOUNDER_OPERATIONS_PLAYBOOK.md`.
 
 ```
 Neb → Telegram /invoice client/project [amount]
+or
+Neb → natural language "Fattura client/project [amount]"
+or
+Neb → Dashboard Founder Ops → Invoice
 → backend moves project.status → invoiced
 → backend updates projects.contract_value_usd
 → INSERT revenue_recorded event
 
 Neb → Telegram /mark_paid client/project amount
+or
+Neb → natural language "Segna pagato client/project amount"
+or
+Neb → Dashboard Founder Ops → Mark Paid
 → backend INSERT into supabase.payments
 → INSERT payment_received event
 → Dashboard Revenue view computes invoiced vs paid vs outstanding
@@ -278,6 +286,59 @@ Neb → natural language query ("come stai?", "status sistema")
    - monthly paid revenue
    - recent errors
    - problematic agents
+```
+
+### 9. Founder blocked-task recovery flow
+
+```
+Task runtime fails or dependency chain blocks
+→ task.status = blocked
+→ agent_error and/or task_blocked event is stored
+→ Ops alert / CEO status report surfaces the blocked task to Neb
+
+Neb chooses:
+→ Telegram /retry <task_id> [reason]
+or
+→ natural language "Sblocca la task abc12345 e rilanciala"
+or
+→ Dashboard Task Board → Retry / Cancel
+or
+→ Dashboard Founder Ops → Retry / Cancel
+
+Retry path:
+→ CEO Intake / Telegram command / Dashboard action all call shared founder action services
+→ backend resolves task by full UUID or unique short ID prefix
+→ backend writes founder action metadata + retry_count
+→ INSERT task_unblocked event
+→ if dependencies are clear, rerun the original assignee runtime
+→ if dependencies are still blocked, retry is refused
+
+Cancel path:
+→ backend moves task.status → cancelled
+→ INSERT human_rejected event
+```
+
+Approve and reject follow the same shared founder-action path:
+
+```
+Neb → Telegram /approve <task_id>
+or
+Neb → natural language "Approva la task abc12345"
+→ backend resolves full or short task reference
+→ backend updates task status and records founder metadata
+→ INSERT human_approved / human_rejected event
+```
+
+### 10. Founder dashboard action center
+
+```
+Dashboard Founder Ops view
+→ reads blocked tasks + review/delivered/active projects + invoiced projects + recent founder events
+→ shows a founder decision queue instead of raw operational data
+→ local backend APIs:
+   POST /api/founder/task-action
+   POST /api/founder/revenue-action
+→ actions reuse the same services already used by Telegram and CEO Intake NL
 ```
 
 ---

@@ -45,7 +45,9 @@ CEO Agent (GPT-5.4)
 - **Type:** Human super-user (not an LLM agent)
 - **Interface:** Telegram Bot, WAI Dashboard, direct DB
 - **Permissions:** Full system access
-- **Commands:** `/new_client`, `/new_project`, `/link_repo`, `/init_repo`, `/brief`, `/task`, `/projects`, `/clients`, `/assign_model`, `/status`, `/logs`, `/budget`, `/approve`, `/reject`
+- **Commands:** `/start`, `/new_client`, `/new_project`, `/link_repo`, `/init_repo`, `/brief`, `/task`, `/projects`, `/clients`, `/assign_model`, `/status`, `/logs`, `/budget`, `/invoice`, `/mark_paid`, `/retry`, `/approve`, `/reject`
+- **Natural language founder ops:** retry/approve/reject task, invoice project, mark payment received, list clients/projects, status report
+- **Dashboard ops:** dedicated `Founder Ops` action center for blocked-task recovery, invoice queue, and outstanding payments
 - **Operational Guide:** `docs/FOUNDER_OPERATIONS_PLAYBOOK.md`
 
 ---

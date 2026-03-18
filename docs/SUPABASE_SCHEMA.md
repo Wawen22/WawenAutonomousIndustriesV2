@@ -198,7 +198,7 @@ High-level audit log of important system events.
 | `created_at` | `timestamptz` | |
 
 **Event Types:**
-- `task_created`, `task_assigned`, `task_started`, `task_completed`, `task_blocked`
+- `task_created`, `task_assigned`, `task_started`, `task_completed`, `task_blocked`, `task_unblocked`
 - `agent_online`, `agent_offline`, `agent_error`
 - `model_changed`, `model_failover`
 - `budget_alert`, `budget_exceeded`

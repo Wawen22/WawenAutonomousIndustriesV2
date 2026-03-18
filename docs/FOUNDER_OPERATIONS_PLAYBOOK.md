@@ -67,7 +67,102 @@ No repo is required for consulting, marketing, content, copywriting, design, or 
 
 ---
 
-## Command Reference
+## Complete Founder Interface Reference
+
+Founder operations now have two equivalent entry points:
+
+- **Slash commands** when you want deterministic syntax and copy-paste precision.
+- **Natural language** when you want to talk to WAI normally on Telegram.
+- **Founder Ops dashboard view** when you want a decision queue for blocked tasks, invoice candidates, and outstanding payments.
+
+Rule of thumb:
+- Use slash commands for repetitive exact operations or when sharing a precise instruction with someone else.
+- Use natural language for day-to-day founder control, especially blocked task recovery and revenue operations.
+
+Natural language operational actions now use the same backend services as the direct commands for:
+- task retry / approve / reject
+- project invoice
+- payment registration
+- status / client / project inspection
+
+Dashboard founder actions now use the same shared backend services for:
+- task retry / cancel
+- project invoice
+- payment registration
+
+Important:
+- Task references in founder actions can be either the full UUID or a unique short prefix such as `abc12345`.
+- If a short ID is ambiguous, WAI asks for a longer one.
+- The canonical implementation lives in `backend/src/agents/ceo_intake.ts`, `backend/src/services/founder_task_actions.ts`, and `backend/src/services/founder_revenue_actions.ts`.
+
+### Command Index
+
+| Command | Purpose | Example |
+|---------|---------|---------|
+| `/start` | Show founder help and examples | `/start` |
+| `/new_client` | Create a client and root workspace | `/new_client "Acme Corp" info@acme.com` |
+| `/new_project` | Create a project under an existing client | `/new_project acme-corp "Landing Page" website` |
+| `/link_repo` | Link a local repo or auto-clone a remote repo into workspace | `/link_repo acme-corp/landing-page https://github.com/org/repo.git main` |
+| `/init_repo` | Initialize the canonical workspace repo | `/init_repo acme-corp/landing-page main` |
+| `/brief` | Write or replace `brief.md` | `/brief acme-corp/landing-page Landing page B2B con CTA demo.` |
+| `/task` | Launch work through CEO routing | `/task acme-corp/landing-page Progetta e implementa la landing` |
+| `/clients` | List clients | `/clients` |
+| `/projects` | List projects globally or for one client | `/projects acme-corp` |
+| `/status` | Executive system status snapshot | `/status` |
+| `/logs` | Show recent events | `/logs` |
+| `/budget` | Show API cost snapshot | `/budget` |
+| `/assign_model` | Override model for one agent | `/assign_model qa gemini-2.5-flash` |
+| `/invoice` | Mark a project as invoiced | `/invoice acme-corp/landing-page 2500` |
+| `/mark_paid` | Register money actually received | `/mark_paid acme-corp/landing-page 500` |
+| `/retry` | Unblock and relaunch a blocked task | `/retry abc12345 Dipendenza risolta` |
+| `/approve` | Approve a task output | `/approve abc12345` |
+| `/reject` | Cancel or reject a task output | `/reject abc12345 Non serve più` |
+
+### Natural Language Quick Reference
+
+These are all supported founder intents today, with examples that map to the same operational flows as the slash commands.
+
+| Intent | Example |
+|--------|---------|
+| Create client | `Crea un cliente chiamato Acme Corp con email info@acme.com` |
+| Create project | `Crea un progetto website per acme-corp chiamato Landing Page` |
+| Write brief | `Aggiorna il brief di acme-corp/landing-page: landing page B2B con CTA demo e sezione pricing` |
+| Launch work | `Lancia il lavoro per acme-corp/landing-page e costruisci il sito completo` |
+| List clients | `Mostrami i clienti` |
+| List projects | `Fammi vedere i progetti di acme-corp` |
+| Status | `Come stiamo messi oggi?` |
+| Retry blocked task | `Sblocca la task abc12345 e rilanciala` |
+| Approve task | `Approva la task abc12345` |
+| Reject task | `Cancella la task abc12345 perché non serve più` |
+| Invoice project | `Fattura acme-corp/landing-page per 2500` |
+| Mark payment received | `Segna pagato acme-corp/landing-page 400` |
+
+If the request is unambiguous, WAI executes directly. If a required identifier is missing or ambiguous, WAI asks one focused question.
+
+### `/start`
+
+Shows the founder help message on Telegram.
+
+```text
+/start
+```
+
+### Founder Ops dashboard
+
+The dashboard now has a dedicated **Founder Ops** view.
+
+It is the fastest place to operate when Neb needs to make decisions rather than inspect raw system data.
+
+What it shows:
+- blocked tasks with `Retry` and `Cancel`
+- projects ready to invoice
+- invoiced projects with outstanding balance
+- recent founder decisions (`task_unblocked`, approvals/rejections, invoicing, payments)
+
+What it is for:
+- clearing operational bottlenecks
+- moving projects from delivery to invoicing
+- tracking simulated or real collections without switching back to Telegram
 
 ### `/new_client`
 
@@ -81,6 +176,11 @@ Creates a new client and its workspace root.
 Behavior:
 - Creates the client in Supabase
 - Creates `workspace/<client-slug>/`
+- Natural language equivalent:
+```text
+Crea un cliente chiamato Acme Corp
+Crea il cliente Acme Corp con email info@acme.com
+```
 
 ### `/new_project`
 
@@ -95,6 +195,11 @@ Behavior:
 - Creates the project in Supabase
 - Creates `workspace/<client-slug>/<project-slug>/`
 - Creates `brief.md`, `PROGRESS.md`, `deliverables/`, `assets/`, `drafts/`
+- Natural language equivalent:
+```text
+Crea un progetto website per acme-corp chiamato Landing Page
+Crea il progetto acme-corp/client-portal di tipo app
+```
 
 Supported project types:
 - `website`
@@ -147,6 +252,10 @@ Saved project fields:
 - `repo_default_branch`
 - `repo_provider`
 
+Natural language note:
+- Repo linking is still best driven with the explicit slash command because of paths, branch names, and URLs.
+- Natural language can describe the intent, but `/link_repo` remains the canonical exact interface for repo onboarding.
+
 ### `/init_repo`
 
 Initializes an empty git repo inside the canonical project workspace repo path.
@@ -164,6 +273,9 @@ Behavior:
 - Optionally registers `origin`
 - Refuses to initialize over non-empty existing directories
 
+Natural language note:
+- `/init_repo` remains the canonical exact interface for repo bootstrapping.
+
 ### `/brief`
 
 Writes or replaces the project brief.
@@ -175,6 +287,11 @@ Writes or replaces the project brief.
 Behavior:
 - Writes `workspace/<client>/<project>/brief.md`
 - Gives agents concrete delivery context
+- Natural language equivalent:
+```text
+Aggiorna il brief di acmecorp/client-portal: Portale B2B con login, dashboard e ticketing.
+Scrivi nel brief di acmecorp/q2-campaign una campagna Q2 orientata alla lead generation.
+```
 
 ### `/task`
 
@@ -190,6 +307,11 @@ Behavior:
 - Creates the task in Supabase
 - Assigns it to `ceo`
 - Triggers the appropriate runtime chain
+- Natural language equivalent:
+```text
+Lancia il lavoro per acmecorp/client-portal e costruisci la piattaforma completa
+Avvia il progetto acmecorp/q2-campaign e crea piano marketing e asset
+```
 
 For software/SaaS projects with `repo_local_path`, the downstream workers now:
 - inspect the real repo
@@ -217,6 +339,11 @@ Behavior:
 Important:
 - `/invoice` means **fatturato**.
 - Cash actually received is tracked separately with `/mark_paid`.
+- Natural language equivalent:
+```text
+Fattura acmecorp/client-portal per 2500
+Segna come fatturato acmecorp/client-portal 1499.99
+```
 
 When to use:
 - After QA marks a software project `delivered` — notification includes `/invoice` prompt
@@ -241,15 +368,39 @@ Behavior:
 - Supports partial payments across multiple commands
 - Fires a `payment_received` event in Supabase
 - Confirms to Neb the amount received, total paid so far, and remaining outstanding balance
+- Natural language equivalent:
+```text
+Segna pagato acmecorp/client-portal 500
+Abbiamo incassato 2500 su acmecorp/client-portal
+```
 
-### `/approve` and `/reject`
+### `/retry`, `/approve` and `/reject`
 
-Used after human review gates.
+Used after human review gates or when a task has entered `blocked`.
 
 ```text
+/retry <task_id> [reason]
 /approve <task_id>
 /reject <task_id> Serve una revisione più forte del flusso onboarding
 ```
+
+Behavior:
+- `/retry` is the canonical founder unblock command
+- Valid only for tasks currently in `blocked`
+- Records a `task_unblocked` event
+- Re-queues the task and relaunches the original assignee runtime when dependencies are clear
+- If unresolved dependencies are still blocked, retry is refused with an explicit error
+- `/reject` cancels the task; it does not "unblock and continue"
+- Natural language equivalents:
+```text
+Sblocca la task abc12345 e rilanciala
+Approva la task abc12345
+Cancella la task abc12345 perché il brief è cambiato
+```
+
+Operational notes:
+- `task_id` can be a full UUID or a unique short ID prefix from Telegram/dashboard.
+- Founder task actions are now shared across Telegram direct commands, the CEO natural-language handler, and dashboard founder controls.
 
 ### `/clients` and `/projects`
 
@@ -259,6 +410,12 @@ Inspection commands.
 /clients
 /projects
 /projects acmecorp
+```
+
+Natural language equivalents:
+```text
+Mostrami i clienti
+Fammi vedere i progetti di acmecorp
 ```
 
 ### `/status`, `/logs`, `/budget`
@@ -279,6 +436,33 @@ Operational monitoring commands.
 - monthly paid revenue
 - recent errors
 - problematic agents
+
+Blocked tasks can now also be handled from the dashboard Task Board with founder buttons:
+- `Retry`
+- `Cancel`
+
+Natural language equivalent currently supported:
+```text
+Come stiamo messi oggi?
+```
+
+Current scope note:
+- `/status` is available in natural language.
+- `/logs` and `/budget` remain explicit slash commands for now.
+
+### `/assign_model`
+
+Overrides the current model for one agent.
+
+```text
+/assign_model qa gemini-2.5-flash
+/assign_model architect gpt-5.4
+```
+
+Use this when:
+- one runtime needs a cheaper/faster model temporarily
+- you want to force a higher-quality model for a critical flow
+- you are debugging routing or cost issues
 
 ---
 

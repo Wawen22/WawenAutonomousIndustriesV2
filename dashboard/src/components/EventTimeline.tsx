@@ -1,130 +1,110 @@
+// ============================================================
+// WAI Dashboard – Activity Log (T066)
+// Advanced System Event Timeline with Filters and Detail Sidebar
+// ============================================================
+
+import { useState, useMemo } from 'react'
 import { clsx } from 'clsx'
 import { format, formatDistanceToNow } from 'date-fns'
 import { Panel } from './ui/Panel.js'
 import { Badge } from './ui/Badge.js'
+import { Pagination } from './ui/Pagination.js'
+import { DetailSidebar } from './ui/DetailSidebar.js'
 import { useEventsWithContext } from '../hooks/useSupabaseRealtime.js'
 import { getClientColor } from '../lib/clientColors.js'
 import type { EventSeverity, SystemEventWithContext } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
-// Config
+// Constants
 // ---------------------------------------------------------------------------
 
-const SEV_STYLES: Record<EventSeverity, { dot: string; label: string }> = {
-  info:     { dot: 'bg-sky-400',    label: 'INFO'     },
-  warning:  { dot: 'bg-amber-400',  label: 'WARN'     },
-  error:    { dot: 'bg-rose-400',   label: 'ERROR'    },
-  critical: { dot: 'bg-rose-600',   label: 'CRITICAL' },
+const SEV_STYLES: Record<EventSeverity, { border: string; bg: string; text: string; dot: string }> = {
+  info:     { border: 'border-sky-500/20',    bg: 'bg-sky-500/5',    text: 'text-sky-400',    dot: 'bg-sky-400'    },
+  warning:  { border: 'border-amber-500/20',  bg: 'bg-amber-500/5',  text: 'text-amber-400',  dot: 'bg-amber-400'  },
+  error:    { border: 'border-rose-500/20',   bg: 'bg-rose-500/5',   text: 'text-rose-400',   dot: 'bg-rose-400'   },
+  critical: { border: 'border-rose-600/40',   bg: 'bg-rose-600/10',  text: 'text-rose-500',   dot: 'bg-rose-600'   },
 }
 
-const EVENT_LABELS: Record<string, string> = {
-  task_created:            'Task Created',
-  task_assigned:           'Task Assigned',
-  task_started:            'Task Started',
-  task_completed:          'Task Completed',
-  task_blocked:            'Task Blocked',
-  agent_online:            'Agent Online',
-  agent_offline:           'Agent Offline',
-  agent_error:             'Agent Error',
-  model_changed:           'Model Changed',
-  model_failover:          'Model Failover',
-  budget_alert:            'Budget Alert',
-  budget_exceeded:         'Budget Exceeded',
-  human_review_requested:  'Review Requested',
-  human_approved:          'Approved',
-  human_rejected:          'Rejected',
-  run_completed:           'Run Completed',
-  run_failed:              'Run Failed',
-  system_startup:          'System Started',
-  system_shutdown:         'System Stopped',
-  founder_command:         'Founder Command',
-}
+const PAGE_SIZE = 15
 
 // ---------------------------------------------------------------------------
-// EventRow
+// Event Card
 // ---------------------------------------------------------------------------
 
-function EventRow({ event, showDate }: { event: SystemEventWithContext; showDate: boolean }) {
+function EventCard({ 
+  event, 
+  onSelect 
+}: { 
+  event: SystemEventWithContext
+  onSelect: (e: SystemEventWithContext) => void 
+}) {
   const sev = SEV_STYLES[event.severity] ?? SEV_STYLES.info
   const ts  = new Date(event.created_at)
 
-  // Client/project from joined task metadata
-  const clientName  = ((): string => {
-    const v = event.task?.metadata?.['client_name']
-    return typeof v === 'string' && v.trim() ? v.trim() : ''
-  })()
-  const projectName = ((): string => {
-    const v = event.task?.metadata?.['project_name']
-    return typeof v === 'string' && v.trim() ? v.trim() : ''
-  })()
+  const clientName  = event.task?.metadata?.['client_name'] as string | undefined
+  const projectName = event.task?.metadata?.['project_name'] as string | undefined
   const clientColor = clientName ? getClientColor(clientName) : null
 
   return (
-    <div className="relative pl-6 pb-4 last:pb-0 group animate-slide-up">
-      {/* Timeline line */}
-      <div className="absolute left-[7px] top-4 bottom-0 w-px bg-white/[0.06] group-last:hidden" />
+    <div 
+      onClick={() => onSelect(event)}
+      className={clsx(
+        "group relative flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer",
+        "bg-[#0A1628]/40 hover:bg-[#0F2040]/60",
+        sev.border,
+        "hover:shadow-[0_8px_30px_rgba(0,0,0,0.3)] hover:-translate-y-0.5"
+      )}
+    >
+      {/* Status Bar */}
+      <div className={clsx("absolute left-0 top-4 bottom-4 w-1 rounded-r-full", sev.dot)} />
 
-      {/* Dot */}
-      <span
-        className={clsx(
-          'absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full border-2 border-[#0A1628] flex-shrink-0',
-          sev.dot
-        )}
-      />
-
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          {/* Event type */}
+      {/* Main Content */}
+      <div className="flex-1 min-w-0 pl-2">
+        <div className="flex items-center justify-between gap-4 mb-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-slate-200">
-              {EVENT_LABELS[event.type] ?? event.type.replace(/_/g, ' ')}
+            <span className="text-[13px] font-black text-white tracking-tight uppercase italic">
+              {event.type.replace(/_/g, ' ')}
             </span>
-            {event.severity !== 'info' && (
-              <Badge variant={event.severity}>{sev.label}</Badge>
-            )}
+            <span className={clsx("text-[9px] font-black px-1.5 py-0.5 rounded border uppercase tracking-widest", sev.bg, sev.text, sev.border)}>
+              {event.severity}
+            </span>
           </div>
+          <span className="text-[10px] text-slate-600 font-mono font-bold whitespace-nowrap">
+            {format(ts, 'HH:mm:ss')}
+          </span>
+        </div>
 
-          {/* Agent + task + client/project */}
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            {event.agent_id && (
-              <span className="text-[11px] text-slate-500 font-mono">{event.agent_id}</span>
-            )}
-            {event.task_id && (
-              <span className="text-[11px] text-slate-600 font-mono truncate max-w-[140px]" title={event.task_id}>
-                #{event.task_id.slice(0, 8)}
-              </span>
-            )}
-            {clientName && clientColor && (
-              <span
-                className={clsx(
-                  'text-[9px] font-mono px-1.5 py-0.5 rounded border',
-                  clientColor.bg, clientColor.border, clientColor.text
-                )}
-              >
-                {projectName ? `${clientName} · ${projectName}` : clientName}
-              </span>
-            )}
-          </div>
-
-          {/* Payload preview */}
-          {Object.keys(event.payload).length > 0 && (
-            <div className="mt-1.5 rounded-lg bg-white/[0.03] border border-white/[0.05] px-2.5 py-1.5">
-              <pre className="text-[11px] text-slate-500 font-mono whitespace-pre-wrap break-all line-clamp-2">
-                {JSON.stringify(event.payload, null, 0).slice(0, 160)}
-              </pre>
+        {/* Tags Row */}
+        <div className="flex items-center gap-2 flex-wrap mt-2">
+          {event.agent_id && (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.03] border border-white/[0.05]">
+              <span className="w-1 h-1 rounded-full bg-[#00D4FF]" />
+              <span className="text-[10px] text-slate-400 font-mono uppercase">{event.agent_id}</span>
+            </div>
+          )}
+          {event.task_id && (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.03] border border-white/[0.05]">
+              <span className="text-[10px] text-slate-500 font-mono uppercase tracking-tighter">TASK: {event.task_id.slice(0, 8)}</span>
+            </div>
+          )}
+          {clientName && clientColor && (
+            <div className={clsx("px-2 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-wider", clientColor.bg, clientColor.border, clientColor.text)}>
+              {clientName} {projectName && `• ${projectName}`}
             </div>
           )}
         </div>
 
-        {/* Timestamp */}
-        <div className="flex-shrink-0 text-right">
-          <p className="text-[11px] text-slate-500 font-mono">
-            {formatDistanceToNow(ts, { addSuffix: true })}
+        {/* Quick Preview */}
+        {Object.keys(event.payload).length > 0 && (
+          <p className="mt-3 text-[11px] text-slate-500 line-clamp-1 font-medium italic opacity-80 group-hover:opacity-100 transition-opacity">
+            {event.payload['message'] || JSON.stringify(event.payload).slice(0, 100)}
           </p>
-          {showDate && (
-            <p className="text-[10px] text-slate-700 font-mono">{format(ts, 'HH:mm:ss')}</p>
-          )}
-        </div>
+        )}
+      </div>
+
+      {/* Action Indicator */}
+      <div className="flex items-center self-stretch px-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <span className="text-[#00D4FF] text-lg">→</span>
       </div>
     </div>
   )
@@ -135,67 +115,106 @@ function EventRow({ event, showDate }: { event: SystemEventWithContext; showDate
 // ---------------------------------------------------------------------------
 
 export function EventTimeline() {
-  const { data: events, loading, error } = useEventsWithContext(50)
+  const { data: events, loading, error } = useEventsWithContext(200)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [selectedEvent, setSelectedEvent] = useState<SystemEventWithContext | null>(null)
+  const [severityFilter, setSeverityFilter] = useState<string>('all')
+
+  const filteredEvents = useMemo(() => {
+    if (severityFilter === 'all') return events
+    return events.filter(e => e.severity === severityFilter)
+  }, [events, severityFilter])
+
+  const paginatedEvents = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE
+    return filteredEvents.slice(start, start + PAGE_SIZE)
+  }, [filteredEvents, currentPage])
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-40">
-        <div className="w-5 h-5 border-2 border-[#00D4FF]/30 border-t-[#00D4FF] rounded-full animate-spin" />
+      <div className="flex items-center justify-center h-64">
+        <div className="w-10 h-10 border-4 border-[#00D4FF]/20 border-t-[#00D4FF] rounded-full animate-spin" />
       </div>
     )
   }
 
   if (error) {
     return (
-      <Panel className="border-rose-500/20">
-        <p className="text-rose-400 text-sm">Error: {error}</p>
-      </Panel>
+      <div className="p-8 rounded-2xl border border-rose-500/20 bg-rose-500/[0.05] text-center">
+        <p className="text-rose-400 font-black uppercase tracking-widest text-sm">Telemetry Failure</p>
+        <p className="text-slate-500 text-xs mt-1">{error}</p>
+      </div>
     )
   }
 
-  // Group events by relative day
-  const bySeverity = {
-    critical: events.filter((e) => e.severity === 'critical').length,
-    error:    events.filter((e) => e.severity === 'error').length,
-    warning:  events.filter((e) => e.severity === 'warning').length,
-    info:     events.filter((e) => e.severity === 'info').length,
-  }
-
   return (
-    <div className="animate-fade-in space-y-4">
-      {/* Summary */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-sm font-semibold text-white font-tabular">{events.length} events</span>
-        <div className="flex gap-2 flex-wrap">
-          {(Object.entries(bySeverity) as [EventSeverity, number][])
-            .filter(([, c]) => c > 0)
-            .map(([sev, count]) => (
-              <Badge key={sev} variant={sev} dot>
-                {count} {sev}
-              </Badge>
-            ))}
+    <div className="animate-fade-in space-y-6">
+      {/* Header & Filters */}
+      <div className="flex items-center justify-between gap-4 flex-wrap bg-white/[0.02] border border-white/[0.05] p-4 rounded-2xl">
+        <div className="flex items-center gap-4">
+          <div>
+            <h2 className="text-sm font-black text-white uppercase tracking-widest italic">System Telemetry</h2>
+            <p className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">{filteredEvents.length} events matching criteria</p>
+          </div>
         </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-slow" />
-          <span className="text-[11px] text-emerald-400 font-mono uppercase tracking-wider">Live</span>
+
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-slate-600 font-black uppercase tracking-[0.2em]">Filter Severity:</span>
+          <div className="flex bg-black/40 rounded-lg p-1 border border-white/5">
+            {['all', 'info', 'warning', 'error', 'critical'].map((s) => (
+              <button
+                key={s}
+                onClick={() => { setSeverityFilter(s); setCurrentPage(1); }}
+                className={clsx(
+                  "px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest transition-all",
+                  severityFilter === s 
+                    ? "bg-[#00D4FF] text-black shadow-[0_0_15px_rgba(0,212,255,0.3)]" 
+                    : "text-slate-500 hover:text-slate-300"
+                )}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Timeline */}
-      <Panel noPad>
-        {events.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-32 gap-2">
-            <span className="text-2xl">◌</span>
-            <p className="text-sm text-slate-600">No events recorded yet</p>
+      {/* Main List */}
+      <div className="space-y-3">
+        {paginatedEvents.length === 0 ? (
+          <div className="py-20 text-center border-2 border-dashed border-white/5 rounded-2xl">
+            <p className="text-slate-600 font-black uppercase tracking-widest italic text-sm">Zero events detected</p>
           </div>
         ) : (
-          <div className="p-5">
-            {events.map((e, i) => (
-              <EventRow key={e.id} event={e} showDate={i === 0 || i % 10 === 0} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 gap-3">
+              {paginatedEvents.map((e) => (
+                <EventCard key={e.id} event={e} onSelect={setSelectedEvent} />
+              ))}
+            </div>
+            
+            <div className="mt-6">
+              <Pagination 
+                currentPage={currentPage}
+                totalItems={filteredEvents.length}
+                pageSize={PAGE_SIZE}
+                onPageChange={setCurrentPage}
+              />
+            </div>
+          </>
         )}
-      </Panel>
+      </div>
+
+      {/* Detail Sidebar */}
+      {selectedEvent && (
+        <DetailSidebar
+          title={selectedEvent.type.replace(/_/g, ' ')}
+          subtitle={`${selectedEvent.severity} System Event`}
+          data={selectedEvent}
+          taskId={selectedEvent.task_id}
+          onClose={() => setSelectedEvent(null)}
+        />
+      )}
     </div>
   )
 }

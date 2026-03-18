@@ -99,6 +99,46 @@ export function useTasks(statusFilter?: string) {
   return useRealtimeTable<Task>('tasks', fetchTasks)
 }
 
+export function useTask(id: string | null) {
+  const [data, setData] = useState<Task | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetch = useCallback(async () => {
+    if (!id) {
+      setData(null)
+      return
+    }
+    try {
+      setLoading(true)
+      const { data: res, error: err } = await supabase.from('tasks').select('*').eq('id', id).single()
+      if (err) throw new Error(err.message)
+      setData(res as Task)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+    } finally {
+      setLoading(false)
+    }
+  }, [id])
+
+  useEffect(() => {
+    void fetch()
+    if (!id) return
+
+    const channel = supabase
+      .channel(`task-${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `id=eq.${id}` }, () => {
+        void fetch()
+      })
+      .subscribe()
+
+    return () => { void supabase.removeChannel(channel) }
+  }, [id, fetch])
+
+  return { data, loading, error }
+}
+
 export function useEvents(limit = 50) {
   const fetchEvents = useCallback(async (): Promise<SystemEvent[]> => {
     const { data, error } = await supabase

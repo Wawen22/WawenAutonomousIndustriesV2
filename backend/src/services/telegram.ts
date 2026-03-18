@@ -18,25 +18,29 @@ import {
 } from './git.js'
 import { log, recordEvent } from './logger.js'
 import {
-  createPayment,
+  executeFounderTaskAction,
+  formatFounderTaskActionMessage,
+} from './founder_task_actions.js'
+import {
+  executeInvoiceProject,
+  executeMarkProjectPaid,
+  formatInvoiceProjectMessage,
+  formatMarkProjectPaidMessage,
+} from './founder_revenue_actions.js'
+import {
   createClient,
   createProject,
   createTask,
   getClientBySlug,
   getClients,
   getMonthlyCost,
-  getPaymentsByProject,
   getProjectBySlug,
   getProjectState,
   getProjectsByClient,
   getRecentEvents,
-  getTaskById,
   updateAgentModel,
-  updateProjectContractValue,
   updateProjectRepo,
-  updateProjectStatus,
   updateProjectWorkspacePath,
-  updateTaskStatus,
 } from './supabase.js'
 import {
   createClientWorkspace,
@@ -153,7 +157,7 @@ function registerHandlers(bot: Bot): void {
     await ctx.reply(
       '🤖 *WAI – Wawen Autonomous Industries*\n\n' +
         '💬 *Natural Language:* Scrivi in testo libero e il CEO capirà cosa vuoi fare.\n' +
-        'Es: "Crea un cliente chiamato Acme Corp" oppure "Lancia una campagna marketing per il progetto X"\n\n' +
+        'Es: "Crea un cliente chiamato Acme Corp", "sblocca la task abc12345", "fattura acme/landing 2500"\n\n' +
         '*Tasks (comandi diretti):*\n' +
         '/task descrizione – Crea un task\n' +
         '/task client/project descrizione – Task con scope progetto\n' +
@@ -162,6 +166,7 @@ function registerHandlers(bot: Bot): void {
         '/link\\_repo client/project https://repo.git \\[branch\\] – Clona repo nel workspace e la collega\n' +
         '/init\\_repo client/project \\[repo\\_url\\] \\[branch\\] – Inizializza repo locale nel workspace\n' +
         '/approve task\\_id – Approva output\n' +
+        '/retry task\\_id \\[reason\\] – Sblocca e rilancia un task bloccato (ID completo o short ID univoco)\n' +
         '/reject task\\_id motivo – Rifiuta output\n\n' +
         '*Clients & Projects:*\n' +
         '/new\\_client nome \\[email\\] – Crea cliente\n' +
@@ -895,25 +900,45 @@ function registerHandlers(bot: Bot): void {
     }
 
     try {
-      const task = await getTaskById(taskId)
-      if (!task) {
-        await ctx.reply(`❌ Task \`${taskId}\` not found.`, { parse_mode: 'Markdown' })
-        return
-      }
-
-      await updateTaskStatus(taskId, 'done')
-      await recordEvent('human_approved', {
-        taskId,
-        payload: { title: task.title, approved_by: 'founder' },
+      const result = await executeFounderTaskAction(taskId, 'approve', {
+        source: 'telegram',
+        notify: sendTelegramNotification,
       })
 
-      await ctx.reply(
-        `✅ *Task Approved*\n\nID: \`${taskId}\`\nTitle: ${task.title}\nStatus: done`,
-        { parse_mode: 'Markdown' }
-      )
+      await ctx.reply(formatFounderTaskActionMessage(result), { parse_mode: 'Markdown' })
     } catch (err) {
       log.error({ err, taskId }, 'Failed to approve task')
-      await ctx.reply('❌ Failed to approve task. Check logs.')
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      await ctx.reply(`❌ Failed to approve task: ${message}`)
+    }
+  })
+
+  // /retry <task_id> [reason]
+  bot.command('retry', async (ctx) => {
+    if (!requireFounder(ctx)) return
+
+    const text = ctx.message?.text ?? ''
+    const parts = text.replace(/^\/retry(?:@\S+)?/, '').trim().split(/\s+/)
+    const taskId = parts[0]
+    const reason = parts.slice(1).join(' ').trim() || undefined
+
+    if (!taskId) {
+      await ctx.reply('Usage: /retry <task\\_id> [reason]', { parse_mode: 'Markdown' })
+      return
+    }
+
+    try {
+      const result = await executeFounderTaskAction(taskId, 'retry', {
+        source: 'telegram',
+        reason,
+        notify: sendTelegramNotification,
+      })
+
+      await ctx.reply(formatFounderTaskActionMessage(result), { parse_mode: 'Markdown' })
+    } catch (err) {
+      log.error({ err, taskId }, 'Failed to retry task')
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      await ctx.reply(`❌ Failed to retry task: ${message}`)
     }
   })
 
@@ -932,25 +957,17 @@ function registerHandlers(bot: Bot): void {
     }
 
     try {
-      const task = await getTaskById(taskId)
-      if (!task) {
-        await ctx.reply(`❌ Task \`${taskId}\` not found.`, { parse_mode: 'Markdown' })
-        return
-      }
-
-      await updateTaskStatus(taskId, 'cancelled')
-      await recordEvent('human_rejected', {
-        taskId,
-        payload: { title: task.title, rejected_by: 'founder', reason },
+      const result = await executeFounderTaskAction(taskId, 'reject', {
+        source: 'telegram',
+        reason,
+        notify: sendTelegramNotification,
       })
 
-      await ctx.reply(
-        `🚫 *Task Rejected*\n\nID: \`${taskId}\`\nTitle: ${task.title}\nReason: ${reason}`,
-        { parse_mode: 'Markdown' }
-      )
+      await ctx.reply(formatFounderTaskActionMessage(result), { parse_mode: 'Markdown' })
     } catch (err) {
       log.error({ err, taskId }, 'Failed to reject task')
-      await ctx.reply('❌ Failed to reject task. Check logs.')
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      await ctx.reply(`❌ Failed to reject task: ${message}`)
     }
   })
 
@@ -1204,73 +1221,8 @@ function registerHandlers(bot: Bot): void {
     }
 
     try {
-      const client = await getClientBySlug(clientSlug)
-      if (!client) {
-        await ctx.reply(`❌ Client \`${clientSlug}\` not found.`, { parse_mode: 'Markdown' })
-        return
-      }
-
-      const project = await getProjectBySlug(client.id, projectSlug)
-      if (!project) {
-        await ctx.reply(
-          `❌ Project \`${projectSlug}\` not found for client \`${clientSlug}\`.`,
-          { parse_mode: 'Markdown' }
-        )
-        return
-      }
-
-      if (project.status === 'invoiced') {
-        await ctx.reply(
-          `⚠️ Project *${project.name}* is already invoiced.\n` +
-            `Contract value: $${project.contract_value_usd.toFixed(2)}`,
-          { parse_mode: 'Markdown' }
-        )
-        return
-      }
-
-      const allowedStatuses = ['delivered', 'review', 'blocked', 'active']
-      if (!allowedStatuses.includes(project.status)) {
-        await ctx.reply(
-          `❌ Project is in status *${project.status}* and cannot be invoiced.\n` +
-            `Invoiceable statuses: delivered, review, blocked, active`,
-          { parse_mode: 'Markdown' }
-        )
-        return
-      }
-
-      await updateProjectStatus(project.id, 'invoiced')
-
-      const finalAmount =
-        amountUsd !== undefined ? amountUsd : project.contract_value_usd
-      if (amountUsd !== undefined) {
-        await updateProjectContractValue(project.id, amountUsd)
-      }
-
-      await recordEvent('revenue_recorded', {
-        payload: {
-          command: 'invoice',
-          project_id: project.id,
-          client_id: client.id,
-          client_slug: clientSlug,
-          project_slug: projectSlug,
-          project_name: project.name,
-          client_name: client.name,
-          previous_status: project.status,
-          contract_value_usd: finalAmount,
-          issued_by: 'founder',
-        },
-      })
-
-      log.info({ projectId: project.id, clientSlug, projectSlug, amountUsd: finalAmount }, 'Project invoiced')
-
-      await ctx.reply(
-        `💰 *Project Invoiced*\n\n` +
-          `Client: ${client.name}\n` +
-          `Project: ${project.name}\n` +
-          `Status: invoiced\n` +
-          `Contract value: $${finalAmount.toFixed(2)}`,
-        { parse_mode: 'Markdown' }
-      )
+      const result = await executeInvoiceProject(clientSlug, projectSlug, amountUsd, 'telegram')
+      await ctx.reply(formatInvoiceProjectMessage(result), { parse_mode: 'Markdown' })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       log.error({ err, clientSlug, projectSlug }, 'Failed to invoice project')
@@ -1319,71 +1271,8 @@ function registerHandlers(bot: Bot): void {
     const projectSlug = scopeMatch[2]!
 
     try {
-      const client = await getClientBySlug(clientSlug)
-      if (!client) {
-        await ctx.reply(`❌ Client \`${clientSlug}\` not found.`, { parse_mode: 'Markdown' })
-        return
-      }
-
-      const project = await getProjectBySlug(client.id, projectSlug)
-      if (!project) {
-        await ctx.reply(
-          `❌ Project \`${projectSlug}\` not found for client \`${clientSlug}\`.`,
-          { parse_mode: 'Markdown' }
-        )
-        return
-      }
-
-      if (project.status !== 'invoiced') {
-        await ctx.reply(
-          `❌ Project *${project.name}* is in status *${project.status}*.\n` +
-            'Use `/invoice client/project amount` first, then `/mark_paid` when cash is actually received.',
-          { parse_mode: 'Markdown' }
-        )
-        return
-      }
-
-      const payment = await createPayment({
-        project_id: project.id,
-        amount_usd: amountUsd,
-        metadata: {
-          command: 'mark_paid',
-          issued_by: 'founder',
-          client_slug: clientSlug,
-          project_slug: projectSlug,
-        },
-      })
-
-      const payments = await getPaymentsByProject(project.id)
-      const totalPaid = payments.reduce((sum, row) => sum + (row.amount_usd ?? 0), 0)
-      const outstanding = Math.max((project.contract_value_usd ?? 0) - totalPaid, 0)
-
-      await recordEvent('payment_received', {
-        payload: {
-          payment_id: payment.id,
-          project_id: project.id,
-          client_id: client.id,
-          client_slug: clientSlug,
-          project_slug: projectSlug,
-          project_name: project.name,
-          client_name: client.name,
-          amount_usd: amountUsd,
-          total_paid_usd: totalPaid,
-          outstanding_usd: outstanding,
-          contract_value_usd: project.contract_value_usd,
-          issued_by: 'founder',
-        },
-      })
-
-      await ctx.reply(
-        `💵 *Payment Recorded*\n\n` +
-          `Client: ${client.name}\n` +
-          `Project: ${project.name}\n` +
-          `Received: $${amountUsd.toFixed(2)}\n` +
-          `Total paid: $${totalPaid.toFixed(2)}\n` +
-          `Outstanding: $${outstanding.toFixed(2)}`,
-        { parse_mode: 'Markdown' }
-      )
+      const result = await executeMarkProjectPaid(clientSlug, projectSlug, amountUsd, 'telegram')
+      await ctx.reply(formatMarkProjectPaidMessage(result), { parse_mode: 'Markdown' })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
       log.error({ err, clientSlug, projectSlug, amountUsd }, 'Failed to record payment')

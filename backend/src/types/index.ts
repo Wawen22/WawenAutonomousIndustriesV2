@@ -166,6 +166,7 @@ export type EventType =
   | 'task_started'
   | 'task_completed'
   | 'task_blocked'
+  | 'task_unblocked'
   | 'agent_online'
   | 'agent_offline'
   | 'agent_error'

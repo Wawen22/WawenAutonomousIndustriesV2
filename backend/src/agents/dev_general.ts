@@ -549,11 +549,7 @@ Constraints:
         blockedDependentTasks: [],
       }))
 
-    const clientSlug = (task.metadata['client_slug'] as string | undefined) ?? ''
-    const projectSlugErr = (task.metadata['project_slug'] as string | undefined) ?? ''
-    const retryHint = clientSlug && projectSlugErr
-      ? `Riprova: \`/task ${clientSlug}/${projectSlugErr} ${task.title}\``
-      : 'Riprova inviando il task al CEO.'
+    const retryHint = `Riprova: \`/retry ${task.id}\``
 
     await notify(
       [

@@ -31,6 +31,19 @@ Software worker tasks may carry `dependency_task_ids` in metadata.
 - If all dependencies reach `done`, the worker is auto-started.
 - If any dependency reaches `blocked`, the worker is auto-marked `blocked` so the chain does not stall indefinitely.
 
+### Founder recovery of blocked tasks
+
+Blocked tasks are no longer terminal dead ends.
+
+- Founder can retry from Telegram with `/retry <task_id> [reason]`
+- Founder can retry from Telegram in natural language, for example `Sblocca la task abc12345 e rilanciala`
+- Founder can retry or cancel from the dashboard Task Board
+- Founder can also manage the same blocked queue from the dedicated dashboard **Founder Ops** view
+- A successful retry emits `task_unblocked`
+- Retries are refused when the task still depends on another task that remains `blocked`
+- `reject` / cancel is a terminal founder decision; it does not resume the chain
+- `approve` / `reject` are also available in natural language using the same task short IDs shown in Telegram and dashboard
+
 ### Priorities
 
 | Value | Meaning |
@@ -163,6 +176,8 @@ Revenue is now split into two separate signals:
 
 - **Invoiced revenue**: `/invoice` transitions the project to `invoiced`, sets `contract_value_usd`, and emits `revenue_recorded`.
 - **Paid revenue**: `/mark_paid client/project amount_usd` inserts one row into `payments` and emits `payment_received`.
+- The same two operations are also available through founder natural language, for example `Fattura client/project 2500` and `Segna pagato client/project 400`.
+- The dashboard **Founder Ops** view now exposes the same invoice / payment actions through local backend APIs.
 
 This allows partial payments and accurate outstanding balance tracking in the Revenue dashboard.
 
@@ -209,6 +224,7 @@ For projects managed from Telegram, the recommended operational order is:
 - `/link_repo` can also auto-clone a remote repo into `workspace/<client>/<project>/repo`.
 - `/init_repo` creates an empty canonical repo in `workspace/<client>/<project>/repo` and can optionally attach `origin`.
 - Non-code projects can skip the repo step entirely.
+- If a task later becomes `blocked`, founder can use `/retry <task_id>` or the Task Board controls instead of recreating the work item manually.
 - For software projects, `/task` now produces not only markdown briefs but also repo execution reports and repo-aware QA output when a linked repo is present.
 - On empty repos created with `/init_repo`, it is expected that the second software worker may stay queued until the bootstrap worker closes; this is normal orchestration, not a stall.
 - The full founder command guide with examples lives in `docs/FOUNDER_OPERATIONS_PLAYBOOK.md`.

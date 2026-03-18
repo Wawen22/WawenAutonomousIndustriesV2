@@ -7,6 +7,16 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { log, recordEvent } from './services/logger.js'
+import {
+  executeFounderTaskAction,
+  formatFounderTaskActionMessage,
+} from './services/founder_task_actions.js'
+import {
+  executeInvoiceProject,
+  executeMarkProjectPaid,
+  formatInvoiceProjectMessage,
+  formatMarkProjectPaidMessage,
+} from './services/founder_revenue_actions.js'
 import { getTelegramBot, sendTelegramNotification } from './services/telegram.js'
 import { updateAgentStatus, getProjectState } from './services/supabase.js'
 import { getAllAgentIds } from './config/agents.js'
@@ -16,6 +26,32 @@ import { startOpsMonitor } from './agents/ops.js'
 import { startFinanceRuntime } from './agents/finance.js'
 import { startHrRuntime } from './agents/hr.js'
 
+function isLocalRequest(req: IncomingMessage): boolean {
+  const remote = req.socket.remoteAddress ?? ''
+  return remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1'
+}
+
+function isAllowedDashboardOrigin(origin: string | undefined): boolean {
+  if (!origin) return true
+  return origin === 'http://localhost:3000' || origin === 'http://127.0.0.1:3000'
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = []
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+
+  const raw = Buffer.concat(chunks).toString('utf-8').trim()
+  if (!raw) return {}
+
+  try {
+    return JSON.parse(raw) as unknown
+  } catch {
+    throw new Error('Invalid JSON body')
+  }
+}
+
 async function main(): Promise<void> {
   const PORT = parseInt(process.env['PORT'] ?? '3001', 10)
 
@@ -23,7 +59,7 @@ async function main(): Promise<void> {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     // CORS for dashboard on localhost:3000
     res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
     if (req.method === 'OPTIONS') {
@@ -268,6 +304,136 @@ async function main(): Promise<void> {
           log.error({ err, absPath }, 'Repo static API error')
           res.writeHead(500)
           res.end()
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/founder/task-action' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null
+            ? body as Record<string, unknown>
+            : {}
+
+          const taskId = typeof payload['taskId'] === 'string' ? payload['taskId'].trim() : ''
+          const action = typeof payload['action'] === 'string' ? payload['action'].trim() : ''
+          const reason = typeof payload['reason'] === 'string' ? payload['reason'] : undefined
+
+          if (!taskId || (action !== 'retry' && action !== 'approve' && action !== 'reject')) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Invalid task action payload' }))
+            return
+          }
+
+          const result = await executeFounderTaskAction(taskId, action, {
+            source: 'dashboard',
+            reason,
+            notify: sendTelegramNotification,
+          })
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            ok: true,
+            task_id: result.task.id,
+            action: result.action,
+            status: result.nextStatus,
+            queued: result.queued,
+            message: result.message,
+            telegram_message: formatFounderTaskActionMessage(result),
+          }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Founder task action API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/founder/revenue-action' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null
+            ? body as Record<string, unknown>
+            : {}
+
+          const action = typeof payload['action'] === 'string' ? payload['action'].trim() : ''
+          const clientSlug = typeof payload['clientSlug'] === 'string' ? payload['clientSlug'].trim() : ''
+          const projectSlug = typeof payload['projectSlug'] === 'string' ? payload['projectSlug'].trim() : ''
+          const amountRaw = payload['amountUsd']
+          const amountUsd = typeof amountRaw === 'number'
+            ? amountRaw
+            : typeof amountRaw === 'string'
+              ? Number(amountRaw)
+              : undefined
+
+          if (!clientSlug || !projectSlug || (action !== 'invoice' && action !== 'mark_paid')) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Invalid revenue action payload' }))
+            return
+          }
+
+          if (action === 'mark_paid' && (amountUsd === undefined || !Number.isFinite(amountUsd))) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'mark_paid requires a valid amountUsd' }))
+            return
+          }
+
+          if (amountUsd !== undefined && !Number.isFinite(amountUsd)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Invalid amountUsd' }))
+            return
+          }
+
+          if (action === 'invoice') {
+            const result = await executeInvoiceProject(clientSlug, projectSlug, amountUsd, 'dashboard')
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({
+              ok: true,
+              action,
+              project_id: result.project.id,
+              status: result.project.status,
+              contract_value_usd: result.contractValueUsd,
+              message: `Project invoiced at $${result.contractValueUsd.toFixed(2)}.`,
+              telegram_message: formatInvoiceProjectMessage(result),
+            }))
+            return
+          }
+
+          const result = await executeMarkProjectPaid(clientSlug, projectSlug, amountUsd ?? 0, 'dashboard')
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            ok: true,
+            action,
+            project_id: result.project.id,
+            payment_id: result.payment.id,
+            amount_usd: result.amountUsd,
+            total_paid_usd: result.totalPaidUsd,
+            outstanding_usd: result.outstandingUsd,
+            message: `Payment recorded: $${result.amountUsd.toFixed(2)}.`,
+            telegram_message: formatMarkProjectPaidMessage(result),
+          }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Founder revenue action API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
         }
       })()
       return

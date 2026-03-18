@@ -8,6 +8,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { Stat } from './ui/Stat.js'
 import { Badge } from './ui/Badge.js'
 import { Panel } from './ui/Panel.js'
+import { ExpandableText } from './ui/ExpandableText.js'
 import {
   useAgents,
   useEvents,
@@ -197,6 +198,7 @@ function ActiveTaskCard({ task }: { task: Task }) {
 
 function EventFeedRow({ event }: { event: SystemEvent }) {
   const bar = SEV_BAR[event.severity] ?? SEV_BAR['info']
+  const payloadMsg = event.payload['message'] ?? event.payload['description'] ?? event.payload['summary'] ?? ''
 
   return (
     <div className="flex items-start gap-3 py-2 border-b border-white/[0.04] last:border-0">
@@ -211,8 +213,15 @@ function EventFeedRow({ event }: { event: SystemEvent }) {
             {formatDistanceToNow(new Date(event.created_at), { addSuffix: true })}
           </span>
         </div>
+        {payloadMsg && (
+          <ExpandableText 
+            text={String(payloadMsg)} 
+            className="text-[11px] text-slate-500 mt-0.5 italic"
+            maxLength={60}
+          />
+        )}
         {event.agent_id && (
-          <p className="text-[11px] text-slate-600 font-mono mt-0.5">{event.agent_id}</p>
+          <p className="text-[10px] text-slate-600 font-mono mt-1 opacity-60">Node: {event.agent_id}</p>
         )}
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { clsx } from 'clsx'
 import { Icon, type IconName } from './ui/Icon.js'
 
-export type ViewId = 'overview' | 'tasks' | 'activity' | 'costs' | 'runs' | 'clients' | 'projects' | 'revenue' | 'team' | 'office' | 'memory'
+export type ViewId = 'overview' | 'tasks' | 'activity' | 'costs' | 'runs' | 'clients' | 'projects' | 'revenue' | 'founder' | 'team' | 'office' | 'memory'
 
 interface NavItem {
   id: ViewId
@@ -28,6 +28,7 @@ const NAV_SECTIONS: NavSection[] = [
       { id: 'clients',   label: 'Clients',   icon: 'clients'   },
       { id: 'projects',  label: 'Projects',  icon: 'projects'  },
       { id: 'revenue',   label: 'Revenue',   icon: 'revenue'   },
+      { id: 'founder',   label: 'Founder',   icon: 'alert'     },
       { id: 'costs',     label: 'Costs',     icon: 'costs'     },
     ]
   },

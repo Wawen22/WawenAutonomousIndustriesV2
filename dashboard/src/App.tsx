@@ -10,6 +10,7 @@ import { RunsView } from './components/RunsView.js'
 import { ClientsView } from './components/ClientsView.js'
 import { ProjectsView } from './components/ProjectsView.js'
 import { RevenueView } from './components/RevenueView.js'
+import { FounderOpsView } from './components/FounderOpsView.js'
 import { TeamOrgView } from './components/TeamOrgView.js'
 import { MemoryView } from './components/MemoryView.js'
 
@@ -65,6 +66,7 @@ const VIEW_META: Record<ViewId, { title: string; description: string }> = {
   clients:  { title: 'Clients',        description: 'Client registry — prospects and active deals' },
   projects: { title: 'Projects',       description: 'All projects — filterable by client / status' },
   revenue:  { title: 'Revenue',        description: 'Progetti fatturati — ricavi real-time'        },
+  founder:  { title: 'Founder Ops',    description: 'Action center — blocked tasks, invoices, payments' },
   activity: { title: 'Activity Log',   description: 'Real-time system event timeline'              },
   costs:    { title: 'Costs & Runs',   description: 'Budget, model usage, run history'             },
   runs:     { title: 'Runs',           description: 'All agent runs — filterable by agent, model, outcome' },
@@ -132,6 +134,7 @@ function ViewContent({ view }: { view: ViewId }) {
     case 'clients':   return <ClientsView />
     case 'projects':  return <ProjectsView />
     case 'revenue':   return <RevenueView />
+    case 'founder':   return <FounderOpsView />
     case 'activity':  return <EventTimeline />
     case 'costs':     return <CostPanel />
     case 'runs':      return <RunsView />

@@ -166,6 +166,8 @@ function renderTaskAlert(task: Task): string {
     `Blocked for: ${minutesSince(task.updated_at)} min`,
     `Client/Project: ${clientName} / ${projectName}`,
     `Task ID: \`${task.id.slice(0, 8)}\``,
+    '',
+    `Actions: \`/retry ${task.id}\` · \`/reject ${task.id} reason\``,
   ].join('\n')
 }
 

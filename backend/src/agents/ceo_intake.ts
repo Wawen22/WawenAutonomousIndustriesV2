@@ -17,6 +17,7 @@ import {
   getClients,
   getProjectBySlug,
   getProjectsByClient,
+  getTasksByStatus,
   updateProjectWorkspacePath,
 } from '../services/supabase.js'
 import {
@@ -27,9 +28,19 @@ import {
 } from '../services/workspace.js'
 import { log, recordEvent } from '../services/logger.js'
 import { buildSystemStatusReport } from '../services/status_report.js'
+import {
+  executeFounderTaskAction,
+  formatFounderTaskActionMessage,
+} from '../services/founder_task_actions.js'
+import {
+  executeInvoiceProject,
+  executeMarkProjectPaid,
+  formatInvoiceProjectMessage,
+  formatMarkProjectPaidMessage,
+} from '../services/founder_revenue_actions.js'
 import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import { runCeoAgent } from './ceo.js'
-import type { Client, ProjectType } from '../types/index.js'
+import type { Client, ProjectType, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Conversation state (in-memory, per chatId, TTL 10 min)
@@ -95,6 +106,11 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - list_clients       → no params
 - list_projects      → params: client_slug?
 - status_report      → no params
+- retry_task         → params: task_ref, reason?
+- approve_task       → params: task_ref, reason?
+- reject_task        → params: task_ref, reason?
+- invoice_project    → params: client_slug, project_slug, amount_usd?
+- mark_project_paid  → params: client_slug, project_slug, amount_usd
 
 Valid project types: ${PROJECT_TYPES.join(', ')}
 
@@ -110,6 +126,10 @@ ${clientContext}
 6. A task description should be detailed enough for the CEO routing agent to understand the deliverable.
 7. Only ask (action: "ask") when you genuinely cannot determine a required field from context.
 8. **CRITICAL — ONE TASK PER PROJECT**: When creating work for a project, create EXACTLY ONE create_task command that covers the FULL deliverable. NEVER create 2 or 3 separate tasks for the same project in the same plan — this causes multiple Architect agents to run in parallel and collide on the same repository. One comprehensive task (e.g., "Crea landing page completa per [Client]") is always better than several partial tasks. If Neb asks to "launch tasks" or "start work" on a project, create ONE task that covers everything.
+9. When Neb asks to unblock/retry/relaunch a blocked task, use retry_task instead of creating a new task.
+10. When Neb asks to approve/confirm a task output, use approve_task. When Neb asks to reject/cancel/discard a task, use reject_task.
+11. When Neb asks to invoice a project or mark it paid, use invoice_project / mark_project_paid instead of generic create_task.
+12. task_ref may be a full UUID or a unique short prefix such as the 8-char IDs shown in Telegram/dashboard.
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -197,6 +217,40 @@ function getString(params: Record<string, unknown>, key: string): string | undef
   return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined
 }
 
+function getNumber(params: Record<string, unknown>, key: string): number | undefined {
+  const value = params[key]
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().replace(',', '.')
+    if (!normalized) return undefined
+    const parsed = Number(normalized)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+  return undefined
+}
+
+function formatTaskScope(task: Task): string {
+  const clientSlug = typeof task.metadata['client_slug'] === 'string' ? task.metadata['client_slug'] : null
+  const projectSlug = typeof task.metadata['project_slug'] === 'string' ? task.metadata['project_slug'] : null
+  if (clientSlug && projectSlug) {
+    return `${clientSlug}/${projectSlug}`
+  }
+
+  const clientName = typeof task.metadata['client_name'] === 'string' ? task.metadata['client_name'] : null
+  const projectName = typeof task.metadata['project_name'] === 'string' ? task.metadata['project_name'] : null
+  if (clientName && projectName) {
+    return `${clientName} / ${projectName}`
+  }
+  if (clientName) {
+    return clientName
+  }
+  return 'n/a'
+}
+
 // ---------------------------------------------------------------------------
 // Execute a single action — returns a summary line or throws
 // ---------------------------------------------------------------------------
@@ -274,9 +328,7 @@ async function executeAction(
       const clientSlug = getString(params, 'client_slug')
       const projectName = getString(params, 'project_name')
       const projectTypeRaw = getString(params, 'project_type')
-      const contractValue = typeof params['contract_value_usd'] === 'number'
-        ? params['contract_value_usd']
-        : undefined
+      const contractValue = getNumber(params, 'contract_value_usd')
 
       if (!clientSlug) throw new Error('client_slug mancante per create_project')
       if (!projectName) throw new Error('project_name mancante per create_project')
@@ -466,6 +518,139 @@ async function executeAction(
       return `🚀 Task \`${task.id.slice(0, 8)}\` lanciato${scopeLabel}: *${title}* — il CEO sta delegando alla catena`
     }
 
+    // ── retry_task ────────────────────────────────────────────────────────
+    case 'retry_task': {
+      const taskRef = getString(params, 'task_ref') ?? getString(params, 'task_id')
+      const reason = getString(params, 'reason')
+
+      if (!taskRef) throw new Error('task_ref mancante per retry_task')
+
+      const result = await executeFounderTaskAction(taskRef, 'retry', {
+        source: 'natural_language',
+        reason,
+        notify,
+      })
+
+      await recordEvent('founder_command', {
+        taskId: result.task.id,
+        payload: {
+          command: 'nl_retry_task',
+          source: 'natural_language',
+          task_ref: taskRef,
+          resolved_task_id: result.task.id,
+          ...(reason ? { reason } : {}),
+        },
+      })
+
+      return formatFounderTaskActionMessage(result)
+    }
+
+    // ── approve_task ──────────────────────────────────────────────────────
+    case 'approve_task': {
+      const taskRef = getString(params, 'task_ref') ?? getString(params, 'task_id')
+      const reason = getString(params, 'reason')
+
+      if (!taskRef) throw new Error('task_ref mancante per approve_task')
+
+      const result = await executeFounderTaskAction(taskRef, 'approve', {
+        source: 'natural_language',
+        reason,
+        notify,
+      })
+
+      await recordEvent('founder_command', {
+        taskId: result.task.id,
+        payload: {
+          command: 'nl_approve_task',
+          source: 'natural_language',
+          task_ref: taskRef,
+          resolved_task_id: result.task.id,
+          ...(reason ? { reason } : {}),
+        },
+      })
+
+      return formatFounderTaskActionMessage(result)
+    }
+
+    // ── reject_task ───────────────────────────────────────────────────────
+    case 'reject_task': {
+      const taskRef = getString(params, 'task_ref') ?? getString(params, 'task_id')
+      const reason = getString(params, 'reason')
+
+      if (!taskRef) throw new Error('task_ref mancante per reject_task')
+
+      const result = await executeFounderTaskAction(taskRef, 'reject', {
+        source: 'natural_language',
+        reason,
+        notify,
+      })
+
+      await recordEvent('founder_command', {
+        taskId: result.task.id,
+        payload: {
+          command: 'nl_reject_task',
+          source: 'natural_language',
+          task_ref: taskRef,
+          resolved_task_id: result.task.id,
+          ...(reason ? { reason } : {}),
+        },
+      })
+
+      return formatFounderTaskActionMessage(result)
+    }
+
+    // ── invoice_project ───────────────────────────────────────────────────
+    case 'invoice_project': {
+      const clientSlug = getString(params, 'client_slug')
+      const projectSlug = getString(params, 'project_slug')
+      const amountUsd = getNumber(params, 'amount_usd') ?? getNumber(params, 'amount')
+
+      if (!clientSlug) throw new Error('client_slug mancante per invoice_project')
+      if (!projectSlug) throw new Error('project_slug mancante per invoice_project')
+
+      const result = await executeInvoiceProject(clientSlug, projectSlug, amountUsd, 'natural_language')
+
+      await recordEvent('founder_command', {
+        payload: {
+          command: 'nl_invoice_project',
+          source: 'natural_language',
+          client_slug: clientSlug,
+          project_slug: projectSlug,
+          project_id: result.project.id,
+          contract_value_usd: result.contractValueUsd,
+        },
+      })
+
+      return formatInvoiceProjectMessage(result)
+    }
+
+    // ── mark_project_paid ────────────────────────────────────────────────
+    case 'mark_project_paid': {
+      const clientSlug = getString(params, 'client_slug')
+      const projectSlug = getString(params, 'project_slug')
+      const amountUsd = getNumber(params, 'amount_usd') ?? getNumber(params, 'amount')
+
+      if (!clientSlug) throw new Error('client_slug mancante per mark_project_paid')
+      if (!projectSlug) throw new Error('project_slug mancante per mark_project_paid')
+      if (amountUsd === undefined) throw new Error('amount_usd mancante per mark_project_paid')
+
+      const result = await executeMarkProjectPaid(clientSlug, projectSlug, amountUsd, 'natural_language')
+
+      await recordEvent('founder_command', {
+        payload: {
+          command: 'nl_mark_project_paid',
+          source: 'natural_language',
+          client_slug: clientSlug,
+          project_slug: projectSlug,
+          project_id: result.project.id,
+          payment_id: result.payment.id,
+          amount_usd: amountUsd,
+        },
+      })
+
+      return formatMarkProjectPaidMessage(result)
+    }
+
     default:
       return `⚠️ Azione non riconosciuta: ${type}`
   }
@@ -477,7 +662,11 @@ async function executeAction(
 
 async function buildClientContext(): Promise<string> {
   try {
-    const clients = await getClients()
+    const [clients, blockedTasks] = await Promise.all([
+      getClients(),
+      getTasksByStatus('blocked'),
+    ])
+
     if (clients.length === 0) return 'No clients yet in WAI.'
 
     const lines: string[] = ['Clients in WAI:']
@@ -492,6 +681,22 @@ async function buildClientContext(): Promise<string> {
         lines.push(`- ${c.name} | slug: ${c.slug} | ${c.status}`)
       }
     }
+
+    lines.push('')
+    lines.push('Blocked tasks requiring founder attention:')
+    if (blockedTasks.length === 0) {
+      lines.push('- none')
+    } else {
+      for (const task of blockedTasks.slice(0, 8)) {
+        lines.push(
+          `- ${task.id.slice(0, 8)} | ${task.title} | agent: ${task.assignee_agent_id ?? 'unassigned'} | scope: ${formatTaskScope(task)} | updated_at: ${task.updated_at}`
+        )
+      }
+      if (blockedTasks.length > 8) {
+        lines.push(`- ...and ${blockedTasks.length - 8} more blocked tasks`)
+      }
+    }
+
     return lines.join('\n')
   } catch {
     return 'Could not load client list.'

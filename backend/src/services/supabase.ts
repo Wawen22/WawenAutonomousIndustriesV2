@@ -174,6 +174,33 @@ export async function getTaskById(id: string): Promise<Task | null> {
   return data as Task
 }
 
+export async function getTaskByReference(reference: string): Promise<Task | null> {
+  const normalized = reference.trim().toLowerCase()
+  if (!normalized) return null
+
+  if (/^[0-9a-f-]{36}$/.test(normalized)) {
+    return getTaskById(normalized)
+  }
+
+  // Supabase stores `tasks.id` as UUID, so SQL LIKE/ILIKE prefix matching is not
+  // available directly on the column without an explicit cast. Resolve short IDs
+  // client-side from a recent task window instead.
+  const { data, error } = await getSupabaseClient()
+    .from('tasks')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(500)
+
+  if (error) throw new Error(`Failed to resolve task reference ${reference}: ${error.message}`)
+
+  const matches = ((data ?? []) as Task[]).filter((task) => task.id.toLowerCase().startsWith(normalized))
+  if (matches.length === 0) return null
+  if (matches.length > 1) {
+    throw new Error(`Task reference ${reference} is ambiguous; use a longer ID`)
+  }
+  return matches[0] ?? null
+}
+
 export async function getTasksByStatus(status: TaskStatus): Promise<Task[]> {
   const { data, error } = await getSupabaseClient()
     .from('tasks')

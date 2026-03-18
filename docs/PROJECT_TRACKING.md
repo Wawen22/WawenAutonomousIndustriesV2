@@ -13,6 +13,10 @@
 
 > Note: production deployment is intentionally deferred until the final functional development gate.
 > Hetzner/VPS rollout remains a last-step infrastructure milestone, not the current focus.
+> M7 currently has two practical layers:
+> 1. **Revenue-ready validation in dev/test**: the founder flow for invoicing and payments works end-to-end on test clients/projects.
+> 2. **Real business revenue**: the same flow is executed on an actual paying client.
+> `T071` / `T073` refer to layer 2 and are not required to keep shipping development features.
 
 ---
 
@@ -97,6 +101,9 @@
 | T069 | Ops / Finance / HR runtime minimi ma reali | ✅ Done | Codex | 1 | `ops.ts`, `finance.ts`, `hr.ts` live nel repo; monitor/report/digest reali, eventi Supabase, notifiche Neb e wiring startup + task runtime smoke-tested |
 | T070 | CEO status report arricchito | ✅ Done | Codex | 2 | `/status` e il path NL `status_report` usano un builder unico con task attivi/bloccati, fatturato mese, incassato mese, milestone corrente, errori recenti e agenti problematici |
 | T072 | Revenue correctness: invoiced vs paid | ✅ Done | Codex | 1 | Migration `payments` applicata sul cloud; `/invoice` + `/mark_paid` verificati live con riga reale in `payments`, eventi coerenti e revenue split operativo |
+| T075 | Founder blocked-task recovery flow | ✅ Done | Codex | 1 | `/retry` Telegram, endpoint backend per dashboard, pulsanti Retry/Cancel nel TaskBoard, evento `task_unblocked`, hint/notifiche founder aggiornati |
+| T076 | Founder natural-language operational actions | ✅ Done | Codex | 1 | CEO Intake ora esegue retry/approve/reject task e invoice/mark_paid via testo libero; short task IDs supportati; playbook founder completato con tutti i comandi ed esempi |
+| T077 | Founder dashboard action center | ✅ Done | Codex | 1 | Nuova view dashboard `Founder Ops`: blocked-task recovery, invoice queue, outstanding payments e recent founder decisions; nuove API backend locali per revenue actions |
 | T060 | CEO update_brief action | ✅ Done | Claude | 2 | `ceo_intake.ts`: nuova action `update_brief` — legge brief.md esistente e fa append sezione datata; LLM sceglie write_brief per nuovi progetti, update_brief per follow-up |
 | T061 | Scaffold tipo-aware in initWorkspaceRepo | ✅ Done | Claude | 2 | `software_repo_runtime.ts`: `writeTypeAwareStubs()` scrive nel repo iniziale — website: index.html+style.css+script.js; app/saas: package.json+src/index.ts+tsconfig.json; marketing/content: brief-template.md |
 | T062 | HTML preview inline in ProjectsView | ✅ Done | Claude | 3 | `index.ts`: endpoint GET /api/file?path= per servire file testo/HTML; `ProjectsView.tsx`: pulsante Preview per .html → iframe sandboxed collassabile nel pannello Project Files |
@@ -122,6 +129,29 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-18 — Sessione 32: T077 founder dashboard action center + M7 clarification ✅
+
+- **T077** `dashboard/src/components/FounderOpsView.tsx`, `dashboard/src/App.tsx`, `dashboard/src/components/Sidebar.tsx` — nuova view dashboard **Founder Ops**: coda founder con task `blocked`, progetti da fatturare, fatture con outstanding balance e timeline decisionale recente; pensata come pannello operativo Neb-centric, non come semplice vista dati
+- **API** `backend/src/index.ts`, `backend/src/services/founder_revenue_actions.ts` — nuovo endpoint locale `POST /api/founder/revenue-action` per azioni dashboard `invoice` / `mark_paid`; il servizio revenue condiviso accetta anche `source = dashboard`
+- **FLOW** la dashboard ora usa gli stessi servizi founder condivisi di Telegram/NL sia per i task action sia per le revenue actions, quindi retry/cancel/invoice/payment restano coerenti ovunque
+- **DOCS** `docs/FOUNDER_OPERATIONS_PLAYBOOK.md`, `docs/ARCHITECTURE.md`, `docs/AGENTS_AND_TEAMS.md`, `docs/TASKS_AND_PROJECT_STATE.md`, `docs/PROJECT_TRACKING.md` — aggiunta la Founder Ops view e chiarito che in ambiente dev M7 va letto come **revenue-ready validation** su dati test; il “revenue reale” è un layer business separato, da usare solo con clienti paganti reali
+- **VERIFY** `pnpm typecheck` verde su backend e dashboard
+
+### 2026-03-18 — Sessione 31: T076 founder NL ops + docs complete ✅
+
+- **T076** `backend/src/agents/ceo_intake.ts` — il CEO Intake ora supporta founder actions operative via linguaggio naturale: `retry_task`, `approve_task`, `reject_task`, `invoice_project`, `mark_project_paid`; il prompt privilegia queste azioni quando Neb chiede sblocchi, approvazioni o revenue ops invece di creare task nuovi
+- **BUGFIX** `backend/src/services/supabase.ts`, `backend/src/services/founder_task_actions.ts` — fixato un bug reale emerso durante la verifica live: `getTaskByReference()` non poteva usare `LIKE` su una colonna UUID; ora risolve i short task ID filtrando lato applicazione su task recenti. `founder_task_actions` accetta anche `source = natural_language`
+- **DOCS/UX** `backend/src/services/telegram.ts`, `docs/FOUNDER_OPERATIONS_PLAYBOOK.md`, `docs/ARCHITECTURE.md`, `docs/AGENTS_AND_TEAMS.md`, `docs/TASKS_AND_PROJECT_STATE.md` — `/start` aggiornato con esempi NL operativi; playbook founder espanso a riferimento completo di tutti i comandi con descrizioni, esempi ed equivalenti NL; architettura e task lifecycle riallineati
+- **VERIFY T076** verifica live con `runCeoNaturalLanguageHandler(...)`: `Sblocca la task <short_id>`, `Approva la task <short_id>`, `Cancella la task <short_id>`, `Fattura client/project per 1234`, `Segna pagato client/project 234` → esiti reali coerenti su Supabase (`blocked → in_progress`, `done`, `cancelled`, `project.status = invoiced`, nuova riga in `payments`)
+
+### 2026-03-18 — Sessione 30: T075 blocked-task recovery ✅
+
+- **T075** nuovo servizio condiviso `backend/src/services/founder_task_actions.ts`: centralizza le founder actions `retry`, `approve`, `reject`; `retry` riapre davvero un task `blocked`, incrementa `retry_count` in metadata, emette `task_unblocked` e rilancia il runtime corretto in base all’assignee
+- **TELEGRAM** `backend/src/services/telegram.ts` ora espone `/retry <task_id> [reason]`; `/approve` e `/reject` passano dallo stesso servizio condiviso; help `/start` aggiornato
+- **DASHBOARD** `backend/src/index.ts` espone `POST /api/founder/task-action` per uso dashboard locale; `dashboard/src/components/TaskBoard.tsx` aggiunge sui task `blocked` i pulsanti `Retry` e `Cancel`, feedback inline e hint Telegram con task ID completo
+- **EVENTS/UX** aggiunto `task_unblocked` ai tipi backend e all’EventTimeline dashboard; Ops alert e retry hints agenti ora puntano a `/retry <task_id>` invece di dire di ricreare il task da zero
+- **VERIFY T075** test reale con task sintetici `blocked` assegnati a `ops`: retry via service e via Telegram hanno entrambi prodotto `task_unblocked` e chiusura finale del task in `done`
 
 ### 2026-03-18 — Sessione 29: T072 live verify + T070 ✅
 

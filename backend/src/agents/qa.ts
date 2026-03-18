@@ -400,11 +400,7 @@ Constraints:
 
     await updateTaskStatus(task.id, 'blocked').catch(() => {})
 
-    const qaClientSlug = (task.metadata['client_slug'] as string | undefined) ?? ''
-    const qaProjectSlug = (task.metadata['project_slug'] as string | undefined) ?? ''
-    const retryHint = qaClientSlug && qaProjectSlug
-      ? `Riprova: \`/task ${qaClientSlug}/${qaProjectSlug} ${task.title}\``
-      : 'Riprova inviando il task al CEO.'
+    const retryHint = `Riprova: \`/retry ${task.id}\``
 
     await notify(
       [

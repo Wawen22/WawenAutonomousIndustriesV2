@@ -27,6 +27,7 @@ const COLUMNS: ColConfig[] = [
 ]
 
 const DONE_LIMIT = 12   // cap "Done" column to avoid clutter
+const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? 'http://localhost:3001'
 
 // ---------------------------------------------------------------------------
 // Helpers to extract metadata fields
@@ -35,6 +36,25 @@ const DONE_LIMIT = 12   // cap "Done" column to avoid clutter
 function getMeta(task: Task, key: string): string {
   const v = task.metadata[key]
   return typeof v === 'string' && v.trim() ? v.trim() : ''
+}
+
+async function runFounderTaskAction(
+  taskId: string,
+  action: 'retry' | 'reject',
+  reason?: string
+): Promise<{ message: string }> {
+  const response = await fetch(`${BACKEND_URL}/api/founder/task-action`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId, action, reason }),
+  })
+
+  const payload = await response.json() as { error?: string; message?: string }
+  if (!response.ok) {
+    throw new Error(payload.error ?? 'Task action failed')
+  }
+
+  return { message: payload.message ?? 'Action completed.' }
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +144,11 @@ function FilterBar({ filter, onChange, clients, projects, agents }: FilterBarPro
 
 function TaskCard({ task }: { task: Task }) {
   const [expanded, setExpanded] = useState(false)
+  const [actionState, setActionState] = useState<{
+    action: 'retry' | 'reject' | null
+    message: string | null
+    error: string | null
+  }>({ action: null, message: null, error: null })
 
   const col = COLUMNS.find((c) => c.status === task.status)
 
@@ -143,10 +168,32 @@ function TaskCard({ task }: { task: Task }) {
       : assignee || delegator || '—'
 
   const shortId = task.id.slice(0, 8)
+  const dependencyReason = getMeta(task, 'dependency_reason')
+  const blockedReason = getMeta(task, 'blocked_reason') || errorMsg
 
   const descPreview = !clientName && task.description
     ? task.description.replace(/\[WORKSPACE CONTEXT.*$/s, '').trim().slice(0, 100)
     : ''
+
+  async function handleTaskAction(action: 'retry' | 'reject') {
+    const reason = action === 'reject'
+      ? window.prompt('Reason for cancelling this task?', 'Founder cancelled blocked task')
+      : window.prompt('Optional retry note for the agent?', '')
+
+    if (reason === null) return
+
+    try {
+      setActionState({ action, message: null, error: null })
+      const result = await runFounderTaskAction(task.id, action, reason || undefined)
+      setActionState({ action: null, message: result.message, error: null })
+    } catch (err) {
+      setActionState({
+        action: null,
+        message: null,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      })
+    }
+  }
 
   return (
     <div
@@ -203,12 +250,12 @@ function TaskCard({ task }: { task: Task }) {
       )}
 
       {/* Blocked error */}
-      {task.status === 'blocked' && errorMsg && (
+      {task.status === 'blocked' && blockedReason && (
         <p className={clsx(
           'text-[10px] text-orange-400 font-mono leading-relaxed',
           expanded ? 'whitespace-pre-wrap break-words' : 'line-clamp-2'
         )}>
-          ⚠ {errorMsg}
+          ⚠ {blockedReason}
         </p>
       )}
 
@@ -231,13 +278,48 @@ function TaskCard({ task }: { task: Task }) {
             )}
           </div>
           {task.status === 'blocked' && (
-            <p className="text-[9px] font-mono text-slate-600">
-              💡 /reject {shortId} to mark resolved
-            </p>
+            <>
+              {dependencyReason && (
+                <p className="text-[9px] font-mono text-orange-300">
+                  Dependency: {dependencyReason}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void handleTaskAction('retry')
+                  }}
+                  disabled={actionState.action !== null}
+                  className="text-[10px] font-mono px-2 py-1 rounded border border-sky-500/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 disabled:opacity-50"
+                >
+                  {actionState.action === 'retry' ? 'Retrying…' : 'Retry'}
+                </button>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void handleTaskAction('reject')
+                  }}
+                  disabled={actionState.action !== null}
+                  className="text-[10px] font-mono px-2 py-1 rounded border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
+                >
+                  {actionState.action === 'reject' ? 'Cancelling…' : 'Cancel'}
+                </button>
+              </div>
+              <p className="text-[9px] font-mono text-slate-600">
+                💡 Telegram: /retry {task.id} · /reject {task.id}
+              </p>
+              {actionState.message && (
+                <p className="text-[9px] font-mono text-emerald-300">{actionState.message}</p>
+              )}
+              {actionState.error && (
+                <p className="text-[9px] font-mono text-rose-300">{actionState.error}</p>
+              )}
+            </>
           )}
           {task.status === 'in_progress' && (
             <p className="text-[9px] font-mono text-slate-600">
-              💡 /approve {shortId} · /reject {shortId}
+              💡 /approve {task.id} · /reject {task.id}
             </p>
           )}
         </div>

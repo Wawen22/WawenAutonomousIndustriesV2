@@ -3,9 +3,10 @@
 // Slide-in panel showing agent info, stats, tasks, runs, events.
 // ============================================================
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { clsx } from 'clsx'
 import { createPortal } from 'react-dom'
+import { ExpandableText } from './ui/ExpandableText.js'
 import type { Agent, AgentStatus, AgentRun, Task, SystemEventWithContext, AgentTeam } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -45,8 +46,65 @@ function severityColor(s: string): string {
 
 function eventPayloadSummary(payload: Record<string, unknown>): string {
   const msg = payload['message'] ?? payload['description'] ?? payload['summary'] ?? payload['text']
-  if (typeof msg === 'string' && msg.trim()) return msg.slice(0, 120)
-  return JSON.stringify(payload).slice(0, 120)
+  if (typeof msg === 'string' && msg.trim()) return msg
+  return JSON.stringify(payload)
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components: Expandable Sections
+// ---------------------------------------------------------------------------
+
+function ExpandableRunCard({ run }: { run: AgentRun }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const summary = run.output_summary || run.input_summary || 'No summary available'
+  const isLong = summary.length > 80
+
+  return (
+    <div 
+      className={clsx(
+        "rounded-xl border border-white/[0.05] bg-white/[0.02] p-4 transition-all hover:border-white/[0.1]",
+        isExpanded && "bg-white/[0.04] border-white/[0.15]"
+      )}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span className={clsx(
+          'text-[9px] font-black uppercase px-2 py-0.5 rounded-md tracking-wider',
+          run.outcome === 'success' ? 'bg-emerald-400/10 text-emerald-400' :
+          run.outcome === 'failure' ? 'bg-rose-400/10 text-rose-400' :
+          'bg-amber-400/10 text-amber-400',
+        )}>
+          {run.outcome}
+        </span>
+        <span className="text-[9px] text-slate-600 font-mono font-medium">
+          {new Date(run.created_at).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+        </span>
+      </div>
+      
+      <div className="relative">
+        <p className={clsx(
+          "text-[11px] text-slate-400 leading-relaxed font-medium mb-3",
+          isLong && !isExpanded && "line-clamp-2"
+        )}>
+          {summary}
+        </p>
+        
+        {isLong && (
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="text-[9px] font-bold text-slate-500 hover:text-white mb-3 flex items-center gap-1 transition-colors uppercase tracking-widest"
+          >
+            {isExpanded ? 'Show less ↑' : 'Show more ↓'}
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3 pt-3 border-t border-white/[0.03] text-[9px] font-mono text-slate-600">
+        <span>COST: <span className="text-slate-400">${run.cost_usd.toFixed(4)}</span></span>
+        <span>•</span>
+        <span>TIME: <span className="text-slate-400">{run.duration_ms}ms</span></span>
+      </div>
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -193,29 +251,7 @@ export function AgentDetailSidebar({
             ) : (
               <div className="space-y-3">
                 {lastRuns.slice(0, 5).map((run) => (
-                  <div key={run.id} className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-4 transition-all hover:border-white/[0.1]">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={clsx(
-                        'text-[9px] font-black uppercase px-2 py-0.5 rounded-md tracking-wider',
-                        run.outcome === 'success' ? 'bg-emerald-400/10 text-emerald-400' :
-                        run.outcome === 'failure' ? 'bg-rose-400/10 text-rose-400' :
-                        'bg-amber-400/10 text-amber-400',
-                      )}>
-                        {run.outcome}
-                      </span>
-                      <span className="text-[9px] text-slate-600 font-mono font-medium">
-                        {new Date(run.created_at).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed font-medium mb-3">
-                      {run.output_summary || run.input_summary || 'No summary available'}
-                    </p>
-                    <div className="flex items-center gap-3 pt-3 border-t border-white/[0.03] text-[9px] font-mono text-slate-600">
-                      <span>COST: <span className="text-slate-400">${run.cost_usd.toFixed(4)}</span></span>
-                      <span>•</span>
-                      <span>TIME: <span className="text-slate-400">{run.duration_ms}ms</span></span>
-                    </div>
-                  </div>
+                  <ExpandableRunCard key={run.id} run={run} />
                 ))}
               </div>
             )}
@@ -242,9 +278,10 @@ export function AgentDetailSidebar({
                         </span>
                       </div>
                       {Object.keys(ev.payload).length > 0 && (
-                        <p className="text-[10px] text-slate-500 line-clamp-1 font-medium italic">
-                          {eventPayloadSummary(ev.payload)}
-                        </p>
+                        <ExpandableText 
+                          text={eventPayloadSummary(ev.payload)} 
+                          className="text-[10px] text-slate-500 font-medium italic"
+                        />
                       )}
                     </div>
                   </div>

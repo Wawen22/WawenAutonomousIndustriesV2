@@ -501,11 +501,7 @@ Constraints:
 
     await updateTaskStatus(task.id, 'blocked').catch(() => {})
 
-    const clientSlug = (task.metadata['client_slug'] as string | undefined) ?? ''
-    const projectSlug = (task.metadata['project_slug'] as string | undefined) ?? ''
-    const retryHint = clientSlug && projectSlug
-      ? `Riprova: \`/task ${clientSlug}/${projectSlug} ${task.title}\``
-      : 'Riprova inviando il task al CEO.'
+    const retryHint = `Riprova: \`/retry ${task.id}\``
 
     await notify(
       [
