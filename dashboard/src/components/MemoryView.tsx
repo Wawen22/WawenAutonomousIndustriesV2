@@ -1,31 +1,26 @@
 // ============================================================
-// WAI Dashboard – Memory View
-// Browse persistent per-agent memories with TTL visibility.
+// WAI Dashboard – Neural Knowledge Browser (T071)
+// Vector Database Browser aesthetic for long-term memories.
 // ============================================================
 
 import { useMemo, useState } from 'react'
+import { clsx } from 'clsx'
 import { format, formatDistanceToNowStrict } from 'date-fns'
 import { Panel } from './ui/Panel.js'
-import { Stat } from './ui/Stat.js'
 import { Badge } from './ui/Badge.js'
-import { useAgentMemories, useAgents } from '../hooks/useSupabaseRealtime.js'
-import type { AgentMemory } from '../types/index.js'
+import { Icon } from './ui/Icon.js'
+import { ExpandableText } from './ui/ExpandableText.js'
+import { AgentDetailSidebar } from './AgentDetailSidebar.js'
+import { useAgentMemories, useAgents, useAgentStats, useTasks, useEventsWithContext } from '../hooks/useSupabaseRealtime.js'
+import { getAgentColor } from '../lib/agentColors.js'
+import type { AgentMemory, Agent, Task, SystemEventWithContext } from '../types/index.js'
 
-type AgentFilter = 'all' | string
-
-function normalize(text: string): string {
-  return text.toLowerCase().trim()
-}
-
-function previewContent(content: string, maxChars = 520): string {
-  const compact = content.replace(/\s+/g, ' ').trim()
-  if (compact.length <= maxChars) return compact
-  return `${compact.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`
-}
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function getExpiryVariant(memory: AgentMemory): 'done' | 'warning' | 'blocked' {
   if (!memory.ttl) return 'done'
-
   const ttlMs = new Date(memory.ttl).getTime()
   const nowMs = Date.now()
   if (ttlMs <= nowMs) return 'blocked'
@@ -34,216 +29,208 @@ function getExpiryVariant(memory: AgentMemory): 'done' | 'warning' | 'blocked' {
 }
 
 function getExpiryLabel(memory: AgentMemory): string {
-  if (!memory.ttl) return 'persistent'
-
+  if (!memory.ttl) return 'PERSISTENT'
   const ttlDate = new Date(memory.ttl)
-  if (ttlDate.getTime() <= Date.now()) return 'expired'
-  return `ttl ${formatDistanceToNowStrict(ttlDate, { addSuffix: true })}`
+  if (ttlDate.getTime() <= Date.now()) return 'EXPIRED'
+  return `TTL: ${formatDistanceToNowStrict(ttlDate, { addSuffix: true }).toUpperCase()}`
 }
 
-function getAgentName(agentId: string, agentMap: Map<string, { name: string; team: string }>): string {
-  return agentMap.get(agentId)?.name ?? agentId
-}
+// ---------------------------------------------------------------------------
+// Sub-component: Memory Knowledge Cell
+// ---------------------------------------------------------------------------
 
-export function MemoryView() {
-  const { data: memories, loading, error } = useAgentMemories(500)
-  const { data: agents } = useAgents()
-  const [agentFilter, setAgentFilter] = useState<AgentFilter>('all')
-  const [search, setSearch] = useState('')
-  const [showExpired, setShowExpired] = useState(false)
-
-  const agentMap = useMemo(
-    () => new Map(agents.map((agent) => [agent.id, { name: agent.name, team: agent.team }])),
-    [agents]
-  )
-
-  const filteredMemories = useMemo(() => {
-    const searchTerm = normalize(search)
-
-    return memories.filter((memory) => {
-      const isExpired = memory.ttl ? new Date(memory.ttl).getTime() <= Date.now() : false
-      if (!showExpired && isExpired) return false
-      if (agentFilter !== 'all' && memory.agent_id !== agentFilter) return false
-      if (!searchTerm) return true
-
-      const agentName = normalize(getAgentName(memory.agent_id, agentMap))
-      const content = normalize(memory.content)
-      return agentName.includes(searchTerm) || content.includes(searchTerm) || memory.agent_id.includes(searchTerm)
-    })
-  }, [agentFilter, agentMap, memories, search, showExpired])
-
-  const activeMemories = useMemo(
-    () => filteredMemories.filter((memory) => getExpiryVariant(memory) !== 'blocked'),
-    [filteredMemories]
-  )
-
-  const expiringSoonCount = useMemo(
-    () => filteredMemories.filter((memory) => getExpiryVariant(memory) === 'warning').length,
-    [filteredMemories]
-  )
-
-  const memoryByAgent = useMemo(() => {
-    const grouped = new Map<string, { count: number; latestAt: string }>()
-
-    for (const memory of filteredMemories) {
-      const current = grouped.get(memory.agent_id)
-      if (!current) {
-        grouped.set(memory.agent_id, { count: 1, latestAt: memory.created_at })
-        continue
-      }
-
-      grouped.set(memory.agent_id, {
-        count: current.count + 1,
-        latestAt: current.latestAt > memory.created_at ? current.latestAt : memory.created_at,
-      })
-    }
-
-    return Array.from(grouped.entries())
-      .map(([agentId, value]) => ({
-        agentId,
-        count: value.count,
-        latestAt: value.latestAt,
-        agentName: getAgentName(agentId, agentMap),
-      }))
-      .sort((a, b) => {
-        if (b.count !== a.count) return b.count - a.count
-        return b.latestAt.localeCompare(a.latestAt)
-      })
-  }, [agentMap, filteredMemories])
-
-  const selectClass = 'text-xs font-mono bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-[#00D4FF]/40 transition-colors'
-  const inputClass = 'w-full text-xs font-mono bg-white/[0.04] border border-white/[0.08] rounded-md px-3 py-2 text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-[#00D4FF]/40 transition-colors'
-
+function KnowledgeCell({ 
+  memory, 
+  agent,
+  onAgentClick 
+}: { 
+  memory: AgentMemory; 
+  agent?: Agent;
+  onAgentClick: (a: Agent) => void;
+}) {
+  const agentColor = agent ? getAgentColor(agent.id) : null
+  const expVariant = getExpiryVariant(memory)
+  
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <h2 className="text-sm font-bold text-white">Memory</h2>
-          <p className="text-[11px] text-slate-600 mt-0.5">
-            Long-term agent memory backed by pgvector recall
-          </p>
+    <article className="group relative rounded-2xl border border-white/5 bg-[#070C1A]/60 backdrop-blur-sm p-5 transition-all hover:bg-white/[0.03] hover:border-white/10 overflow-hidden">
+      {/* Decorative vertical line */}
+      <div className={clsx(
+        "absolute left-0 top-0 bottom-0 w-1 opacity-40 transition-opacity group-hover:opacity-100",
+        expVariant === 'done' ? 'bg-emerald-500' : expVariant === 'warning' ? 'bg-amber-500' : 'bg-rose-500'
+      )} />
+
+      <div className="relative z-10 flex flex-col gap-4">
+        {/* Header: Agent + Expiry */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            {agent && agentColor && (
+              <button 
+                onClick={() => onAgentClick(agent)}
+                className={clsx(
+                  "w-10 h-10 rounded-lg flex items-center justify-center font-black text-[10px] border transition-transform hover:scale-110",
+                  agentColor.bg, agentColor.border, agentColor.text
+                )}
+              >
+                {agent.name.split(' ').map(n => n[0]).join('')}
+              </button>
+            )}
+            <div className="min-w-0">
+              <p className="text-[11px] font-black text-white uppercase tracking-tight truncate">{agent?.name || memory.agent_id}</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[9px] text-slate-600 font-mono">ID: {memory.id.slice(0,8)}</span>
+                <span className="w-1 h-1 rounded-full bg-slate-800" />
+                <span className="text-[9px] text-slate-600 font-mono">{format(new Date(memory.created_at), 'dd MMM HH:mm')}</span>
+              </div>
+            </div>
+          </div>
+          <Badge variant={expVariant} className="text-[8px] tracking-[0.1em]">{getExpiryLabel(memory)}</Badge>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_180px_auto] xl:min-w-[620px]">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search memory content or agent..."
-            className={inputClass}
+        {/* Content */}
+        <div className="bg-black/20 rounded-xl p-4 border border-white/[0.03]">
+          <ExpandableText 
+            text={memory.content} 
+            className="text-[13px] leading-relaxed text-slate-300 font-medium"
+            maxLength={250}
+            buttonColor="text-[#00D4FF]/60 hover:text-[#00D4FF]"
           />
+        </div>
 
-          <select
+        {/* Metadata Footer */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+             <div className="px-2 py-0.5 rounded bg-white/[0.03] border border-white/5 text-[8px] font-black text-slate-500 uppercase tracking-widest">
+               Vector Node: pg_memory
+             </div>
+          </div>
+          <button className="text-[9px] font-black text-[#00D4FF]/60 hover:text-[#00D4FF] uppercase tracking-widest transition-colors flex items-center gap-1.5">
+            Cross Reference <Icon name="chevron-right" size={10} />
+          </button>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main Component
+// ---------------------------------------------------------------------------
+
+export function MemoryView() {
+  const { data: memories, loading: mLoad, error } = useAgentMemories(500)
+  const { data: agents,   loading: aLoad } = useAgents()
+  const { runCounts, lastRuns } = useAgentStats()
+  const { data: tasks } = useTasks('in_progress')
+  const { data: events } = useEventsWithContext(50)
+
+  const [search, setSearch] = useState('')
+  const [agentFilter, setAgentFilter] = useState('all')
+  const [showExpired, setShowExpired] = useState(false)
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
+
+  const filteredMemories = useMemo(() => {
+    const q = search.toLowerCase().trim()
+    return memories.filter(m => {
+      const isExpired = m.ttl ? new Date(m.ttl).getTime() <= Date.now() : false
+      if (!showExpired && isExpired) return false
+      if (agentFilter !== 'all' && m.agent_id !== agentFilter) return false
+      if (!q) return true
+      return m.content.toLowerCase().includes(q) || m.agent_id.toLowerCase().includes(q)
+    })
+  }, [memories, search, agentFilter, showExpired])
+
+  const loading = mLoad || aLoad
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <div className="w-10 h-10 border-4 border-[#00D4FF]/20 border-t-[#00D4FF] rounded-full animate-spin" />
+        <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">Accessing Neural Archive...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-8 animate-fade-in pb-20">
+      
+      {/* ── Intelligence Header & Controls ── */}
+      <div className="bg-white/[0.02] border border-white/5 rounded-3xl p-6 flex flex-col xl:flex-row items-center justify-between gap-8">
+        <div className="flex items-center gap-6">
+          <div className="w-14 h-14 rounded-2xl bg-[#00D4FF]/5 border border-[#00D4FF]/20 flex items-center justify-center text-[#00D4FF] shadow-[0_0_20px_rgba(0,212,255,0.1)]">
+            <Icon name="memory" size={28} />
+          </div>
+          <div>
+            <h1 className="text-xl font-black text-white uppercase tracking-tighter italic">Knowledge Bank</h1>
+            <p className="text-[11px] text-slate-500 font-mono tracking-widest mt-1 uppercase">Persistent Vector Recall • {memories.length} Cells Registered</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 flex-wrap justify-center">
+          <div className="relative group">
+            <Icon name="overview" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 group-focus-within:text-[#00D4FF] transition-colors" />
+            <input 
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="QUERY NEURAL CONTENT..."
+              className="bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-[11px] font-bold text-white placeholder:text-slate-700 focus:outline-none focus:border-[#00D4FF]/40 focus:ring-1 focus:ring-[#00D4FF]/20 transition-all w-64"
+            />
+          </div>
+
+          <select 
             value={agentFilter}
-            onChange={(e) => setAgentFilter(e.target.value)}
-            className={selectClass}
+            onChange={e => setAgentFilter(e.target.value)}
+            className="bg-[#0A1628] border border-white/10 rounded-xl px-4 py-2.5 text-[11px] font-bold text-slate-400 focus:outline-none focus:border-[#00D4FF]/40 transition-all cursor-pointer"
           >
-            <option value="all">All agents</option>
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}
+            <option value="all" className="bg-[#0A1628] text-white">ALL NODES</option>
+            {agents.map(a => (
+              <option key={a.id} value={a.id} className="bg-[#0A1628] text-white">
+                {a.name.toUpperCase()}
               </option>
             ))}
           </select>
 
-          <label className="flex items-center gap-2 text-[11px] text-slate-400 font-mono px-1">
-            <input
-              type="checkbox"
-              checked={showExpired}
-              onChange={(e) => setShowExpired(e.target.checked)}
-              className="rounded border-white/10 bg-white/5 text-[#00D4FF] focus:ring-0"
-            />
-            Show expired
-          </label>
+          <button 
+            onClick={() => setShowExpired(!showExpired)}
+            className={clsx(
+              "px-4 py-2.5 rounded-xl border font-black text-[10px] uppercase tracking-widest transition-all",
+              showExpired ? "bg-[#00D4FF] text-black border-[#00D4FF]" : "bg-white/[0.02] border-white/5 text-slate-500 hover:text-slate-300"
+            )}
+          >
+            Show Expired
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Stat label="Visible Memories" value={String(filteredMemories.length)} color="cyan" />
-        <Stat label="Active Recall Pool" value={String(activeMemories.length)} color="emerald" />
-        <Stat label="Agents With Memory" value={String(memoryByAgent.length)} color="violet" />
-        <Stat label="Expiring Soon" value={String(expiringSoonCount)} color="amber" />
+      {/* ── Knowledge Grid ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {filteredMemories.length === 0 ? (
+          <div className="col-span-full py-24 border-2 border-dashed border-white/5 rounded-3xl flex flex-col items-center justify-center gap-4 opacity-30">
+            <Icon name="memory" size={40} className="text-slate-800" />
+            <p className="text-[11px] font-black text-slate-600 uppercase tracking-[0.3em]">No matching neural patterns found</p>
+          </div>
+        ) : (
+          filteredMemories.map(m => (
+            <KnowledgeCell 
+              key={m.id} 
+              memory={m} 
+              agent={agents.find(a => a.id === m.agent_id)}
+              onAgentClick={setSelectedAgent}
+            />
+          ))
+        )}
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.85fr)]">
-        <Panel title="Recent Memory Stream" accent="cyan" noPad>
-          {loading && (
-            <p className="px-5 py-6 text-[11px] text-slate-600 font-mono animate-pulse">
-              Loading memories...
-            </p>
-          )}
-
-          {error && (
-            <p className="px-5 py-6 text-[11px] text-rose-400 font-mono">
-              Error: {error}
-            </p>
-          )}
-
-          {!loading && !error && filteredMemories.length === 0 && (
-            <p className="px-5 py-8 text-center text-[11px] text-slate-600 font-mono">
-              No memories found for the current filter.
-            </p>
-          )}
-
-          {!loading && !error && filteredMemories.length > 0 && (
-            <div className="divide-y divide-white/[0.05]">
-              {filteredMemories.map((memory) => (
-                <article key={memory.id} className="px-5 py-4 hover:bg-white/[0.02] transition-colors">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-white">
-                      {getAgentName(memory.agent_id, agentMap)}
-                    </span>
-                    <Badge variant="default">{memory.agent_id}</Badge>
-                    <Badge variant={getExpiryVariant(memory)}>
-                      {getExpiryLabel(memory)}
-                    </Badge>
-                    <span className="text-[10px] text-slate-600 font-mono ml-auto">
-                      {format(new Date(memory.created_at), 'MMM d, yyyy HH:mm')}
-                    </span>
-                  </div>
-
-                  <p className="mt-2 text-[12px] leading-relaxed text-slate-300 whitespace-pre-wrap">
-                    {previewContent(memory.content)}
-                  </p>
-                </article>
-              ))}
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="Memory Density By Agent" accent="violet" noPad>
-          {!loading && !error && memoryByAgent.length === 0 && (
-            <p className="px-5 py-8 text-center text-[11px] text-slate-600 font-mono">
-              No agent memory available yet.
-            </p>
-          )}
-
-          {(loading || error) ? (
-            <div className="px-5 py-6 text-[11px] text-slate-600 font-mono">
-              {loading ? 'Loading distribution...' : 'Distribution unavailable.'}
-            </div>
-          ) : (
-            <div className="divide-y divide-white/[0.05]">
-              {memoryByAgent.map((entry) => (
-                <div key={entry.agentId} className="px-5 py-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-white truncate">{entry.agentName}</p>
-                      <p className="text-[10px] text-slate-600 font-mono truncate">{entry.agentId}</p>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-violet-400 leading-none">{entry.count}</p>
-                      <p className="text-[10px] text-slate-600 font-mono mt-1">
-                        latest {formatDistanceToNowStrict(new Date(entry.latestAt), { addSuffix: true })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Panel>
-      </div>
+      {/* Unified Agent Detail Sidebar */}
+      {selectedAgent && (
+        <AgentDetailSidebar
+          agent={selectedAgent}
+          lastRuns={lastRuns[selectedAgent.id] ?? []}
+          runCount={runCounts[selectedAgent.id] ?? 0}
+          activeTasks={tasks}
+          recentEvents={events || []}
+          onClose={() => setSelectedAgent(null)}
+        />
+      )}
     </div>
   )
 }

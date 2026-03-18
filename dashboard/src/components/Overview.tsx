@@ -6,6 +6,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
+import { Stat } from './ui/Stat.js'
 import { Badge } from './ui/Badge.js'
 import { Panel } from './ui/Panel.js'
 import { Icon } from './ui/Icon.js'
@@ -14,11 +15,12 @@ import {
   useEventsWithContext,
   useTasks,
   useProjectState,
+  useRecentRuns,
   useAgentStats,
   usePayments
 } from '../hooks/useSupabaseRealtime.js'
 import { AgentDetailSidebar } from './AgentDetailSidebar.js'
-import type { Agent, AgentStatus, SystemEventWithContext } from '../types/index.js'
+import type { Agent, AgentStatus, Task, SystemEventWithContext } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Constants & Styles
@@ -55,9 +57,9 @@ function InfoTooltip({ text }: { text: string }) {
   return (
     <div className="group relative">
       <Icon name="info" size={12} className="text-slate-600 hover:text-[#00D4FF] cursor-help transition-colors" />
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 rounded-lg bg-[#0A1628] border border-white/10 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[150] pointer-events-none">
-        <p className="text-[9px] leading-relaxed text-slate-400 font-medium uppercase tracking-wider">{text}</p>
-        <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0A1628] border-r border-b border-white/10 rotate-45 -mt-1" />
+      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-56 p-3 rounded-xl bg-[#0A1628] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[999] pointer-events-none scale-95 group-hover:scale-100">
+        <p className="text-[10px] leading-relaxed text-slate-300 font-medium uppercase tracking-wider">{text}</p>
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 w-2.5 h-2.5 bg-[#0A1628] border-l border-t border-white/10 rotate-45 -mb-1.5" />
       </div>
     </div>
   )
@@ -123,7 +125,7 @@ function TerminalFeed({ events }: { events: SystemEventWithContext[] }) {
                 {e.type.toUpperCase()}
               </span>
               <span className="truncate">
-                {String(e.payload['message'] || JSON.stringify(e.payload).slice(0, 60))}
+                {e.payload['message'] || JSON.stringify(e.payload).slice(0, 60)}
               </span>
               {idx === 0 && <span className="animate-blink">_</span>}
             </div>
@@ -157,7 +159,7 @@ function MissionHeader({ state, onlineCount, agentTotal }: { state: any; onlineC
           </div>
           <div>
             <div className="flex items-center gap-3 mb-1.5">
-              <h1 className="text-2xl font-black text-white tracking-tighter uppercase italic leading-none">Mission Control</h1>
+              <h1 className="text-2xl font-black text-white uppercase tracking-tighter italic leading-none">Mission Control</h1>
               <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-widest">
                 Operational
               </span>
@@ -251,9 +253,9 @@ export function Overview() {
       <MissionHeader state={state} onlineCount={onlineCount} agentTotal={agents.length} />
 
       {/* ── HUD KPI Grid ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 relative z-30">
         {/* Agent Fleet */}
-        <div className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-5 transition-all hover:bg-white/[0.04]">
+        <div className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-5 transition-all hover:bg-white/[0.04] z-10 hover:z-50">
           <div className="absolute inset-0 bg-gradient-to-br from-[#00D4FF]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none rounded-2xl" />
           <div className="flex justify-between items-start mb-4 relative z-10">
             <div className="flex items-center gap-2">
@@ -270,7 +272,7 @@ export function Overview() {
         </div>
 
         {/* Operational Load */}
-        <div className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-5 transition-all hover:bg-white/[0.04]">
+        <div className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-5 transition-all hover:bg-white/[0.04] z-10 hover:z-50">
           <div className="absolute inset-0 bg-gradient-to-br from-sky-400/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none rounded-2xl" />
           <div className="flex justify-between items-start mb-4 relative z-10">
             <div className="flex items-center gap-2">
@@ -286,7 +288,7 @@ export function Overview() {
         </div>
 
         {/* Resource Burn */}
-        <div className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-5 transition-all hover:bg-white/[0.04]">
+        <div className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-5 transition-all hover:bg-white/[0.04] z-10 hover:z-50">
           <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none rounded-2xl" />
           <div className="flex justify-between items-start mb-4 relative z-10">
             <div className="flex items-center gap-2">
@@ -302,7 +304,7 @@ export function Overview() {
         </div>
 
         {/* Financial Pulse */}
-        <div className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-5 transition-all hover:bg-white/[0.04]">
+        <div className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-5 transition-all hover:bg-white/[0.04] z-10 hover:z-50">
           <div className="absolute inset-0 bg-gradient-to-br from-amber-400/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none rounded-2xl" />
           <div className="flex justify-between items-start mb-4 relative z-10">
             <div className="flex items-center gap-2">

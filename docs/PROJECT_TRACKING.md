@@ -133,6 +133,13 @@
 
 ## CHANGELOG
 
+### 2026-03-18 — Sessione 35b: Complete documentation rewrite + final TypeScript fixes ✅
+
+- **DOCS REWRITE** completo: tutti i file in `docs/` e `README.md` riscritti — rimosso OpenClaw (non usato), stack corretto (Node.js + LiteLLM + grammy), nessuna duplicazione
+- **Files aggiornati**: `README.md`, `docs/ARCHITECTURE.md`, `docs/VISION.md`, `docs/OPERATIONS_AND_MONITORING.md`, `docs/DEPLOYMENT_PLAN.md`, `docs/SECURITY.md`, `docs/COSTS_AND_BUDGET.md`, `docs/TASKS_AND_PROJECT_STATE.md`, `docs/AGENTS_AND_TEAMS.md`, `docs/FOUNDER_OPERATIONS_PLAYBOOK.md`, `CLAUDE.md`
+- **BUGFIX** `dashboard/src/components/FounderOpsView.tsx`: rimossi import unused (`clsx`, `Stat`, `getClientColor`, tipi `ProjectStatus`/`SystemEventWithContext`), rimossa interfaccia `OutstandingRow` unused, rimossa funzione `runFounderRevenueAction` unused, rimosso param `state` unused da `ReviewRequestCard`
+- **VERIFY** `pnpm typecheck` dashboard → zero errori
+
 ### 2026-03-18 — Sessione 35: M7 COMPLETATO — LandingPage delivered+invoiced+paid + dashboard bugfix ✅
 
 - **P1 LandingPage APPROVED**: QA blocking issues analizzati come falsi positivi — "repo clean" = tutti i cambiamenti già committati (15 commit), scope mismatch non esiste (brief chiedeva ENTRAMBE testimonials + Perché sceglierci), deliverable completo (382 righe HTML, dark/light mode, testimonials, pricing, sezione why-us). Founder ha approvato il QA.

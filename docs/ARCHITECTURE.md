@@ -4,10 +4,10 @@
 
 WAI is built on four pillars:
 
-1. **OpenClaw** – Agent runtime, multi-channel messaging (Telegram), tool/MCP execution
-2. **Supabase** – Persistent data store: agents, tasks, logs, costs, project state
-3. **WAI Backend** – TypeScript service layer: model routing, agent orchestration, tool registry
-4. **WAI Dashboard** – React/TypeScript real-time UI for Neb
+1. **Backend (Node.js 22)** — Agent orchestration, task routing, Telegram bot, HTTP API
+2. **LiteLLM Proxy** — Single gateway to Azure GPT-5.4 and Google Gemini 2.5 Flash
+3. **Supabase** — Postgres + pgvector: agents, tasks, runs, events, memory, clients, projects, payments
+4. **Dashboard (React 18)** — Real-time founder interface via Supabase Realtime
 
 ---
 
@@ -16,346 +16,270 @@ WAI is built on four pillars:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      NEB (Founder)                          │
-│           Telegram Bot        WAI Dashboard                 │
-└─────────────┬───────────────────────┬───────────────────────┘
-              │                       │
-              ▼                       ▼
-┌─────────────────────┐   ┌───────────────────────────────────┐
-│  OpenClaw Gateway   │   │       WAI Dashboard               │
-│  ws://127.0.0.1:    │   │  React / TypeScript / Vite        │
-│  18789              │   │  Port 3000                        │
-└────────┬────────────┘   └──────────────┬────────────────────┘
-         │                               │ Supabase Realtime
-         │ Sessions / Tools              │ WebSocket
-         ▼                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    WAI Backend (Node.js)                     │
-│                    Port 3001                                 │
-│                                                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │  CEO Agent   │  │ Model Router │  │  Tool Registry   │  │
-│  └──────┬───────┘  └──────┬───────┘  └──────────────────┘  │
-│         │                 │                                  │
-│  ┌──────┴──────────────────────────────────────────────┐    │
-│  │              Agent Teams                             │    │
-│  │  SaaS │ Dev │ Consulting │ Marketing │ Ops/Finance  │    │
-│  └──────────────────────────────────────────────────────┘    │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-          ┌──────────────┴──────────────┐
-          │         Supabase            │
-          │  ┌────────────────────────┐ │
-          │  │  PostgreSQL + pgvector │ │
-          │  │  tables:               │ │
-          │  │  agents, tasks, runs,  │ │
-          │  │  events, models,       │ │
-          │  │  agent_memories,       │ │
-          │  │  project_state         │ │
-          │  └────────────────────────┘ │
-          │  Realtime │ Auth │ Storage  │
-          └───────────┴──────┴──────────┘
-                         │
-         ┌───────────────┴────────────────┐
-         │      External Services          │
-         │  Azure OpenAI  │  Google AI    │
-         │  GitHub        │  SendGrid     │
-         │  Telegram API  │  Vercel       │
-         └────────────────────────────────┘
+│         Telegram Bot (@wai_v2_bot)   WAI Dashboard          │
+└──────────────┬──────────────────────────┬───────────────────┘
+               │                          │
+               ▼                          ▼
+┌──────────────────────┐    ┌─────────────────────────────────┐
+│  Telegram Handler    │    │       WAI Dashboard             │
+│  (grammy)            │    │  React 18 / Vite / Tailwind     │
+│  backend port 3001   │    │  Port 3000                      │
+└──────────┬───────────┘    └───────────────┬─────────────────┘
+           │                                │ Supabase Realtime
+           │ Task creation / commands        │ WebSocket
+           ▼                                ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    WAI Backend (Node.js 22)                   │
+│                    TypeScript + tsx — Port 3001               │
+│                                                              │
+│  ┌──────────────────┐  ┌──────────────┐  ┌───────────────┐  │
+│  │  CEO Agent +     │  │ Model Router │  │  Founder      │  │
+│  │  CEO Intake (NL) │  │ models.ts    │  │  Services     │  │
+│  └────────┬─────────┘  └──────┬───────┘  └───────────────┘  │
+│           │                   │                              │
+│  ┌────────┴───────────────────────────────────────────────┐  │
+│  │                    Agent Teams                          │  │
+│  │  SaaS │ Software Dev │ Consulting │ Marketing │ Ops    │  │
+│  └──────────────────────────────────────────────────────┘  │
+└──────────────────────────┬───────────────────────────────────┘
+                           │ HTTP + streaming
+                           ▼
+              ┌────────────────────────┐
+              │   LiteLLM Proxy        │
+              │   Docker — Port 4000   │
+              ├────────────────────────┤
+              │  Azure GPT-5.4         │
+              │  Google Gemini 2.5 F.  │
+              └────────────────────────┘
+                           │
+                           ▼
+              ┌────────────────────────┐
+              │  Supabase Cloud        │
+              │  nxrgwbwhauuusuuytipf  │
+              │                        │
+              │  agents, models        │
+              │  clients, projects     │
+              │  tasks, runs, events   │
+              │  payments              │
+              │  agent_memories        │
+              │  project_state         │
+              │                        │
+              │  pgvector (256-dim)    │
+              │  Realtime WebSocket    │
+              └────────────────────────┘
 ```
-
----
-
-## OpenClaw Integration
-
-OpenClaw is the agent runtime. WAI uses it for:
-
-- **Gateway**: WebSocket control plane at `ws://127.0.0.1:18789`
-- **Telegram channel**: Neb communicates with WAI via Telegram bot
-- **Agent sessions**: Each WAI agent maps to an OpenClaw session
-- **Tool execution**: GitHub, browser, shell, Supabase MCP
-- **Agent-to-agent**: Via `sessions_send` / `sessions_list` tools
-
-### OpenClaw Config Location
-
-`~/.openclaw/config.yaml` – manages channels, models, sessions, security.
-
-### Key OpenClaw Concepts
-
-| Concept | WAI Usage |
-|---------|-----------|
-| Gateway | Control plane, always running locally |
-| Session | One session per major agent (CEO, team leads) |
-| Channel | Telegram (Neb interface) |
-| Skills | Custom WAI tools registered as OpenClaw skills |
-| Cron | Scheduled agent runs (daily reports, health checks) |
 
 ---
 
 ## Model Router
 
-All LLM calls in WAI go through a single routing function:
+All LLM calls go through a single routing function:
 
 ```typescript
 // backend/src/config/models.ts
-getModelForAgent(agentId: string, taskType?: TaskType): ModelConfig
+getModelForAgent(agentId: string): ModelConfig
 ```
-
-### Routing Logic
 
 | Task Type | Model | Reason |
 |-----------|-------|--------|
-| `architecture`, `planning`, `dev_complex` | GPT-5.4 (Azure) | Complex reasoning |
-| `dev_simple`, `marketing`, `support`, `routing` | Gemini 2.5 Flash | Speed + cost |
-| `research`, `analysis` | GPT-5.4 (Azure) | Depth of synthesis |
-| `content`, `copy` | Gemini 2.5 Flash | Volume throughput |
+| Planning, architecture, development | GPT-5.4 (Azure) | Complex reasoning |
+| Simple dev, marketing, ops, routing | Gemini 2.5 Flash | Speed + cost |
+| Research, analysis, synthesis | GPT-5.4 (Azure) | Depth |
+| Content, copy, social | Gemini 2.5 Flash | Volume throughput |
 
-Agent-level defaults can be overridden by Neb via `/assign_model` command.
+Model assignment can be overridden per-agent by Neb via `/assign_model`.
 
 ---
 
 ## Data Flows
 
-### 1. Neb creates a task via Telegram
+### 1. Founder creates a task via Telegram
 
 ```
-Neb → Telegram Bot → OpenClaw Gateway
+Neb → Telegram Bot (grammy)
 → Telegram Handler (backend/src/services/telegram.ts)
-→ INSERT into supabase.tasks
-→ CEO Agent session picks up new task
+→ INSERT into supabase.tasks (status: todo, assignee: ceo)
+→ runCeoAgent(task) dispatched
 → CEO delegates to appropriate team lead
 → Team lead creates subtasks
 → Worker agents execute
+→ Deliverables written to workspace/{client}/{project}/
 → Results logged to supabase.runs + supabase.events
-→ CEO summarizes → Telegram notification to Neb
+→ Telegram notification to Neb
 ```
 
-### 2. Agent executes a development task
+### 2. Founder uses Natural Language (NL interface)
 
 ```
-Dev Agent session (OpenClaw)
-→ recallAgentMemories(agent_id, current_prompt) → pgvector similarity match on supabase.agent_memories
-→ Calls getModelForAgent('dev_saas', 'dev_complex') → GPT-5.4
-→ LLM generates code
-→ Tool: shell (run tests)
-→ Tool: github (create PR)
-→ logRun() → INSERT into supabase.runs (tokens, cost, outcome)
-→ createAgentMemory() → INSERT into supabase.agent_memories
-→ UPDATE supabase.tasks SET status='done'
-→ INSERT into supabase.events (task_completed)
-→ Dashboard Realtime update (client sees instantly)
+Neb → Telegram free text
+→ runCeoNaturalLanguageHandler() (backend/src/agents/ceo_intake.ts)
+→ GPT-5.4 parses intent → one or more commands
+→ Commands: create_client, create_project, write_brief, update_brief,
+            create_task, list_clients, list_projects, status_report,
+            retry_task, approve_task, reject_task,
+            invoice_project, mark_project_paid
+→ Executes via shared founder services
+→ Reply to Neb with outcome
 ```
 
-### 3. Finance Agent monitors costs
+### 3. Custom software delivery chain
 
 ```
-[Cron: every 1 hour]
-Finance Agent
-→ checkBudget() in backend/src/services/budget.ts
-→ SELECT real runs from supabase.runs
-→ Compare month-to-date cost to MONTHLY_BUDGET_USD
-→ If > threshold: INSERT budget alert event + notify Neb
-→ Once per ISO week: aggregate weekly runs/cost by agent and model
-→ INSERT finance_report_generated event
-→ Send weekly cost report to Neb
+Neb → /task client/project description
+→ CEO routes to architect
+→ Architect reads brief.md + repo state → writes architecture_plan.md
+  → creates dev_general_1 + dev_general_2 subtasks (+ QA staged)
+→ dev_general_1 (bootstrap if repo empty) → reads repo, writes files,
+  commits, runs defensive checks, writes dev-general-1.md + repo-execution-1.md
+→ dev_general_2 (parallel or queued on dep) → same
+→ QA activated when both workers reach terminal state
+  → reads repo state + deliverables → writes qa_report.md
+  → sets project status: delivered / review / blocked
+→ If blocked + requires_human_review: appears in Founder Ops Pending Review
+→ Neb approves or rejects → project proceeds to invoicing
 ```
 
-### 3b. Ops Agent monitors stuck execution
+### 4. Consulting delivery chain
 
 ```
-[Cron: every 15 minutes]
-Ops Agent
-→ SELECT tasks WHERE status IN ('in_progress','blocked') AND updated_at older than 30 min
-→ SELECT latest unresolved agent_error events older than 30 min
-→ INSERT ops_alert events into supabase.events
-→ Send Telegram alerts to Neb for stuck tasks / agents
+Neb → /task client/project description
+→ CEO routes to consulting_lead
+→ Consulting Lead reads brief → writes proposal.md
+  → creates analyst subtask if analysis is needed
+→ Analyst → writes analysis.md
+→ Project status → delivered
+→ Neb notified with /invoice prompt
 ```
 
-### 3c. HR Agent builds team digest
+### 5. Marketing delivery chain
 
 ```
-[Cron: every 6 hours]
-HR Agent
-→ Aggregate last-7-day tasks, runs, and warning/error events by team
-→ Build weekly digest (completed tasks, active load, failures, busiest agent)
-→ INSERT hr_digest_generated event
-→ Send weekly digest to Neb once per ISO week
+Neb → /task client/project description
+→ CEO routes to marketing_strategist
+→ Marketing Strategist → writes marketing-plan.md
+  → creates content_creator + social_manager subtasks
+→ Content Creator → writes content-package.md
+→ Social Manager → writes social-calendar.md
+→ Project status → review
+→ Neb notified with /invoice prompt
 ```
 
-### 4. Marketing / content delivery chain
+### 6. SaaS delivery chain
 
 ```
-Neb → Telegram /task client/project ...
-→ Telegram Handler enriches task metadata with client/project/workspace context
-→ CEO Agent routes to marketing_strategist
-→ Marketing Strategist generates plan + creates worker subtasks
-→ Content Creator writes content-package-*.md
-→ Social Manager writes social-calendar-*.md
-→ Worker completion updates PROGRESS.md and project status → review
-→ Dashboard deliverables panel shows generated assets
+Neb → /task description
+→ CEO routes to pm_saas
+→ PM SaaS → writes user stories, creates dev_lead_saas subtask
+→ Dev Lead SaaS → writes sprint plan, creates dev_saas_1/2 subtasks
+→ Dev SaaS workers → implement, write deliverables, update PROGRESS.md
+→ Project status → review
+→ Neb notified with /invoice prompt
 ```
-
-### 5. Custom software delivery chain
-
-```
-Neb → Telegram /task client/project ...
-→ Telegram Handler enriches task metadata with client/project/workspace/repo context
-→ CEO Agent routes to architect for website/app/automation/custom software work
-→ Architect reads brief + real repo inventory/git status, writes architecture_plan.md, creates dev_general_* subtasks and stages QA
-→ Independent subtasks can start in parallel; if the linked repo is effectively empty, dev_general_1 owns bootstrap/foundation and dev_general_2 stays queued behind it
-→ Dev General workers inspect the linked repo, apply safe file edits, run defensive install/typecheck/build/test checks, write dev-general-*.md + repo-execution-*.md, and update PROGRESS.md
-→ When both dev_general workers reach a terminal state, QA is activated; if a prerequisite worker fails, dependent queued tasks are auto-blocked so the chain still closes cleanly
-→ QA re-checks git status plus applicable typecheck/build/test commands, merges repo blockers/warnings with the LLM review, writes qa_report.md, and sets project status to review / blocked / delivered
-→ Dashboard deliverables panel shows architecture, worker, repo execution, and QA artifacts
-```
-
-### 5b. Defensive repo execution rules
-
-For repo-aware software tasks, the backend does not execute arbitrary shell commands from the model.
-
-- File edits are limited to safe targeted operations inside `repo_local_path`
-- No delete/reset/deploy flow is allowed in the runtime
-- Shell execution is derived from discovered project scripts only
-- `install` runs only when dependencies appear missing
-- `typecheck`, `build`, and `test` run only where the script actually exists
-- Each LLM step in the software runtime has a hard timeout (`LLM_RUN_TIMEOUT_MS`, default 180s); timed out workers are moved to `blocked`
-- Each command produces summarized logging in `runs`, `events`, and deliverable reports
-
-### 6. Repo onboarding flow
-
-```
-Neb → Telegram /new_project client "Project Name" app
-→ backend creates workspace/client/project with brief.md + PROGRESS.md + deliverables/
-
-Neb → Telegram /link_repo client/project "/absolute/path with spaces" [branch] [repo_url]
-→ Telegram parser supports quoted absolute paths
-→ backend validates that the path exists and is a real git repo
-→ repo metadata is normalized and saved into supabase.projects
-
-or
-
-Neb → Telegram /link_repo client/project https://github.com/org/repo.git [branch]
-→ backend creates workspace/client/project/repo if needed
-→ backend clones the remote repo defensively into the canonical workspace repo path
-→ repo metadata is saved into supabase.projects
-
-or
-
-Neb → Telegram /init_repo client/project [repo_url] [branch]
-→ backend initializes workspace/client/project/repo
-→ optional origin remote is attached
-→ repo metadata is saved into supabase.projects
-```
-
-Canonical operating examples live in `docs/FOUNDER_OPERATIONS_PLAYBOOK.md`.
 
 ### 7. Revenue recording flow
 
 ```
-Neb → Telegram /invoice client/project [amount]
-or
-Neb → natural language "Fattura client/project [amount]"
-or
-Neb → Dashboard Founder Ops → Invoice
-→ backend moves project.status → invoiced
-→ backend updates projects.contract_value_usd
+Neb → /invoice client/project [amount]
+   or NL: "Fattura client/project 2500"
+   or Dashboard Founder Ops → Invoice
+→ project.status → invoiced
+→ projects.contract_value_usd updated
 → INSERT revenue_recorded event
 
-Neb → Telegram /mark_paid client/project amount
-or
-Neb → natural language "Segna pagato client/project amount"
-or
-Neb → Dashboard Founder Ops → Mark Paid
-→ backend INSERT into supabase.payments
+Neb → /mark_paid client/project amount
+   or NL: "Segna pagato client/project 400"
+   or Dashboard Founder Ops → Mark Paid
+→ INSERT into payments (amount_usd, project_id)
 → INSERT payment_received event
-→ Dashboard Revenue view computes invoiced vs paid vs outstanding
+→ Dashboard Revenue view: invoiced vs paid vs outstanding
 ```
 
-### 8. CEO status reporting flow
+### 8. Founder blocked-task recovery
 
 ```
-Neb → Telegram /status
-or
-Neb → natural language query ("come stai?", "status sistema")
-→ backend uses shared status_report builder
-→ reads project_state + live tasks + monthly runs cost + revenue_recorded events + payments + recent error events
-→ returns a single compact report with:
-   - current milestone
-   - active tasks
-   - blocked tasks
-   - monthly invoiced revenue
-   - monthly paid revenue
-   - recent errors
-   - problematic agents
-```
-
-### 9. Founder blocked-task recovery flow
-
-```
-Task runtime fails or dependency chain blocks
-→ task.status = blocked
-→ agent_error and/or task_blocked event is stored
-→ Ops alert / CEO status report surfaces the blocked task to Neb
+Task fails → task.status = blocked
+→ ops_alert / task_blocked event stored
+→ Appears in Dashboard Task Board + Founder Ops
 
 Neb chooses:
-→ Telegram /retry <task_id> [reason]
-or
-→ natural language "Sblocca la task abc12345 e rilanciala"
-or
-→ Dashboard Task Board → Retry / Cancel
-or
-→ Dashboard Founder Ops → Retry / Cancel
-
-Retry path:
-→ CEO Intake / Telegram command / Dashboard action all call shared founder action services
-→ backend resolves task by full UUID or unique short ID prefix
-→ backend writes founder action metadata + retry_count
+→ /retry <task_id> [reason]
+   or NL: "Sblocca la task abc12345"
+   or Dashboard → Retry
+→ shared founder_task_actions.ts service called
+→ task.status → todo, retry_count incremented
 → INSERT task_unblocked event
-→ if dependencies are clear, rerun the original assignee runtime
-→ if dependencies are still blocked, retry is refused
+→ assignee runtime re-dispatched (if dependencies clear)
 
-Cancel path:
-→ backend moves task.status → cancelled
+→ /reject <task_id> or Dashboard → Cancel
+→ task.status → cancelled
 → INSERT human_rejected event
 ```
 
-Approve and reject follow the same shared founder-action path:
+### 9. Founder approval flow (Pending Review)
 
 ```
-Neb → Telegram /approve <task_id>
-or
-Neb → natural language "Approva la task abc12345"
-→ backend resolves full or short task reference
-→ backend updates task status and records founder metadata
-→ INSERT human_approved / human_rejected event
+QA finds blocking issues:
+→ task.status = blocked, requires_human_review = true
+→ INSERT human_review_requested event
+→ Task appears in Founder Ops → Pending Review
+
+Neb → Approve
+→ task.status → done, requires_human_review = false
+→ INSERT human_approved event
+→ Project can proceed to delivered / invoiced
+
+Neb → Reject
+→ task.status → cancelled
+→ INSERT human_rejected event
+→ Neb retries dev task to fix the issues
 ```
 
-### 10. Founder dashboard action center
+### 10. Status report flow
 
 ```
-Dashboard Founder Ops view
-→ reads blocked tasks + review/delivered/active projects + invoiced projects + recent founder events
-→ shows a founder decision queue instead of raw operational data
-→ local backend APIs:
-   POST /api/founder/task-action
-   POST /api/founder/revenue-action
-→ actions reuse the same services already used by Telegram and CEO Intake NL
+Neb → /status
+   or NL: "Come stiamo oggi?"
+→ shared status_report.ts builder
+→ reads: project_state + active tasks + blocked tasks
+         + monthly runs cost + revenue_recorded events
+         + payments + recent error events
+→ returns: current milestone, active tasks, blocked tasks,
+           monthly invoiced, monthly paid, recent errors,
+           problematic agents
+```
+
+### 11. Monitoring crons (automatic)
+
+```
+[Every 15 min] Ops Agent
+→ checks tasks in_progress/blocked > 30 min
+→ checks unresolved agent_error events > 30 min
+→ INSERT ops_alert event + Telegram notification
+
+[Every 1 hour] Finance Agent
+→ checkBudget() → compares month-to-date cost vs MONTHLY_BUDGET_USD
+→ weekly: aggregate runs/cost by agent and model
+→ INSERT finance_report_generated event
+→ Telegram alert if budget threshold exceeded
+
+[Every 6 hours] HR Agent
+→ aggregate last-7-day tasks/runs/events by team
+→ INSERT hr_digest_generated event
+→ weekly digest sent to Neb
 ```
 
 ---
 
-## Implemented Runtime Chains
+## Delivery Chains — All Operational
 
-The agent registry is broader than the current runtime. The following chains are actually operational today:
+| Chain | Path | Final project status |
+|-------|------|---------------------|
+| Custom Software | CEO → Architect → dev_general_1/2 → QA | `delivered` / `review` / `blocked` |
+| Consulting | CEO → Consulting Lead → (Analyst) | `delivered` |
+| Marketing | CEO → Marketing Strategist → Content Creator + Social Manager | `review` |
+| SaaS | CEO → PM SaaS → Dev Lead SaaS → Dev SaaS 1/2 | `review` |
 
-- **SaaS delivery:** CEO → PM SaaS → Dev Lead SaaS → Dev SaaS workers
-- **Consulting delivery:** CEO → Consulting Lead → Analyst
-- **Marketing delivery:** CEO → Marketing Strategist → Content Creator / Social Manager
-- **Custom software delivery:** CEO → Architect → Dev General workers → QA
-- **Ops monitoring:** scheduled Ops runtime + explicit `ops` task handling
-- **Finance reporting:** scheduled Finance runtime + explicit `finance` task handling
-- **HR reporting:** scheduled HR runtime + explicit `hr` task handling
-
-When a software or SaaS project has `repo_local_path`, the worker runtime now becomes repo-aware instead of markdown-only: it reads the real codebase, can write focused file changes, executes defensive checks, persists repo execution summaries, and orchestrates workers according to real dependencies instead of blindly parallelizing all subtasks.
+All four chains send an `/invoice` prompt to Neb at completion.
 
 ---
 
@@ -364,42 +288,67 @@ When a software or SaaS project has `repo_local_path`, the worker runtime now be
 ```
 wai/
 ├── backend/src/
-│   ├── agents/           # Agent session managers + team configs
-│   │   └── software_repo_runtime.ts # Repo inspection, safe edits, and defensive check execution
+│   ├── agents/
+│   │   ├── ceo.ts                      # CEO delegation loop
+│   │   ├── ceo_intake.ts               # NL intent parser + command executor
+│   │   ├── architect.ts                # Architecture plan + worker orchestration
+│   │   ├── dev_general.ts              # Custom software worker runtime
+│   │   ├── software_repo_runtime.ts    # Repo inspection, safe edits, defensive checks
+│   │   ├── software_delivery_utils.ts  # Dependency graph helpers
+│   │   ├── qa.ts                       # QA gate: repo check + report + project status
+│   │   ├── pm_saas.ts                  # SaaS PM runtime
+│   │   ├── dev_lead_saas.ts            # SaaS Dev Lead runtime
+│   │   ├── dev_saas.ts                 # SaaS worker runtime
+│   │   ├── consulting_lead.ts          # Consulting Lead runtime
+│   │   ├── analyst.ts                  # Analyst runtime
+│   │   ├── marketing_strategist.ts     # Marketing Strategist runtime
+│   │   ├── content_creator.ts          # Content Creator runtime
+│   │   ├── social_manager.ts           # Social Manager runtime
+│   │   ├── ops.ts                      # Ops monitoring runtime
+│   │   ├── finance.ts                  # Finance reporting runtime
+│   │   └── hr.ts                       # HR digest runtime
 │   ├── config/
-│   │   ├── agents.ts     # Agent registry (id, role, model, tools)
-│   │   ├── models.ts     # Model registry + routing
-│   │   └── openclaw.ts   # OpenClaw Gateway config
+│   │   ├── agents.ts                   # Agent registry (id, role, model)
+│   │   └── models.ts                   # Model registry + routing logic
 │   ├── services/
-│   │   ├── supabase.ts   # DB client + typed helpers
-│   │   ├── memory.ts     # Agent memory store + pgvector recall
-│   │   ├── telegram.ts   # Telegram bot handler
-│   │   ├── logger.ts     # Centralized run/event logger
-│   │   └── budget.ts     # Cost tracking + alert service
-│   ├── tools/
-│   │   ├── index.ts      # Tool registry
-│   │   ├── github.ts     # GitHub operations
-│   │   ├── email.ts      # SendGrid email
-│   │   └── browser.ts    # HTTP/browser tool
-│   └── types/index.ts    # Shared TypeScript types
+│   │   ├── supabase.ts                 # DB client + typed query helpers
+│   │   ├── memory.ts                   # Agent memory store + pgvector recall
+│   │   ├── telegram.ts                 # grammy bot handler + slash commands
+│   │   ├── logger.ts                   # Centralized run/event logger
+│   │   ├── budget.ts                   # Cost tracking + alert service
+│   │   ├── llm.ts                      # LiteLLM client + streaming + memory integration
+│   │   ├── status_report.ts            # Shared CEO status report builder
+│   │   ├── founder_task_actions.ts     # Shared retry/approve/reject logic
+│   │   ├── founder_revenue_actions.ts  # Shared invoice/mark_paid logic
+│   │   └── workspace.ts                # Workspace folder management
+│   └── types/index.ts                  # Shared TypeScript types
 ├── dashboard/src/
-│   ├── components/       # UI components
-│   ├── hooks/            # Supabase Realtime hooks
-│   ├── lib/supabase.ts   # Dashboard Supabase client
-│   └── types/index.ts    # Dashboard types
+│   ├── components/                     # 11 views: Overview, TaskBoard, FounderOps,
+│   │   │                               #   Revenue, Clients, Projects, Memory,
+│   │   │                               #   Activity, Costs, Runs, TeamOrg, VirtualOffice
+│   ├── hooks/useSupabaseRealtime.ts    # All Realtime subscription hooks
+│   ├── lib/
+│   │   ├── clientColors.ts             # Deterministic palette per client
+│   │   └── agentColors.ts              # Deterministic palette per agent
+│   └── types/index.ts                  # Dashboard TypeScript types
 └── supabase/
-    ├── migrations/       # SQL migrations
-    └── seed.sql          # Initial data (agents, models)
+    ├── migrations/
+    │   ├── 001_initial_schema.sql      # agents, models, tasks, runs, events, project_state
+    │   ├── 002_clients_projects.sql    # clients + projects + RLS
+    │   ├── 003_multi_service.sql       # extended project type enum + repo fields
+    │   ├── 004_project_blocked.sql     # projects.status += 'blocked'
+    │   ├── 005_agent_memories.sql      # agent_memories + pgvector + match function
+    │   └── 006_payments.sql            # payments table
+    └── seed.sql                        # 17 agents + models initial data
 ```
 
 ---
 
 ## Security Perimeter
 
-- OpenClaw Gateway: loopback only (`127.0.0.1:18789`)
-- External access: SSH tunnel or Tailscale (never direct internet exposure)
-- API keys: env vars only, never in code
+- LiteLLM: Docker internal network only, exposed on `localhost:4000`
+- Backend HTTP: CORS `*` for localhost dashboard only
+- API keys: env vars only, never in code (see `docs/SECURITY.md`)
 - Supabase RLS: enabled on all tables
-- Telegram: only Neb's chat ID is whitelisted
-
-See `docs/SECURITY.md` for full details.
+- Telegram: only `TELEGRAM_FOUNDER_CHAT_ID` is whitelisted
+- File operations: limited to `workspace/` paths; no traversal allowed

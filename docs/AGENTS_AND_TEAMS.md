@@ -52,9 +52,9 @@ CEO Agent (GPT-5.4)
 
 ---
 
-## Runtime Implementation Status (2026-03-18)
+## Runtime Implementation Status
 
-Important: the backend currently marks all registered agents as `online` at startup. That means the agent exists in the registry and is reachable from the system perspective. It does **not** automatically mean the agent already has a dedicated autonomous runtime loop implemented.
+All 17 agents are fully operational. The backend marks all agents as `online` at startup. All agents have a real runtime implementation — see the table below.
 
 | Agent / Group | Registry Status | Runtime Status | Notes |
 |--------------|-----------------|----------------|-------|

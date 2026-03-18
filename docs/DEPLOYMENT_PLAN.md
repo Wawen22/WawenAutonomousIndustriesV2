@@ -1,196 +1,165 @@
 # Deployment Plan
 
-> Strategic note: production deployment is intentionally **not** the current milestone.
-> WAI stays local-first until the autonomous build/delivery/revenue loops are stable.
-> Hetzner deployment is treated as the final infrastructure hardening step before 24/7 operation.
+> Production deployment is intentionally **not** the current milestone.
+> WAI stays local-first until the autonomous build/delivery/revenue loops are stable and the hardware is ready.
+> Deploy is the final infrastructure hardening step — not the active development track.
 
-## Phase 1: Local Development
+---
 
-**Goal:** Working system on developer machine, all services via Docker Compose.
+## Phase 1: Local Development (Current)
 
-### Requirements
-- Machine: any modern laptop/desktop (8GB+ RAM)
-- Docker Desktop or Docker Engine + Compose
-- Node.js ≥ 22, pnpm
-- OpenClaw installed globally
+**Status: Active**
 
-### Setup
-
-```bash
-docker compose up -d
-openclaw onboard --install-daemon
-openclaw gateway --port 18789
-```
+WAI runs on the developer machine. Backend and dashboard run directly via Node.js dev servers. LiteLLM runs in Docker.
 
 ### Services
-| Service | Port | Notes |
-|---------|------|-------|
-| WAI Backend | 3001 | Node.js, hot-reload in dev |
-| WAI Dashboard | 3000 | Vite dev server |
-| PostgreSQL | 5432 | Local Supabase-compatible |
-| Supabase Realtime | 4000 | WebSocket subscriptions |
-| OpenClaw Gateway | 18789 | Loopback only |
 
-### Backend Container
+| Service | Mode | Port |
+|---------|------|------|
+| WAI Backend | `pnpm dev` (hot reload) | 3001 |
+| WAI Dashboard | `pnpm dev` (Vite) | 3000 |
+| LiteLLM Proxy | Docker Compose | 4000 |
+| Supabase | Cloud (wai-v2) | — |
+| Telegram Bot | @wai_v2_bot | — |
 
-- `backend/Dockerfile` uses `node:22-alpine`
-- Dependencies are installed with `pnpm install --frozen-lockfile`
-- Runtime uses the compiled backend via `node dist/index.js`
-- `docker-compose.yml` mounts `./workspace` into `/workspace` so project deliverables remain persistent when the backend runs in a container
-- For local hot-reload development, keep using `cd backend && pnpm dev`; the containerized backend is meant for deployment/prep and smoke testing
+### Start
+
+```bash
+sg docker -c "docker compose up litellm -d"
+cd backend && pnpm dev
+cd dashboard && pnpm dev
+```
 
 ### Security in Phase 1
+
 - All services on localhost only
-- No internet exposure
+- No internet exposure (except Supabase cloud and LLM APIs)
 - API keys in `.env` (gitignored)
+- Telegram: only founder chat_id whitelisted
 
 ---
 
-## Phase 2: Hetzner VPS
+## Phase 2: Personal Mini PC (M8)
 
-**Goal:** WAI running 24/7 on a cloud server, accessible to Neb via Tailscale/SSH.
+**Status: Todo — next infrastructure milestone**
 
-**When to execute this phase:** only after the functional milestones are closed enough that WAI is worth running continuously. Until then, this phase exists as deployment prep documentation, not as the active development track.
-
-### Recommended Hetzner Server
-- **Type:** CPX21 (3 vCPU, 4GB RAM) or CPX31 (4 vCPU, 8GB RAM)
-- **OS:** Ubuntu 22.04 LTS
-- **Location:** nbg1 (Nuremberg) or fsn1 (Falkenstein)
-
-### Provisioning Steps
-
-```bash
-# 1. Create server on Hetzner Cloud Console
-# 2. Add SSH key
-# 3. SSH in
-ssh root@<server-ip>
-
-# 4. Install Docker
-curl -fsSL https://get.docker.com | sh
-usermod -aG docker ubuntu
-
-# 5. Install Node.js 22
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt install -y nodejs
-
-# 6. Install pnpm + OpenClaw
-npm install -g pnpm openclaw@latest
-
-# 7. Install Tailscale (for secure remote access)
-curl -fsSL https://tailscale.com/install.sh | sh
-tailscale up
-
-# 8. Clone and configure WAI
-git clone <repo> /opt/wai
-cd /opt/wai
-cp .env.example .env
-# Edit .env with production values
-nano .env
-
-# 9. Start WAI
-docker compose -f docker-compose.yml up -d
-```
-
-The backend container already exposes port `3001` and expects the same environment variables used in local development (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, Telegram credentials, LiteLLM URL/key, and budget settings).
-
-### Reverse Proxy (Nginx)
-
-```bash
-apt install -y nginx
-# Copy config from infrastructure/nginx/nginx.conf
-cp infrastructure/nginx/nginx.conf /etc/nginx/sites-available/wai
-ln -s /etc/nginx/sites-available/wai /etc/nginx/sites-enabled/
-nginx -t && systemctl reload nginx
-```
-
-Dashboard accessible at `https://wai.yourdomain.com` (via Tailscale) or internal IP.
-
-### Auto-restart on Boot
-
-```bash
-# Create systemd service for OpenClaw Gateway
-cat > /etc/systemd/system/openclaw-gateway.service << 'EOF'
-[Unit]
-Description=OpenClaw Gateway
-After=network.target
-
-[Service]
-Type=simple
-User=ubuntu
-ExecStart=/usr/bin/openclaw gateway --port 18789
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl enable openclaw-gateway
-systemctl start openclaw-gateway
-```
-
-Docker Compose already handles auto-restart via `restart: unless-stopped`.
-
-### Security in Phase 2
-- Firewall: only 22 (SSH), 80, 443 open; all else blocked
-- OpenClaw Gateway on loopback only
-- Dashboard behind Nginx with Tailscale auth (or basic auth)
-- All env vars set as system environment (not in .env on server)
-- Fail2ban installed for SSH protection
-
----
-
-## Phase 3: Personal Mini PC
-
-**Goal:** WAI migrated to owned hardware for cost savings and full control.
+WAI migrated to owned always-on hardware. Same stack, just running 24/7 without depending on the developer's laptop.
 
 ### Recommended Hardware
+
 - **Mini PC:** Intel NUC, Beelink Mini PC, or similar
 - **RAM:** 16GB minimum, 32GB recommended
 - **Storage:** 500GB SSD
 - **OS:** Ubuntu 22.04 LTS or Ubuntu Server
 
-### Optional: Proxmox
-
-For isolation and easy VM management:
-```bash
-# Install Proxmox VE on mini PC
-# Create VM: Ubuntu 22.04, 8GB RAM, 100GB disk
-# Follow same steps as Hetzner VPS inside VM
-```
-
-### Migration Steps
+### Setup Steps
 
 ```bash
-# 1. Export DB from Hetzner
-pg_dump $PROD_DATABASE_URL | gzip > wai-migration.sql.gz
+# 1. Install Docker
+curl -fsSL https://get.docker.com | sh
 
-# 2. Set up new server (same steps as Hetzner)
+# 2. Install Node.js 22 + pnpm
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt install -y nodejs
+npm install -g pnpm
 
-# 3. Import DB
-gunzip -c wai-migration.sql.gz | psql $NEW_DATABASE_URL
+# 3. Install Tailscale (for secure remote access)
+curl -fsSL https://tailscale.com/install.sh | sh
+tailscale up
 
-# 4. Update DNS / Tailscale routes
+# 4. Clone repo and configure
+git clone <repo> /opt/wai
+cd /opt/wai
+cp .env.example .env
+# Edit .env with production values
 
-# 5. Test all functionality
-
-# 6. Decommission Hetzner server
+# 5. Start services
+docker compose up litellm -d
+cd backend && pnpm build && node dist/index.js
 ```
+
+### Auto-restart with PM2
+
+```bash
+npm install -g pm2
+
+# Start backend with PM2
+cd /opt/wai/backend
+pm2 start "node dist/index.js" --name wai-backend
+pm2 save
+pm2 startup
+```
+
+### Dashboard in Production
+
+```bash
+cd /opt/wai/dashboard
+pnpm build
+# Serve dist/ with any static server (nginx, serve, etc.)
+```
+
+### Network Access
+
+- **Local network:** http://mini-pc-ip:3000
+- **Remote (Tailscale):** http://mini-pc-tailscale-ip:3000
+- No port forwarding needed — Tailscale handles remote access
 
 ### Home Network Setup
+
 - Static local IP for mini PC (router DHCP reservation)
-- Tailscale for remote access (no port forwarding needed)
 - UPS (uninterruptible power supply) recommended for 24/7 uptime
+
+---
+
+## Phase 3: Hetzner VPS (Optional — M6)
+
+**Status: Deferred — skip to mini PC if hardware is available**
+
+Cloud server option if mini PC is not available or if higher availability is needed.
+
+### Recommended Server
+
+- **Type:** CPX21 (3 vCPU, 4GB RAM) or CPX31 (4 vCPU, 8GB RAM)
+- **OS:** Ubuntu 22.04 LTS
+- **Location:** nbg1 (Nuremberg) or fsn1 (Falkenstein)
+- **Cost:** ~€10–20/month
+
+### Setup
+
+```bash
+# 1. SSH into server
+ssh root@<server-ip>
+
+# 2. Install Docker + Node.js + pnpm (same as Phase 2)
+
+# 3. Install Tailscale
+curl -fsSL https://tailscale.com/install.sh | sh && tailscale up
+
+# 4. Clone and configure
+git clone <repo> /opt/wai
+cd /opt/wai && cp .env.example .env
+
+# 5. Start
+docker compose up litellm -d
+pm2 start "node dist/index.js" --name wai-backend
+```
+
+### Security in Phase 3
+
+- Firewall: only ports 22 (SSH) and 443 open; all others blocked
+- Dashboard behind Nginx with Tailscale auth or Cloudflare Access
+- All env vars as system environment variables (not in .env file on server)
+- Fail2ban for SSH protection
 
 ---
 
 ## Environment Comparison
 
-| Aspect | Local Dev | Hetzner VPS | Mini PC |
-|--------|-----------|-------------|---------|
-| Cost | €0/month | ~€10-20/month | ~€0/month (hardware owned) |
+| Aspect | Local Dev | Mini PC | Hetzner VPS |
+|--------|-----------|---------|-------------|
+| Cost | €0/month | ~€0/month (owned) | ~€10–20/month |
 | Uptime | Dev only | 24/7 | 24/7 |
-| Internet | Dev only | Yes | Via Tailscale |
-| Backup | Manual | Hetzner snapshots | Manual + cloud |
-| Scaling | No | Limited | No |
-| Latency | Local | ~10ms | Local/remote |
+| Latency | Local | Local/Tailscale | ~10ms |
+| Backup | Manual | Manual + cloud | Hetzner snapshots |
+| Setup complexity | Low | Medium | Medium |
+| Scaling | No | No | Limited |

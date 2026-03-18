@@ -1,41 +1,46 @@
 # WAI – Wawen Autonomous Industries
 
-> **Zero Human Company** – A fully autonomous, multi-agent AI business running 24/7.
+> **Zero Human Company** — A fully autonomous, multi-agent AI business.
 
-WAI is an AI-native company that operates autonomously using a fleet of specialized agents. Each agent has a defined role, model, and set of tools. The Founder (Neb) retains final oversight and can issue commands at any time via Telegram or the WAI Dashboard.
+WAI is an AI-native company that operates using a fleet of 17 specialized agents. Each agent has a defined role, model, memory, and runtime. The Founder (Neb) retains full oversight and issues commands via Telegram or the WAI Dashboard.
 
 ---
 
-## Overview
+## Stack
 
 | Component | Technology | Role |
 |-----------|-----------|------|
-| Agent Runtime | OpenClaw | Multi-agent orchestration, Telegram, tool/MCP integration |
-| Database | Supabase (Postgres + pgvector) | Source of truth: agents, tasks, logs, costs |
-| LLM – Complex | Azure Foundry GPT-5.4 | Reasoning, planning, architecture, development |
-| LLM – Fast | Gemini 2.5 Flash | Speed, marketing, routing, support |
-| Dashboard | React / TypeScript | Real-time monitoring of agents, tasks, costs |
-| Deploy | Docker Compose → Hetzner VPS → Mini PC | Progressive deployment |
+| Backend | Node.js 22 + TypeScript | Agent orchestration, task routing, Telegram bot |
+| LLM Proxy | LiteLLM (Docker, port 4000) | Routes calls to Azure GPT-5.4 and Gemini 2.5 Flash |
+| LLM – Complex | Azure Foundry GPT-5.4 | Planning, architecture, complex reasoning |
+| LLM – Fast | Google Gemini 2.5 Flash | Fast ops, content, monitoring |
+| Database | Supabase cloud (Postgres + pgvector) | Source of truth: agents, tasks, runs, events, memory |
+| Dashboard | React 18 + Vite + Tailwind | Real-time monitoring — 11 views |
+| Telegram | grammy bot `@wai_v2_bot` | Primary founder interface |
 
 ---
 
-## Architecture in Brief
+## Architecture
 
 ```
 Neb (Telegram / Dashboard)
         │
         ▼
-  CEO Agent (GPT-5.4)
-  ┌─────┴───────────────────────────────────┐
-  │  Team SaaS │ Team Dev │ Team Marketing  │
-  │  Team Ops  │ Team Consulting │ Finance  │
-  └─────┬───────────────────────────────────┘
+  CEO Agent (GPT-5.4)          ← NL interface (ceo_intake.ts)
+  ┌─────┴───────────────────────────────────────┐
+  │  Team SaaS  │  Team Software Dev            │
+  │  Team Consulting │ Team Marketing           │
+  │  Team Ops / Finance / HR                    │
+  └─────┬───────────────────────────────────────┘
         │  reads/writes
         ▼
-   Supabase DB  ◄──► WAI Dashboard (Realtime)
+   Supabase DB  ◄──► WAI Dashboard (Realtime WebSocket)
+        ▲
+        │
+   LiteLLM Proxy (port 4000)
+   ├── Azure GPT-5.4
+   └── Google Gemini 2.5 Flash
 ```
-
-All agent activity is logged to Supabase. The Dashboard shows live state via Supabase Realtime subscriptions.
 
 ---
 
@@ -44,47 +49,31 @@ All agent activity is logged to Supabase. The Dashboard shows live state via Sup
 ### Prerequisites
 
 - Docker & Docker Compose
-- Node.js ≥ 22
-- pnpm
-- OpenClaw installed: `npm install -g openclaw@latest`
+- Node.js ≥ 22, pnpm
+- Supabase cloud project (`wai-v2`) with migrations applied
+- `.env` with API keys (see `.env.example`)
 
-### 1. Clone and configure
-
-```bash
-git clone <this-repo> wai
-cd wai
-cp .env.example .env
-# Fill in your API keys in .env
-```
-
-### 2. Start infrastructure
+### Start
 
 ```bash
-docker compose up -d
+# 1. Start LiteLLM proxy
+sg docker -c "docker compose up litellm -d"
+
+# 2. Start backend (dev mode with hot reload)
+cd backend && pnpm dev
+
+# 3. Start dashboard
+cd dashboard && pnpm dev
 ```
 
-This starts:
-- Supabase stack (Postgres, Auth, Storage, Realtime)
-- WAI Backend (OpenClaw agents)
-- WAI Dashboard (React)
+Backend on port `3001`, Dashboard on port `3000`.
 
-### 3. Run database migrations
+### Run Typechecks
 
 ```bash
-cd supabase
-psql $DATABASE_URL -f migrations/001_initial_schema.sql
-psql $DATABASE_URL -f seed.sql
+cd backend && pnpm typecheck
+cd dashboard && pnpm typecheck
 ```
-
-### 4. Start OpenClaw Gateway
-
-```bash
-openclaw gateway --port 18789 --verbose
-```
-
-### 5. Access Dashboard
-
-Open [http://localhost:3000](http://localhost:3000)
 
 ---
 
@@ -95,74 +84,89 @@ wai/
 ├── README.md                   # This file
 ├── CLAUDE.md                   # Instructions for Claude Code / AI agents
 ├── .env.example                # Environment variable template
-├── docker-compose.yml          # Local development stack
+├── docker-compose.yml          # LiteLLM proxy service
 ├── docs/                       # Documentation
-│   ├── VISION.md
-│   ├── ARCHITECTURE.md
-│   ├── AGENTS_AND_TEAMS.md
-│   ├── SUPABASE_SCHEMA.md
-│   ├── OPERATIONS_AND_MONITORING.md
-│   ├── TASKS_AND_PROJECT_STATE.md
-│   ├── DEPLOYMENT_PLAN.md
-│   ├── PROJECT_TRACKING.md
-│   ├── SECURITY.md
-│   └── COSTS_AND_BUDGET.md
-├── backend/                    # OpenClaw agent config + WAI backend services
-│   ├── src/
-│   │   ├── agents/             # Agent definitions and team configs
-│   │   ├── config/             # Models, routing, OpenClaw config
-│   │   ├── services/           # Supabase, Telegram, logger
-│   │   ├── tools/              # Tool definitions (GitHub, email, browser)
-│   │   └── types/              # TypeScript types
-│   └── package.json
-├── dashboard/                  # React/TypeScript WAI Dashboard
-│   ├── src/
-│   │   ├── components/         # AgentList, TaskBoard, EventTimeline, CostPanel
-│   │   ├── hooks/              # Supabase Realtime hooks
-│   │   ├── lib/                # Supabase client
-│   │   └── types/
-│   └── package.json
-├── supabase/                   # DB migrations and seed data
-│   ├── migrations/
-│   └── seed.sql
-└── infrastructure/             # Docker, Nginx, deployment configs
-    ├── docker-compose.hetzner.yml
-    └── nginx/
+│   ├── VISION.md               # Zero Human Company vision and goals
+│   ├── ARCHITECTURE.md         # Technical architecture and data flows
+│   ├── AGENTS_AND_TEAMS.md     # All 17 agents: roles, models, runtime status
+│   ├── SUPABASE_SCHEMA.md      # DB schema: tables, columns, relations, RLS
+│   ├── FOUNDER_OPERATIONS_PLAYBOOK.md  # Telegram commands + NL reference guide
+│   ├── TASKS_AND_PROJECT_STATE.md      # Task lifecycle, project states, milestones
+│   ├── OPERATIONS_AND_MONITORING.md    # Start/stop, monitoring, incident runbooks
+│   ├── DEPLOYMENT_PLAN.md      # Phases: local → Hetzner VPS → mini PC
+│   ├── SECURITY.md             # Security guidelines and key management
+│   ├── COSTS_AND_BUDGET.md     # Budget policy, model costs, alert thresholds
+│   └── PROJECT_TRACKING.md     # Live roadmap, task board, changelog
+├── backend/                    # Node.js backend — agents + services
+│   └── src/
+│       ├── agents/             # 17 agent runtimes
+│       ├── config/             # Model registry, agent registry
+│       ├── services/           # Supabase, Telegram, memory, logger, budget
+│       ├── tools/              # Tool definitions (GitHub, email, browser)
+│       └── types/              # TypeScript types
+├── dashboard/                  # React 18 + Vite dashboard (11 views)
+│   └── src/
+│       ├── components/         # Views: Overview, TaskBoard, FounderOps, Revenue, ...
+│       ├── hooks/              # Supabase Realtime hooks
+│       ├── lib/                # clientColors, agentColors, supabase client
+│       └── types/              # Dashboard TypeScript types
+└── supabase/
+    ├── migrations/             # 001–006: schema, clients, multi-service, blocked, memory, payments
+    └── seed.sql                # Initial agents + models data
 ```
 
 ---
 
-## Docs
+## Docs Reference
 
-| File | Description |
-|------|-------------|
-| [docs/VISION.md](docs/VISION.md) | WAI's vision as a Zero Human Company, long-term goals |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full technical architecture, component diagram, data flows |
-| [docs/AGENTS_AND_TEAMS.md](docs/AGENTS_AND_TEAMS.md) | All agents, their roles, models, tools, and team structure |
-| [docs/SUPABASE_SCHEMA.md](docs/SUPABASE_SCHEMA.md) | Database schema: tables, columns, relations, RLS policies |
-| [docs/OPERATIONS_AND_MONITORING.md](docs/OPERATIONS_AND_MONITORING.md) | How to start/stop, monitoring, alerts, incident handling |
-| [docs/TASKS_AND_PROJECT_STATE.md](docs/TASKS_AND_PROJECT_STATE.md) | Task tracking conventions, states, milestone management |
-| [docs/DEPLOYMENT_PLAN.md](docs/DEPLOYMENT_PLAN.md) | Phases: local → Hetzner VPS → mini PC |
-| [docs/PROJECT_TRACKING.md](docs/PROJECT_TRACKING.md) | Live roadmap, task list, changelog |
-| [docs/SECURITY.md](docs/SECURITY.md) | Security guidelines, key management, network hardening |
-| [docs/COSTS_AND_BUDGET.md](docs/COSTS_AND_BUDGET.md) | Budget policy, model cost tracking, alert thresholds |
+| File | Purpose |
+|------|---------|
+| [docs/VISION.md](docs/VISION.md) | Vision, business lines, long-term goals |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Stack, component diagram, all data flows |
+| [docs/AGENTS_AND_TEAMS.md](docs/AGENTS_AND_TEAMS.md) | Agent roster, models, runtime status |
+| [docs/FOUNDER_OPERATIONS_PLAYBOOK.md](docs/FOUNDER_OPERATIONS_PLAYBOOK.md) | **Start here** — all commands and NL examples |
+| [docs/SUPABASE_SCHEMA.md](docs/SUPABASE_SCHEMA.md) | Database schema and RLS policies |
+| [docs/TASKS_AND_PROJECT_STATE.md](docs/TASKS_AND_PROJECT_STATE.md) | Task states, project lifecycle, milestones |
+| [docs/OPERATIONS_AND_MONITORING.md](docs/OPERATIONS_AND_MONITORING.md) | Start/stop, logs, alerts, incident runbooks |
+| [docs/DEPLOYMENT_PLAN.md](docs/DEPLOYMENT_PLAN.md) | Deployment phases: local → VPS → mini PC |
+| [docs/SECURITY.md](docs/SECURITY.md) | Security guidelines, key management |
+| [docs/COSTS_AND_BUDGET.md](docs/COSTS_AND_BUDGET.md) | Budget policy, cost tracking, optimization |
+| [docs/PROJECT_TRACKING.md](docs/PROJECT_TRACKING.md) | Live task board and changelog |
 
 ---
 
-## Founder Commands (Telegram / CLI)
+## Founder Quick Reference
 
-```
-/task "description"              → Create a new task
-/assign_model agent_id model_id  → Change model for an agent
-/status                          → System overview
-/logs [agent_id]                 → Recent logs
-/budget                          → Current API costs
-/approve task_id                 → Approve agent output
-/reject task_id "reason"         → Reject with feedback
-```
+| Action | Telegram | Natural Language |
+|--------|----------|-----------------|
+| New client | `/new_client "Acme" info@acme.com` | `Crea cliente Acme Corp` |
+| New project | `/new_project acme "Landing" website` | `Crea progetto website per acme` |
+| Write brief | `/brief acme/landing Testo del brief` | `Aggiorna il brief di acme/landing: ...` |
+| Launch work | `/task acme/landing Progetta e implementa` | `Lancia il lavoro per acme/landing` |
+| Status | `/status` | `Come stiamo?` |
+| Unblock task | `/retry abc12345` | `Sblocca la task abc12345` |
+| Invoice | `/invoice acme/landing 2500` | `Fattura acme/landing per 2500` |
+| Mark paid | `/mark_paid acme/landing 2500` | `Segna pagato acme/landing 2500` |
+
+Full reference → [docs/FOUNDER_OPERATIONS_PLAYBOOK.md](docs/FOUNDER_OPERATIONS_PLAYBOOK.md)
+
+---
+
+## Milestones
+
+| ID | Milestone | Status |
+|----|-----------|--------|
+| M1 | Local dev stack running | ✅ Done |
+| M2 | CEO Agent — first autonomous task | ✅ Done |
+| M3 | Dashboard live with real-time data | ✅ Done |
+| M4 | Client & Project Management System | ✅ Done |
+| M5 | First autonomous deliverable | ✅ Done |
+| M6 | Deploy to Hetzner VPS | ⏸ Deferred (final infra step) |
+| M7 | First revenue-generating output | ✅ Done — Wawen22 LandingPage $222 |
+| M8 | Migrate to personal mini PC | ⬜ Todo |
 
 ---
 
 ## License
 
-Proprietary – Wawen Autonomous Industries © 2025. All rights reserved.
+Proprietary — Wawen Autonomous Industries © 2026. All rights reserved.

@@ -1,6 +1,7 @@
 // ============================================================
 // WAI Dashboard – Tactical Ops Task Board (T069)
 // High-depth Kanban with Independent Column Scrolling
+// Thinking Effect for busy agents.
 // ============================================================
 
 import { useState, useMemo } from 'react'
@@ -39,6 +40,40 @@ const PRIORITY_STYLE: Record<number, string> = {
   3: 'border-[#00D4FF]/40 neon-border-p3 bg-[#00D4FF]/[0.02]',
   4: 'border-slate-500/30',
   5: 'border-slate-700/20',
+}
+
+// ---------------------------------------------------------------------------
+// Sub-component: Thinking Rain
+// ---------------------------------------------------------------------------
+
+function ThinkingEffect() {
+  const columns = useMemo(() => Array.from({ length: 8 }, (_, i) => ({
+    id: i,
+    delay: Math.random() * 2,
+    duration: 2 + Math.random() * 3,
+    left: `${Math.random() * 100}%`,
+    chars: Array.from({ length: 15 }, () => 
+      Math.random() > 0.5 ? String.fromCharCode(Math.floor(Math.random() * 26) + 65) : Math.floor(Math.random() * 10)
+    ).join('\n')
+  })), [])
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-[0.07] z-0">
+      {columns.map(col => (
+        <div 
+          key={col.id}
+          className="absolute top-0 text-[8px] font-mono text-slate-400 whitespace-pre leading-none animate-thinking-rain"
+          style={{ 
+            left: col.left, 
+            animationDelay: `${col.delay}s`,
+            animationDuration: `${col.duration}s`
+          }}
+        >
+          {col.chars}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -82,76 +117,87 @@ function TaskCard({
         PRIORITY_STYLE[task.priority] || 'border-white/5'
       )}
     >
-    <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex-1 min-w-0">
-          {clientName && clientColor && (
-            <span className={clsx('text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-[0.2em] border mb-2 inline-block', clientColor.bg, clientColor.text, clientColor.border)}>
-              {clientName}
-            </span>
-          )}
-          <h4 className={clsx(
-            "text-[13px] font-bold leading-snug transition-colors truncate",
-            isImportant ? "text-white" : "text-slate-300 group-hover:text-white"
-          )}>
-            {task.title}
-          </h4>
-        </div>
-
-        {agent && agentColor && (
-          <div className="group/avatar relative shrink-0">
-            <button
-              onClick={(e) => { e.stopPropagation(); onAgentClick(agent); }}
-              className={clsx(
-                "relative transition-all duration-300 hover:scale-110 flex items-center justify-center w-10 h-10 rounded-lg border overflow-hidden font-black text-[10px]",
-                agentColor.bg, agentColor.border, agentColor.text, agentColor.glow,
-                isBusy && "ring-2 ring-amber-400/50"
-              )}
-            >
-              {agent.name.split(' ').map(n => n[0]).join('')}
-              {isBusy && <div className="absolute inset-0 bg-amber-400/5 animate-pulse" />}
-            </button>
-            <div className="absolute bottom-full right-0 mb-2 whitespace-nowrap px-2 py-1 rounded bg-[#0A1628] border border-white/10 text-[9px] font-black text-white uppercase tracking-widest opacity-0 invisible group-hover/avatar:opacity-100 group-hover/avatar:visible transition-all z-[60] pointer-events-none shadow-2xl">
-              {agent.name}
-            </div>
-            <div className={clsx(
-              "absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#070C1A] z-10",
-              isBusy ? "bg-amber-400 animate-pulse" : agent.status === 'online' ? "bg-emerald-400" : "bg-slate-600"
-            )} />
-          </div>
-        )}
-      </div>
-
-      {task.status === 'in_progress' && lastRun && (
-        <div className="mb-3 px-2 py-1.5 rounded bg-black/40 border border-white/5 font-mono text-[9px] text-emerald-400/80 overflow-hidden italic">
-          <span className="text-slate-600 mr-1.5">[{new Date(lastRun.created_at).toLocaleTimeString('it-IT', { hour12: false })}]</span>
-          {lastRun.output_summary ? lastRun.output_summary.slice(0, 50) + '...' : 'Processing...'}
+      {/* Background Thinking Animation (Scoped overflow) */}
+      {isBusy && (
+        <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
+          <ThinkingEffect />
         </div>
       )}
 
-      <div className="flex flex-col gap-2 pt-3 border-t border-white/5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] font-mono text-slate-600 uppercase tracking-widest">{task.type}</span>
-            <span className="w-1 h-1 rounded-full bg-slate-800" />
-            <span className="text-[9px] font-mono text-slate-500 font-bold uppercase tracking-tighter">
-              {format(new Date(task.created_at), 'dd MMM HH:mm')}
-            </span>
+      <div className="relative z-10">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex-1 min-w-0">
+            {clientName && clientColor && (
+              <span className={clsx('text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-[0.2em] border mb-2 inline-block', clientColor.bg, clientColor.text, clientColor.border)}>
+                {clientName}
+              </span>
+            )}
+            <h4 className={clsx(
+              "text-[13px] font-bold leading-snug transition-colors truncate",
+              isImportant ? "text-white" : "text-slate-300 group-hover:text-white"
+            )}>
+              {task.title}
+            </h4>
           </div>
-          <div className={clsx(
-            "text-[9px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded",
-            task.priority === 1 ? "text-rose-400 bg-rose-400/10" : "text-slate-500 bg-white/5"
-          )}>
-            P{task.priority}
-          </div>
+
+          {agent && agentColor && (
+            <div className="group/avatar relative shrink-0">
+              <button
+                onClick={(e) => { e.stopPropagation(); onAgentClick(agent); }}
+                className={clsx(
+                  "relative transition-all duration-300 hover:scale-110 flex items-center justify-center w-10 h-10 rounded-lg border overflow-hidden font-black text-[10px]",
+                  agentColor.bg, agentColor.border, agentColor.text, agentColor.glow,
+                  isBusy && "ring-2 ring-amber-400/50"
+                )}
+              >
+                {agent.name.split(' ').map(n => n[0]).join('')}
+                {isBusy && <div className="absolute inset-0 bg-amber-400/5 animate-pulse" />}
+              </button>
+              {/* Hover Tooltip for Agent Name (Moved to Left) */}
+              <div className="absolute right-full top-1/2 -translate-y-1/2 mr-3 whitespace-nowrap px-2 py-1 rounded bg-[#0A1628] border border-white/10 text-[9px] font-black text-white uppercase tracking-widest opacity-0 invisible group-hover/avatar:opacity-100 group-hover/avatar:visible transition-all z-[60] pointer-events-none shadow-[0_0_20px_rgba(0,0,0,0.8)]">
+                {agent.name}
+                {/* Tooltip Arrow */}
+                <div className="absolute left-full top-1/2 -translate-y-1/2 w-1 h-1 bg-[#0A1628] border-r border-t border-white/10 rotate-45 -ml-0.5" />
+              </div>
+              <div className={clsx(                "absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#070C1A] z-10",
+                isBusy ? "bg-amber-400 animate-pulse" : agent.status === 'online' ? "bg-emerald-400" : "bg-slate-600"
+              )} />
+            </div>
+          )}
         </div>
-        {agent && (
-          <div className="flex items-center gap-1.5">
-            <div className="w-1 h-3 rounded-full bg-[#00D4FF]/20" />
-            <span className="text-[10px] font-black text-[#00D4FF]/70 uppercase tracking-[0.1em]">
-              Node: <span className="text-[#00D4FF]">{agent.name}</span>
-            </span>
+
+        {task.status === 'in_progress' && lastRun && (
+          <div className="mb-3 px-2 py-1.5 rounded bg-black/40 border border-white/5 font-mono text-[9px] text-emerald-400/80 overflow-hidden italic">
+            <span className="text-slate-600 mr-1.5">[{new Date(lastRun.created_at).toLocaleTimeString('it-IT', { hour12: false })}]</span>
+            {lastRun.output_summary ? lastRun.output_summary.slice(0, 50) + '...' : 'Processing...'}
           </div>
         )}
+
+        <div className="flex flex-col gap-2 pt-3 border-t border-white/5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-mono text-slate-600 uppercase tracking-widest">{task.type}</span>
+              <span className="w-1 h-1 rounded-full bg-slate-800" />
+              <span className="text-[9px] font-mono text-slate-500 font-bold uppercase tracking-tighter">
+                {format(new Date(task.created_at), 'dd MMM HH:mm')}
+              </span>
+            </div>
+            <div className={clsx(
+              "text-[9px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded",
+              task.priority === 1 ? "text-rose-400 bg-rose-400/10" : "text-slate-500 bg-white/5"
+            )}>
+              P{task.priority}
+            </div>
+          </div>
+          {agent && (
+            <div className="flex items-center gap-1.5">
+              <div className="w-1 h-3 rounded-full bg-[#00D4FF]/20" />
+              <span className="text-[10px] font-black text-[#00D4FF]/70 uppercase tracking-[0.1em]">
+                Node: <span className="text-[#00D4FF]">{agent.name}</span>
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -308,10 +354,10 @@ export function TaskBoard() {
                 </div>
               </div>
 
-              {/* Stats Footer (Optional summary) */}
-              <div className="pt-3 flex items-center justify-between border-t border-white/[0.03] mt-2 opacity-40">
-                 <span className="text-[8px] font-mono text-slate-600 uppercase">Load: {Math.round((colTasks.length / (tasks.length || 1)) * 100)}%</span>
-                 <span className="text-[8px] font-mono text-slate-600 uppercase">Sector: {col.status}</span>
+              {/* Stats Footer */}
+              <div className="pt-3 flex items-center justify-between border-t border-white/[0.03] mt-2 opacity-40 text-slate-500">
+                 <span className="text-[8px] font-mono uppercase tracking-widest">Sector: {col.status}</span>
+                 <span className="text-[8px] font-mono uppercase tracking-widest">Load: {Math.round((colTasks.length / (tasks.length || 1)) * 100)}%</span>
               </div>
             </div>
           )

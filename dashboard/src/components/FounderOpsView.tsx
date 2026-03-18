@@ -4,11 +4,9 @@
 // ============================================================
 
 import { useMemo, useState } from 'react'
-import { clsx } from 'clsx'
 import { format, formatDistanceToNow } from 'date-fns'
 import { Panel } from './ui/Panel.js'
 import { Badge } from './ui/Badge.js'
-import { Stat } from './ui/Stat.js'
 import { Icon } from './ui/Icon.js'
 import {
   useClients,
@@ -19,27 +17,16 @@ import {
   useReviewRequestedTasks,
   useTasks,
 } from '../hooks/useSupabaseRealtime.js'
-import { getClientColor } from '../lib/clientColors.js'
-import type { Payment, Project, ProjectStatus, SystemEventWithContext, Task } from '../types/index.js'
+import type { Task } from '../types/index.js'
 
 const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? 'http://localhost:3001'
 
 type FounderTaskAction = 'retry' | 'approve' | 'reject'
-type FounderRevenueAction = 'invoice' | 'mark_paid'
 
 interface ActionState {
   pending: boolean
   message: string | null
   error: string | null
-}
-
-interface OutstandingRow {
-  project: Project
-  clientName: string
-  clientSlug: string
-  paidUsd: number
-  outstandingUsd: number
-  lastPaymentAt: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -64,17 +51,6 @@ async function runFounderTaskAction(taskId: string, action: FounderTaskAction, r
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ taskId, action, reason }),
-  })
-  const payload = await response.json() as { error?: string; message?: string }
-  if (!response.ok) throw new Error(payload.error ?? 'Action failed')
-  return payload.message ?? 'Action completed.'
-}
-
-async function runFounderRevenueAction(action: FounderRevenueAction, clientSlug: string, projectSlug: string, amountUsd?: number): Promise<string> {
-  const response = await fetch(`${BACKEND_URL}/api/founder/revenue-action`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, clientSlug, projectSlug, amountUsd }),
   })
   const payload = await response.json() as { error?: string; message?: string }
   if (!response.ok) throw new Error(payload.error ?? 'Action failed')
@@ -132,7 +108,7 @@ function BlockedAlertCard({ task, state, onRetry, onReject }: { task: Task; stat
   )
 }
 
-function ReviewRequestCard({ task, state, onApprove, onReject }: { task: Task; state?: ActionState; onApprove: any; onReject: any }) {
+function ReviewRequestCard({ task, onApprove, onReject }: { task: Task; state?: ActionState; onApprove: any; onReject: any }) {
   return (
     <div className="relative rounded-2xl border border-violet-500/30 bg-violet-500/[0.03] p-5 space-y-4 hover:bg-violet-500/[0.06] transition-all">
       <div className="flex justify-between items-start">

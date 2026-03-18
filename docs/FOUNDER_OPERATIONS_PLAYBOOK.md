@@ -576,13 +576,3 @@ Typical QA behavior with a linked repo:
 - The dashboard project panel mirrors this same flow and shows repo context when a project is selected.
 - For code projects, verify not only `architecture_plan.md` and worker briefs, but also `repo-execution-*.md` and `qa_report.md` to understand exactly which files changed and which checks ran.
 
----
-
-## Canonical Example For This Session
-
-```text
-/new_project acmecorp collab-drawing app
-/link_repo acmecorp/collab-drawing https://github.com/Wawen22/collab-air-drawing-app main
-/brief acmecorp/collab-drawing Lavagna collaborativa con stanze condivise, autenticazione e salvataggio stato.
-/task acmecorp/collab-drawing Progetta e implementa la piattaforma
-```

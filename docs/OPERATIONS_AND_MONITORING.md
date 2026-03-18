@@ -2,30 +2,28 @@
 
 ## Starting WAI
 
-### Full Local Stack
+### Local Development Stack
 
 ```bash
-# 1. Start infrastructure
-docker compose up -d
+# 1. Start LiteLLM proxy (Docker)
+sg docker -c "docker compose up litellm -d"
 
-# 2. Apply DB schema (first time only)
-psql $DATABASE_URL -f supabase/migrations/001_initial_schema.sql
-psql $DATABASE_URL -f supabase/seed.sql
-
-# 3. Start OpenClaw Gateway
-openclaw gateway --port 18789 --verbose
-
-# 4. Start backend (dev mode)
+# 2. Start backend (hot reload)
 cd backend && pnpm dev
 
-# 5. Start dashboard (dev mode)
+# 3. Start dashboard
 cd dashboard && pnpm dev
 ```
 
-### Production Mode (Docker)
+- Backend: http://localhost:3001
+- Dashboard: http://localhost:3000
+- LiteLLM proxy: http://localhost:4000
+
+### Typechecks
 
 ```bash
-docker compose -f docker-compose.yml up -d --build
+cd backend && pnpm typecheck
+cd dashboard && pnpm typecheck
 ```
 
 ---
@@ -33,10 +31,12 @@ docker compose -f docker-compose.yml up -d --build
 ## Stopping WAI
 
 ```bash
-# Graceful stop
+# Stop LiteLLM
 docker compose stop
 
-# Full teardown (keeps volumes)
+# Stop backend and dashboard: Ctrl+C in each terminal
+
+# Full Docker teardown (keeps volumes)
 docker compose down
 
 # Full teardown with data reset (DANGER)
@@ -47,22 +47,28 @@ docker compose down -v
 
 ## Health Checks
 
-### OpenClaw Gateway
+### Backend
 
 ```bash
-openclaw doctor
-# Should show all channels connected and no critical errors
+curl http://localhost:3001/api/health
 ```
 
-### Database
+### Database (via Supabase MCP or SQL editor)
 
-```bash
-psql $DATABASE_URL -c "SELECT COUNT(*) FROM agents WHERE status='online';"
+```sql
+SELECT COUNT(*) FROM agents WHERE status = 'online';
+SELECT COUNT(*) FROM tasks WHERE status IN ('todo', 'in_progress', 'blocked');
 ```
 
 ### Dashboard
 
-Check [http://localhost:3000](http://localhost:3000) – header should show active agent count.
+Open http://localhost:3000 — header should show active agent count and milestone.
+
+### LiteLLM
+
+```bash
+curl http://localhost:4000/health
+```
 
 ---
 
@@ -72,120 +78,139 @@ Check [http://localhost:3000](http://localhost:3000) – header should show acti
 
 | Metric | Source | Alert Threshold |
 |--------|--------|----------------|
-| Agent online count | `agents.status` | < expected count |
+| Agent online count | `agents.status` | < 17 |
 | Task failure rate | `runs.outcome = 'failure'` | > 10% in last hour |
 | API cost (hourly) | `SUM(runs.cost_usd)` | > budget / 30 / 24 * 1.5 |
-| Gateway uptime | OpenClaw process | Any restart |
+| Tasks stuck in_progress | `tasks.updated_at` | > 30 min with no update |
+| Blocked tasks | `tasks.status = 'blocked'` | Any unacknowledged |
 | DB connection errors | Backend logs | Any error |
-| Realtime latency | Dashboard indicator | > 5s |
+| Dashboard Realtime | Connected indicator | Disconnected |
+
+### Dashboard Views for Monitoring
+
+- **Overview** — system heartbeat, active tasks, costs, revenue KPIs
+- **Founder Ops** — blocked tasks, pending review, invoice queue
+- **Activity** — event timeline with severity filtering
+- **Costs** — LLM spend by agent and model
+- **Runs** — every LLM invocation with outcome and cost
+
+### Telegram Automatic Alerts
+
+The following events trigger automatic Telegram notifications to Neb:
+
+| Trigger | Agent | Severity |
+|---------|-------|----------|
+| Budget > 80% threshold | Finance | Warning |
+| Budget > 100% | Finance | Critical |
+| Task stuck > 30 min | Ops | Warning |
+| Agent error > 30 min unresolved | Ops | Warning |
+| QA blocks a project (requires_human_review) | QA | Warning |
+| Any agent failure with task context | Runtime agent | Error |
 
 ### Logs
 
 ```bash
 # Backend logs
-docker logs wai-backend -f
+docker logs wai-backend -f   # if running in Docker
+# or: pnpm dev output in terminal
 
-# All containers
+# All Docker containers
 docker compose logs -f
-
-# OpenClaw Gateway
-openclaw gateway --verbose 2>&1 | tee ~/.openclaw/gateway.log
 ```
-
-### Supabase Dashboard
-
-Access your Supabase project dashboard for:
-- Table Editor (live data)
-- Logs (DB queries, auth, realtime)
-- Usage metrics
 
 ---
 
-## Alert Types
+## Alert Conditions
 
-Alerts are surfaced via:
-1. **Telegram notification** to Neb
-2. **`events` table** entry with `severity='critical'`
-3. **WAI Dashboard** red badge
-
-### Alert Conditions (Finance Agent)
+### Finance Agent (automatic, every hour)
 
 ```
-monthly_cost > monthly_budget * (alert_threshold / 100)
-  → severity: warning
+monthly_cost > monthly_budget * (ALERT_THRESHOLD_PERCENT / 100)
+  → severity: warning → Telegram notification
 
 monthly_cost > monthly_budget
-  → severity: critical, notify Neb immediately
+  → severity: critical → Telegram + log budget_exceeded event
 ```
 
-### Alert Conditions (Ops Agent)
+### Ops Agent (automatic, every 15 min)
 
 ```
-agent.status = 'error' for any agent
-  → severity: warning, attempt auto-restart
+task.status IN ('in_progress', 'blocked') AND updated_at < now() - interval '30 min'
+  → INSERT ops_alert event + Telegram notification
 
-consecutive_failures > 3 for same agent
-  → severity: critical, notify Neb
-
-gateway_process_down
-  → severity: critical, attempt restart, notify Neb
+agent_error event unresolved > 30 min
+  → INSERT ops_alert event + Telegram notification
 ```
 
 ---
 
 ## Incident Response
 
+### Runbook: Task Blocked
+
+1. Check Founder Ops view on dashboard — see blocked task + reason
+2. Read `deliverables/` files for the project to understand what failed
+3. If transient error (API timeout, LLM failure): `/retry <task_id>` or Dashboard → Retry
+4. If logic/code error: update brief, then retry
+5. If unresolvable: `/reject <task_id>` and restart project
+
 ### Runbook: Agent Failure
 
-1. Check logs: `docker logs wai-backend -f`
-2. Identify failing agent ID from `events` table
-3. Check last 5 runs: `SELECT * FROM runs WHERE agent_id='X' ORDER BY created_at DESC LIMIT 5;`
-4. Check error messages in `runs.error_message`
-5. If model error: try `/assign_model agent_id gemini-2.5-flash` as fallback
-6. If tool error: check tool config in `backend/src/tools/`
-7. Restart backend if needed: `docker compose restart backend`
+1. Check Activity view on dashboard — filter by `agent_error`
+2. Check `runs` table for last 5 runs of the failing agent:
+   ```sql
+   SELECT * FROM runs WHERE agent_id = 'X' ORDER BY created_at DESC LIMIT 5;
+   ```
+3. If model error: try `/assign_model agent_id gemini-2.5-flash` as fallback
+4. If LiteLLM issue: check `docker compose logs litellm`
+5. Restart backend if needed: `Ctrl+C` + `pnpm dev`
 
 ### Runbook: Budget Exceeded
 
-1. Check current costs: `SELECT model_id, SUM(cost_usd) FROM runs WHERE created_at > date_trunc('month', now()) GROUP BY model_id;`
-2. Identify expensive agents
-3. Switch expensive agents to Gemini 2.5 Flash temporarily
-4. Review and cancel non-critical in-progress tasks
-5. Set temporary budget override if justified
+1. Check current costs in Dashboard → Costs view
+2. Identify expensive agents:
+   ```sql
+   SELECT agent_id, SUM(cost_usd) as total
+   FROM runs
+   WHERE created_at > date_trunc('month', now())
+   GROUP BY agent_id ORDER BY total DESC;
+   ```
+3. Switch expensive agents to Gemini 2.5 Flash: `/assign_model architect gemini-2.5-flash`
+4. Cancel non-critical in-progress tasks from Founder Ops
 
-### Runbook: Gateway Down
+### Runbook: LiteLLM Down
 
 ```bash
 # Check status
-openclaw doctor
+docker compose ps
 
 # Restart
-pkill -f "openclaw gateway"
-openclaw gateway --port 18789 --verbose &
+docker compose restart litellm
 
-# Verify
-openclaw doctor
+# Check logs
+docker compose logs litellm -f
 ```
 
 ---
 
 ## Backup
 
-### Database
+### Supabase Cloud (automatic)
+
+Supabase Pro plan includes automatic daily backups. Access via Supabase Dashboard → Project Settings → Backups.
+
+### Manual Export
 
 ```bash
-# Manual backup
-pg_dump $DATABASE_URL > backup-$(date +%Y%m%d).sql
-
-# Restore
-psql $DATABASE_URL < backup-20250101.sql
+# Export via Supabase CLI
+supabase db dump --project-ref nxrgwbwhauuusuuytipf > backup-$(date +%Y%m%d).sql
 ```
 
-### Automated (add to cron)
+### Workspace Files
 
 ```bash
-# Daily backup at 2am
-0 2 * * * pg_dump $DATABASE_URL | gzip > /backups/wai-$(date +\%Y\%m\%d).sql.gz
+# Backup all project deliverables
+tar -czf workspace-backup-$(date +%Y%m%d).tar.gz workspace/
 ```
 
 ---
@@ -193,11 +218,12 @@ psql $DATABASE_URL < backup-20250101.sql
 ## Rollback
 
 ```bash
-# Revert to previous Docker image
-docker compose down
+# Revert to previous commit
 git checkout <previous-commit>
-docker compose up -d --build
 
-# Revert DB migration
-psql $DATABASE_URL -f supabase/migrations/rollback_XXX.sql
+# Restart backend
+cd backend && pnpm dev
+
+# Revert DB migration (if needed)
+# Apply rollback SQL manually via Supabase SQL editor
 ```

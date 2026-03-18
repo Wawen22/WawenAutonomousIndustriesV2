@@ -69,6 +69,14 @@
     z-index: 9999;
     pointer-events: none;
   }
+
+  @keyframes thinking-rain {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100%); }
+  }
+  .animate-thinking-rain {
+    animation: thinking-rain 4s linear infinite;
+  }
 }
 
 /* Markdown viewer styles */

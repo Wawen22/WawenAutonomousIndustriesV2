@@ -39,3 +39,6 @@ backups/
 
 # Workspace (client/project files — not tracked in git)
 /workspace/
+
+# Local imported repositories
+/openclaw-main/

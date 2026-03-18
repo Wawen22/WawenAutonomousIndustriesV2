@@ -147,7 +147,7 @@ export function AgentDetailSidebar({
     .join('')
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex justify-end" onClick={onClose}>
+    <div className="fixed inset-0 z-[250] flex justify-end" onClick={onClose}>
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" />
       

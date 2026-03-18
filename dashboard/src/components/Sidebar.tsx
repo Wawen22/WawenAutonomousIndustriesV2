@@ -58,11 +58,11 @@ interface SidebarProps {
 
 function WaiLogo({ collapsed }: { collapsed: boolean }) {
   return (
-    <div className={clsx('flex items-center gap-3 px-3 py-5', collapsed && 'justify-center px-0')}>
+    <div className={clsx('flex items-center gap-3', collapsed && 'justify-center')}>
       {/* Hexagonal brand mark */}
       <svg
-        width="32"
-        height="32"
+        width="28"
+        height="28"
         viewBox="0 0 32 32"
         fill="none"
         className="flex-shrink-0"
@@ -91,8 +91,8 @@ function WaiLogo({ collapsed }: { collapsed: boolean }) {
       {!collapsed && (
         <div className="min-w-0">
           <p className="text-sm font-bold text-white tracking-tight leading-none">WAI</p>
-          <p className="text-[10px] text-slate-600 tracking-wider mt-0.5 leading-none">
-            Autonomous Industries
+          <p className="text-[9px] text-slate-600 tracking-wider mt-1 leading-none uppercase font-black">
+            Autonomous
           </p>
         </div>
       )}
@@ -104,21 +104,33 @@ export function Sidebar({ current, onNavigate, collapsed, onToggle }: SidebarPro
   return (
     <aside
       className={clsx(
-        'flex flex-col h-full border-r border-white/[0.07] bg-[#07101F] transition-all duration-200 flex-shrink-0',
+        'flex flex-col h-full border-r border-white/[0.07] bg-[#07101F] transition-all duration-200 flex-shrink-0 pb-10',
         collapsed ? 'w-14' : 'w-52'
       )}
     >
-      {/* Logo */}
-      <WaiLogo collapsed={collapsed} />
+      {/* Header area with Logo and Toggle */}
+      <div className={clsx(
+        'flex items-center px-3 py-6',
+        collapsed ? 'flex-col gap-4' : 'justify-between'
+      )}>
+        <WaiLogo collapsed={collapsed} />
+        <button
+          onClick={onToggle}
+          className="p-1.5 rounded-md text-slate-600 hover:text-slate-300 hover:bg-white/[0.06] transition-colors"
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <Icon name={collapsed ? 'chevron-right' : 'chevron-left'} size={14} />
+        </button>
+      </div>
 
       <div className="h-px bg-white/[0.06] mx-3" />
 
       {/* Navigation */}
-      <nav className="flex-1 px-2 pt-3 pb-2 space-y-4 overflow-y-auto custom-scrollbar">
+      <nav className="flex-1 px-2 pt-4 pb-2 space-y-5 overflow-y-auto custom-scrollbar">
         {NAV_SECTIONS.map((section) => (
-          <div key={section.title} className="space-y-0.5">
+          <div key={section.title} className="space-y-1">
             {!collapsed && (
-              <h3 className="px-3 mb-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">
+              <h3 className="px-3 mb-2 text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">
                 {section.title}
               </h3>
             )}
@@ -139,12 +151,12 @@ export function Sidebar({ current, onNavigate, collapsed, onToggle }: SidebarPro
                 >
                   {/* Active left accent bar */}
                   {!collapsed && active && (
-                    <span className="absolute left-0 w-0.5 h-6 rounded-r bg-[#00D4FF]" />
+                    <span className="absolute left-0 w-0.5 h-5 rounded-r bg-[#00D4FF]" />
                   )}
                   
                   <Icon name={item.icon} size={16} />
                   {!collapsed && (
-                    <span className="font-medium tracking-wide">{item.label}</span>
+                    <span className="font-bold tracking-tight text-[13px]">{item.label}</span>
                   )}
                 </button>
               )
@@ -155,23 +167,16 @@ export function Sidebar({ current, onNavigate, collapsed, onToggle }: SidebarPro
 
       <div className="h-px bg-white/[0.06] mx-3" />
 
-      {/* Bottom: status + collapse toggle */}
-      <div className={clsx('p-3 flex items-center', collapsed ? 'justify-center' : 'justify-between')}>
-        {!collapsed && (
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-slow flex-shrink-0" />
-            <span className="text-[11px] text-slate-500 font-medium tracking-wider uppercase">
-              Online
+      {/* Bottom: status only */}
+      <div className="p-4 flex items-center justify-center">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.02] border border-white/[0.05]">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-slow flex-shrink-0 shadow-[0_0_5px_#10b981]" />
+          {!collapsed && (
+            <span className="text-[9px] text-slate-500 font-black tracking-widest uppercase">
+              System Online
             </span>
-          </div>
-        )}
-        <button
-          onClick={onToggle}
-          className="p-1.5 rounded-md text-slate-600 hover:text-slate-300 hover:bg-white/[0.06] transition-colors"
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <Icon name={collapsed ? 'chevron-right' : 'chevron-left'} size={14} />
-        </button>
+          )}
+        </div>
       </div>
     </aside>
   )

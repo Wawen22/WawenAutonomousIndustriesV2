@@ -50,7 +50,7 @@ export function DetailSidebar({ title, subtitle, data, taskId, onClose }: Detail
   }, [onClose])
 
   return createPortal(
-    <div className="fixed inset-0 z-[150] flex justify-end" onClick={onClose}>
+    <div className="fixed inset-0 z-[250] flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" />
       
       <div

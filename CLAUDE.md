@@ -8,11 +8,11 @@ This file defines how Claude Code (or any AI coding agent) must behave when work
 
 **WAI (Wawen Autonomous Industries)** is a Zero Human Company: a fully autonomous, multi-agent AI business.
 
-- **Agent runtime:** OpenClaw (multi-agent, multi-model, tool/MCP, Telegram integration)
-- **Database:** Supabase (Postgres + pgvector) – source of truth for agents, tasks, logs, costs
-- **Models:** Azure Foundry GPT-5.4 (complex reasoning) + Gemini 2.5 Flash (fast ops)
-- **Dashboard:** React/TypeScript, real-time via Supabase Realtime
-- **Founder:** Neb – the only human, gives orders via Telegram or WAI Dashboard
+- **Backend:** Node.js 22 + TypeScript, porta 3001 — agenti, routing, Telegram bot (grammy)
+- **LLM Proxy:** LiteLLM Docker, porta 4000 → Azure GPT-5.4 + Google Gemini 2.5 Flash
+- **Database:** Supabase cloud `nxrgwbwhauuusuuytipf` (Postgres + pgvector) — source of truth
+- **Dashboard:** React 18 + Vite + Tailwind, porta 3000 — 11 views, Supabase Realtime
+- **Founder:** Neb – the only human, gives orders via Telegram (@wai_v2_bot) or WAI Dashboard
 
 ### Agent Teams
 
@@ -101,7 +101,7 @@ Full details: `docs/AGENTS_AND_TEAMS.md`
 | `backend/src/config/models.ts` | Model registry + routing logic |
 | `backend/src/services/supabase.ts` | Supabase client + typed query helpers |
 | `backend/src/services/logger.ts` | Centralized run/event logger |
-| `backend/src/tools/index.ts` | Tool registry for OpenClaw |
+| `backend/src/services/llm.ts` | LiteLLM client + streaming + memory integration |
 | `dashboard/src/hooks/useSupabaseRealtime.ts` | Realtime subscription hooks |
 | `supabase/migrations/001_initial_schema.sql` | Full DB schema |
 | `docs/PROJECT_TRACKING.md` | Live task board + changelog |
@@ -110,7 +110,7 @@ Full details: `docs/AGENTS_AND_TEAMS.md`
 
 ## DO NOT
 
-- Do NOT expose the OpenClaw Gateway to the public internet without auth
+- Do NOT expose LiteLLM or the backend to the public internet without auth
 - Do NOT hardcode model names, API keys, or Supabase URLs
 - Do NOT skip updating `PROJECT_TRACKING.md` after changes
 - Do NOT create new agents without adding them to `backend/src/config/agents.ts`
@@ -122,8 +122,8 @@ Full details: `docs/AGENTS_AND_TEAMS.md`
 ## Useful Commands
 
 ```bash
-# Start everything locally
-docker compose up -d
+# Start LiteLLM proxy (Docker)
+sg docker -c "docker compose up litellm -d"
 
 # Run backend in dev mode
 cd backend && pnpm dev
@@ -131,12 +131,10 @@ cd backend && pnpm dev
 # Run dashboard in dev mode
 cd dashboard && pnpm dev
 
-# Apply DB migrations
-psql $DATABASE_URL -f supabase/migrations/001_initial_schema.sql
+# Typechecks (run before committing)
+cd backend && pnpm typecheck
+cd dashboard && pnpm typecheck
 
-# OpenClaw Gateway
-openclaw gateway --port 18789 --verbose
-
-# Check agent status
-openclaw doctor
+# Apply DB migrations (via Supabase SQL editor or CLI)
+# supabase/migrations/001_initial_schema.sql ... 006_payments.sql
 ```
