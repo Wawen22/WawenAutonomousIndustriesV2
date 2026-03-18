@@ -30,7 +30,7 @@
 | M4 | Client & Project Management System | 2026-Q2 | ✅ Done |
 | M5 | First autonomous deliverable for a real client | 2026-Q2 | ✅ Done |
 | M6 | Deploy to Hetzner VPS | 2026-Q2 | ⏸ Deferred (final infrastructure step) |
-| M7 | First revenue-generating output | 2026-Q3 | 🔄 In Progress |
+| M7 | First revenue-generating output | 2026-Q3 | ✅ Done |
 | M8 | Migrate to personal mini PC | 2026-Q3 | ⬜ Todo |
 
 ---
@@ -133,7 +133,7 @@
 
 ## CHANGELOG
 
-### 2026-03-18 — Sessione 35: LandingPage delivered+invoiced + M7 validato + dashboard bugfix ✅
+### 2026-03-18 — Sessione 35: M7 COMPLETATO — LandingPage delivered+invoiced+paid + dashboard bugfix ✅
 
 - **P1 LandingPage APPROVED**: QA blocking issues analizzati come falsi positivi — "repo clean" = tutti i cambiamenti già committati (15 commit), scope mismatch non esiste (brief chiedeva ENTRAMBE testimonials + Perché sceglierci), deliverable completo (382 righe HTML, dark/light mode, testimonials, pricing, sezione why-us). Founder ha approvato il QA.
 - **QA task** `b9b121ea`: `requires_human_review → false`, evento `human_approved` registrato
@@ -142,6 +142,8 @@
 - **Task sintetici cleanup**: 2 task stuck in `todo` (NL verify session 31: `1b15df3d`, `4e24042a`) cancellati
 - **BUGFIX** `dashboard/src/components/TaskBoard.tsx`: rimossi import unused (`formatDistanceToNow`, `Panel`, `Badge`, `useClients`, `useProjects`), rimossi `clients`/`projects` unused, aggiunto `<div` mancante nel `return` di `TaskCard` (bug di sintassi JSX che rompeva il typecheck)
 - **BUGFIX** `dashboard/src/components/Overview.tsx`: rimossi import unused (`Stat`, `useRecentRuns`, tipo `Task`), fix `e.payload['message']` wrappato in `String()` per ReactNode
+- **mark_paid** `wawen22/landingpage 222` eseguito da Neb via Telegram → riga payments $222 creata (22:01 UTC); M7 layer business completo
+- **M7 STATUS**: ✅ Done — primo revenue reale: LandingPage Wawen22 $222 invoiced + paid
 - **VERIFY** `pnpm typecheck` verde su backend e dashboard
 
 ### 2026-03-18 — Sessione 34b: LandingPage retry verificato end-to-end ✅

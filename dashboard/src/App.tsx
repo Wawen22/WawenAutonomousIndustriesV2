@@ -3,6 +3,7 @@ import type { ReactNode, ErrorInfo } from 'react'
 import { clsx } from 'clsx'
 import { Sidebar, type ViewId } from './components/Sidebar.js'
 import { Overview } from './components/Overview.js'
+import { IntelligenceTicker } from './components/ui/IntelligenceTicker.js'
 import { TaskBoard } from './components/TaskBoard.js'
 import { EventTimeline } from './components/EventTimeline.js'
 import { CostPanel } from './components/CostPanel.js'
@@ -159,9 +160,25 @@ function ViewContent({ view }: { view: ViewId }) {
 export function App() {
   const [view, setView]           = useState<ViewId>('overview')
   const [collapsed, setCollapsed] = useState(false)
+  const [isScanning, setIsScanning] = useState(false)
+
+  // Trigger Neural Scan effect on view change
+  useEffect(() => {
+    setIsScanning(true)
+    const timer = setTimeout(() => setIsScanning(false), 800)
+    return () => clearTimeout(timer)
+  }, [view])
 
   return (
     <div className="flex h-full bg-[#05080F] overflow-hidden">
+      {/* Neural Scan Line Animation */}
+      {isScanning && (
+        <div 
+          className="neural-scan-line" 
+          style={{ animation: 'neural-scan 0.8s ease-in-out forwards' }} 
+        />
+      )}
+
       {/* Sidebar */}
       <Sidebar
         current={view}
@@ -171,14 +188,14 @@ export function App() {
       />
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         {/* Topbar */}
         <Topbar view={view} />
 
         {/* Page */}
         <main
           className={clsx(
-            'flex-1 overflow-y-auto bg-grid',
+            'flex-1 overflow-y-auto bg-grid pb-12',
             'p-4 xl:p-5'
           )}
           // Subtle radial gradient overlay for depth
@@ -194,6 +211,9 @@ export function App() {
             <ViewContent view={view} />
           </ErrorBoundary>
         </main>
+
+        {/* Global Intelligence Ticker */}
+        <IntelligenceTicker />
       </div>
     </div>
   )

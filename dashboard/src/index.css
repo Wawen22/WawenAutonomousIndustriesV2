@@ -40,6 +40,35 @@
   .neon-border-p1 { box-shadow: 0 0 10px rgba(244, 63, 94, 0.2), inset 0 0 5px rgba(244, 63, 94, 0.1); }
   .neon-border-p2 { box-shadow: 0 0 10px rgba(251, 146, 60, 0.2), inset 0 0 5px rgba(251, 146, 60, 0.1); }
   .neon-border-p3 { box-shadow: 0 0 10px rgba(0, 212, 255, 0.2), inset 0 0 5px rgba(0, 212, 255, 0.1); }
+
+  @keyframes ticker-scroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  .animate-ticker {
+    display: inline-flex;
+    white-space: nowrap;
+    animation: ticker-scroll 60s linear infinite;
+  }
+  .animate-ticker:hover {
+    animation-play-state: paused;
+  }
+
+  @keyframes neural-scan {
+    0% { transform: translateY(-100vh); opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { transform: translateY(100vh); opacity: 0; }
+  }
+  .neural-scan-line {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(to right, transparent, #00D4FF, transparent);
+    box-shadow: 0 0 15px #00D4FF, 0 0 30px rgba(0, 212, 255, 0.5);
+    z-index: 9999;
+    pointer-events: none;
+  }
 }
 
 /* Markdown viewer styles */
