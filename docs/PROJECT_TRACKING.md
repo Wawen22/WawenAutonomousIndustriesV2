@@ -101,6 +101,8 @@
 | T064 | Team Org screen | ✅ Done | Claude | 1 | `TeamOrgView.tsx`: org chart Neb→CEO→teams; avatar generativi; status+model badge; slide-in panel con runs+tasks; `useAgentStats` hook; sidebar entry |
 | T065 | Virtual Office screen | ✅ Done | Claude | 2 | `VirtualOffice3DView.tsx`: ufficio 3D con Three.js/R3F; 17 agent avatar animati; zone (Desk/Meeting/Lounge/Neb Corner); monitor glow; click info panel; idle wandering; working pulse; fog+lighting |
 | T066 | Memory system (backend + UI) | ⬜ Todo | Claude | 3 | Prossima sessione |
+| T067 | Virtual Office 2D view | ✅ Done | Claude | 2 | `VirtualOffice2DView.tsx`: mappa 2D flat con 4 zone (Desk/Meeting/HotDesk/Lounge); AgentAvatar2D con bordo team-color, badge tool arancione, pulse working; meeting zone con tavolo SVG + dashed lines; sidebar con stats/agent list/event timeline; popup agente con runs/tools/eventi; toggle 2D/3D in topbar sia in 2D che in 3D |
+| T068 | Virtual Office 3D — polish v3 | ✅ Done | Claude | 2 | Rimozione CeilingLights; reset camera button (⊙ reset view) con animazione lerp verso default [2,30,28]; Neb Founder 3D avatar gold con body+head+halo+ring+sonar pulse+head bob; fix z-index AgentInfoPanel (WebGL stacking issue: Canvas zIndex:0, panel z-[50]) |
 
 ---
 
@@ -117,6 +119,16 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-18 — Sessione 26: T068 — Virtual Office 3D polish v3 ✅
+
+- **T068** `dashboard/src/components/VirtualOffice3DView.tsx` — rimossa `CeilingLights()` (7 pannelli soffitto che coprivano la scena); aggiunto `cameraResetRef: MutableRefObject<boolean>` passato da root → `OfficeScene` → `CameraController`; `CameraController.useFrame` ora anima lerp verso default `[2,30,28]` / target `[-4,0,0]` quando `cameraResetRef.current = true`; bottone `⊙ reset view` nella status bar in alto; `NebCorner3D` ampliato con avatar 3D completo (body cilindro + head sfera + halo + ring + sonar pulse espandente + head bob in useFrame) in posizione `[0,0,1.9]` davanti alla scrivania, color scheme gold #FBBF24; HTML label 👑 NEB · FOUNDER spostata sopra l'avatar; fix WebGL stacking: Canvas con `style={{ zIndex:0 }}`, `AgentInfoPanel` da `z-20` → `z-[50]`
+
+### 2026-03-18 — Sessione 25: T067 — Virtual Office 2D view ✅
+
+- **T067** `dashboard/src/components/VirtualOffice2DView.tsx` — nuova vista 2D piatta dell'ufficio: 4 zone in CSS grid 2×2 (Desk Zone, Meeting Zone, Hot Desk Zone, Lounge Zone); `AgentAvatar2D` con bordo colorato per team, badge arancione tool attivo da `events.payload.tool_name`, pulse ring animata su working, status dot; `DeskSlot` con monitor SVG (glow se working); `MeetingZone` con tavolo rotondo SVG + dashed lines tra agenti; `LoungeZone` con divani+piante decorativi e banner OPENCLAW; `HotDeskZone` per agenti senza desk fisso; `AgentPopup` con stats (runs/cost/tools), task attivi, eventi recenti; `RightSidebar` con stats row (Active/Tokens/Collab%), tab Overview/Activity, agent list con badge Idle/Busy/Offline, event timeline; topbar con toggle 2D/3D, active count, Connected; usa solo hook esistenti (`useAgents`, `useAgentStats`, `useTasks`, `useEventsWithContext`); no dipendenze esterne (solo React + SVG inline)
+- **T067** `dashboard/src/components/VirtualOffice3DView.tsx` — aggiunto `mode: '2d' | '3d'` state; early return su `mode === '2d'` che renderizza `<VirtualOffice2DView onToggle3D={...} />`; toggle 2D/3D aggiunto nella status bar in alto a sinistra (2D dimmed, 3D highlighted quando in 3D mode)
+- **VERIFY** `pnpm tsc --noEmit` da eseguire su dashboard
 
 ### 2026-03-18 — Sessione 24k: T065v2 — Virtual Office 3D (Three.js) ✅
 

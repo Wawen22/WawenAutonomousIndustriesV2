@@ -23,6 +23,7 @@ import { OrbitControls, Html, Grid } from '@react-three/drei'
 import { clsx } from 'clsx'
 import { useAgents, useAgentStats, useTasks, useEventsWithContext } from '../hooks/useSupabaseRealtime.js'
 import type { Agent, AgentTeam, AgentRun, Task, SystemEventWithContext } from '../types/index.js'
+import { VirtualOffice2DView } from './VirtualOffice2DView.js'
 
 // ===========================================================================
 // MODULE-LEVEL LIVE POSITION REGISTRY
@@ -198,46 +199,6 @@ function ZoneLabels() {
           </div>
         </Html>
       ))}
-    </>
-  )
-}
-
-// ===========================================================================
-// CEILING LIGHT FIXTURES — actual 3D panels (NEW)
-// ===========================================================================
-
-function CeilingLights() {
-  const CEIL = 5.8
-  const panels = useMemo(() => [
-    { pos: [-19.5, CEIL, -11] as [number,number,number], w: 7.5, d: 5,  color: '#ffe8b0' },  // Exec Suite
-    { pos: [-13,   CEIL, -6] as [number,number,number],  w: 11,  d: 6,  color: '#d8eaff' },  // Desk upper
-    { pos: [-13,   CEIL,  4] as [number,number,number],  w: 11,  d: 8,  color: '#d8eaff' },  // Desk lower
-    { pos: [11,    CEIL, -9] as [number,number,number],  w: 14,  d: 7,  color: '#c8e0ff' },  // Meeting
-    { pos: [11,    CEIL,  8] as [number,number,number],  w: 14,  d: 9,  color: '#ffeac0' },  // Lounge
-    { pos: [-22,   CEIL,  5] as [number,number,number],  w: 4,   d: 9,  color: '#c8d8f0' },  // Ops
-    { pos: [-11,   CEIL, 11] as [number,number,number],  w: 9,   d: 4,  color: '#ffe8b0' },  // Marketing
-  ], [])
-
-  return (
-    <>
-      {panels.map(({ pos, w, d, color }, i) => {
-        const c = new THREE.Color(color)
-        return (
-          <group key={i} position={pos}>
-            {/* Outer panel frame */}
-            <mesh>
-              <boxGeometry args={[w, 0.1, d]} />
-              <meshStandardMaterial color="#0d1e35" roughness={0.6} metalness={0.4} />
-            </mesh>
-            {/* Inner glowing strip */}
-            <mesh position={[0, -0.065, 0]}>
-              <boxGeometry args={[w - 0.3, 0.02, d - 0.3]} />
-              <meshStandardMaterial color={color} emissive={c} emissiveIntensity={4.0}
-                transparent opacity={0.95} />
-            </mesh>
-          </group>
-        )
-      })}
     </>
   )
 }
@@ -425,48 +386,115 @@ const AgentDesk = memo(function AgentDesk({
 // ===========================================================================
 
 function NebCorner3D() {
-  const lightRef = useRef<THREE.PointLight | null>(null)
+  const lightRef  = useRef<THREE.PointLight | null>(null)
+  const headRef   = useRef<THREE.Mesh | null>(null)
+  const haloRef   = useRef<THREE.Mesh | null>(null)
+  const ringRef   = useRef<THREE.Mesh | null>(null)
+  const pulseRef  = useRef<THREE.Mesh | null>(null)
   const t = useRef(0)
+
+  const nebColor  = useMemo(() => new THREE.Color('#FBBF24'), [])
+
   useFrame((_, delta) => {
     t.current += delta
     if (lightRef.current) lightRef.current.intensity = 4.5 + Math.sin(t.current * 0.75) * 1.0
+
+    // Gentle head bob
+    if (headRef.current)  headRef.current.position.y  = 1.32 + Math.sin(t.current * 1.1) * 0.04
+    if (haloRef.current)  {
+      haloRef.current.position.y = 1.32 + Math.sin(t.current * 1.1) * 0.04
+      const mat = haloRef.current.material
+      if (!Array.isArray(mat) && mat instanceof THREE.MeshStandardMaterial)
+        mat.opacity = 0.15 + Math.sin(t.current * 1.8) * 0.06
+    }
+
+    // Founder ring — always bright pulsing
+    if (ringRef.current) {
+      const mat = ringRef.current.material
+      if (!Array.isArray(mat) && mat instanceof THREE.MeshStandardMaterial)
+        mat.emissiveIntensity = 1.8 + Math.sin(t.current * 2.2) * 0.6
+    }
+
+    // Expanding sonar pulse
+    if (pulseRef.current) {
+      const mat = pulseRef.current.material
+      const s   = 1.0 + ((t.current * 0.45) % 1.0) * 1.8
+      pulseRef.current.scale.set(s, s, 1)
+      if (!Array.isArray(mat) && mat instanceof THREE.MeshStandardMaterial)
+        mat.opacity = Math.max(0, 0.55 - ((t.current * 0.45) % 1.0) * 0.55)
+    }
   })
+
   return (
     <group position={[-22, 0, -11]}>
       <pointLight ref={lightRef} color="#FBBF24" intensity={5.0} distance={18} />
+
+      {/* Desk furniture */}
       <mesh position={[0, 0.44, 0]} castShadow>
         <boxGeometry args={[3.2, 0.09, 1.6]} />
         <meshStandardMaterial color="#3a2208" roughness={0.4} metalness={0.2} />
       </mesh>
       <mesh position={[0, 0.44, 0.8]}>
         <boxGeometry args={[3.2, 0.09, 0.05]} />
-        <meshStandardMaterial color="#FBBF24" emissive={new THREE.Color('#FBBF24')} emissiveIntensity={2.8} />
+        <meshStandardMaterial color="#FBBF24" emissive={nebColor} emissiveIntensity={2.8} />
       </mesh>
       <mesh position={[-0.7, 1.18, -0.65]}>
         <boxGeometry args={[1.2, 1.0, 0.05]} />
-        <meshStandardMaterial color="#0a0500" emissive={new THREE.Color('#FBBF24')} emissiveIntensity={0.32} roughness={0.12} />
+        <meshStandardMaterial color="#0a0500" emissive={nebColor} emissiveIntensity={0.32} roughness={0.12} />
       </mesh>
       <mesh position={[0.85, 1.18, -0.65]}>
         <boxGeometry args={[0.8, 1.0, 0.05]} />
-        <meshStandardMaterial color="#0a0500" emissive={new THREE.Color('#FBBF24')} emissiveIntensity={0.18} roughness={0.12} />
+        <meshStandardMaterial color="#0a0500" emissive={nebColor} emissiveIntensity={0.18} roughness={0.12} />
       </mesh>
       <mesh position={[0, 0.69, -0.65]}>
         <boxGeometry args={[0.08, 0.33, 0.08]} />
         <meshStandardMaterial color="#2e1c00" metalness={0.4} />
       </mesh>
-      <Html position={[0, 3.4, 0]} center distanceFactor={11}>
-        <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:'6px',pointerEvents:'none',userSelect:'none' }}>
-          <span style={{ fontSize:'34px',filter:'drop-shadow(0 0 16px rgba(251,191,36,1))' }}>👑</span>
-          <div style={{
-            padding:'5px 18px',background:'rgba(251,191,36,0.16)',border:'1px solid rgba(251,191,36,0.6)',
-            borderRadius:'5px',color:'#FBBF24',fontWeight:'900',fontSize:'14px',
-            fontFamily:'"JetBrains Mono", monospace',letterSpacing:'3.5px',
-            textShadow:'0 0 20px rgba(251,191,36,1)',whiteSpace:'nowrap',
-          }}>
-            NEB · FOUNDER
+
+      {/* Neb avatar — seated in front of desk */}
+      <group position={[0, 0, 1.9]}>
+        {/* Body */}
+        <mesh position={[0, 0.58, 0]}>
+          <cylinderGeometry args={[0.3, 0.3, 1.15, 12]} />
+          <meshStandardMaterial color="#FBBF24" emissive={nebColor} emissiveIntensity={0.65} roughness={0.25} metalness={0.2} />
+        </mesh>
+        {/* Head */}
+        <mesh ref={headRef} position={[0, 1.32, 0]}>
+          <sphereGeometry args={[0.36, 16, 16]} />
+          <meshStandardMaterial color="#FBBF24" emissive={nebColor} emissiveIntensity={0.5} roughness={0.15} metalness={0.15} />
+        </mesh>
+        {/* Halo — larger than agent, gold */}
+        <mesh ref={haloRef} position={[0, 1.32, 0]}>
+          <sphereGeometry args={[0.72, 10, 10]} />
+          <meshStandardMaterial color="#FBBF24" emissive={nebColor} emissiveIntensity={0.1} transparent opacity={0.15} depthWrite={false} />
+        </mesh>
+        {/* Floor ring */}
+        <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.016, 0]}>
+          <ringGeometry args={[0.42, 0.65, 32]} />
+          <meshStandardMaterial color="#FBBF24" emissive={nebColor} emissiveIntensity={1.8} transparent opacity={0.92} />
+        </mesh>
+        {/* Expanding sonar pulse */}
+        <mesh ref={pulseRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+          <ringGeometry args={[0.44, 0.60, 32]} />
+          <meshStandardMaterial color="#FBBF24" emissive={nebColor} emissiveIntensity={1.0} transparent opacity={0} depthWrite={false} />
+        </mesh>
+
+        {/* Name tag */}
+        <Html position={[0, 2.5, 0]} center distanceFactor={11}>
+          <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:'5px',pointerEvents:'none',userSelect:'none' }}>
+            <span style={{ fontSize:'26px',filter:'drop-shadow(0 0 14px rgba(251,191,36,1))' }}>👑</span>
+            <div style={{
+              padding:'4px 14px',background:'rgba(251,191,36,0.16)',border:'1px solid rgba(251,191,36,0.62)',
+              borderRadius:'5px',color:'#FBBF24',fontWeight:'900',fontSize:'12px',
+              fontFamily:'"JetBrains Mono", monospace',letterSpacing:'3px',
+              textShadow:'0 0 18px rgba(251,191,36,1)',whiteSpace:'nowrap',
+              boxShadow:'0 0 16px rgba(251,191,36,0.28)',
+            }}>
+              NEB · FOUNDER
+            </div>
           </div>
-        </div>
-      </Html>
+        </Html>
+      </group>
     </group>
   )
 }
@@ -994,12 +1022,27 @@ function DataStreamLine({
 interface CameraControllerProps {
   focusTarget: THREE.Vector3 | null
   controlsRef: React.MutableRefObject<{ target: THREE.Vector3; update(): void } | null>
+  cameraResetRef: React.MutableRefObject<boolean>
 }
 
-function CameraController({ focusTarget, controlsRef }: CameraControllerProps) {
+const DEFAULT_CAM_POS    = new THREE.Vector3(2, 30, 28)
+const DEFAULT_CAM_TARGET = new THREE.Vector3(-4, 0, 0)
+
+function CameraController({ focusTarget, controlsRef, cameraResetRef }: CameraControllerProps) {
   const { camera } = useThree()
 
   useFrame(() => {
+    if (cameraResetRef.current) {
+      camera.position.lerp(DEFAULT_CAM_POS, 0.06)
+      if (controlsRef.current) {
+        controlsRef.current.target.lerp(DEFAULT_CAM_TARGET, 0.06)
+        controlsRef.current.update()
+      }
+      if (camera.position.distanceTo(DEFAULT_CAM_POS) < 0.4) {
+        cameraResetRef.current = false
+      }
+      return
+    }
     if (!focusTarget || !controlsRef.current) return
     // Smoothly move the orbit center toward the agent
     controlsRef.current.target.lerp(focusTarget, 0.055)
@@ -1023,15 +1066,15 @@ interface OfficeSceneProps {
   taskMap: Record<string, string>
   focusTarget: THREE.Vector3 | null
   controlsRef: React.MutableRefObject<{ target: THREE.Vector3; update(): void } | null>
+  cameraResetRef: React.MutableRefObject<boolean>
   onAgentSelect: (agent: Agent) => void
 }
 
-function OfficeScene({ agents, taskMap, focusTarget, controlsRef, onAgentSelect }: OfficeSceneProps) {
+function OfficeScene({ agents, taskMap, focusTarget, controlsRef, cameraResetRef, onAgentSelect }: OfficeSceneProps) {
   return (
     <>
       <OfficeLighting />
       <OfficeFloor />
-      <CeilingLights />
       <ZoneLabels />
       <WaiWall />
       <OfficePillars />
@@ -1040,7 +1083,7 @@ function OfficeScene({ agents, taskMap, focusTarget, controlsRef, onAgentSelect 
       <MeetingTable3D />
       <LoungeArea3D />
       <AmbientParticles />
-      <CameraController focusTarget={focusTarget} controlsRef={controlsRef} />
+      <CameraController focusTarget={focusTarget} controlsRef={controlsRef} cameraResetRef={cameraResetRef} />
 
       {/* Desks */}
       {agents.map((agent) => {
@@ -1126,7 +1169,7 @@ function AgentInfoPanel({
 
   return (
     <div
-      className="absolute top-0 right-0 h-full w-[340px] bg-[#070C1A]/96 backdrop-blur-md border-l border-white/[0.08] flex flex-col z-20"
+      className="absolute top-0 right-0 h-full w-[340px] bg-[#070C1A]/96 backdrop-blur-md border-l border-white/[0.08] flex flex-col z-[50]"
       style={{ boxShadow: '-20px 0 55px rgba(0,0,0,0.7)' }}
     >
       <div className="px-5 py-4 border-b border-white/[0.07] flex items-center gap-3 flex-shrink-0"
@@ -1396,9 +1439,12 @@ export function VirtualOffice3DView() {
 
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
   const [focusTarget, setFocusTarget]     = useState<THREE.Vector3 | null>(null)
+  const [mode, setMode]                   = useState<'2d' | '3d'>('3d')
 
   // Ref passed to OrbitControls so CameraController can animate orbit center
-  const controlsRef = useRef<{ target: THREE.Vector3; update(): void } | null>(null)
+  const controlsRef    = useRef<{ target: THREE.Vector3; update(): void } | null>(null)
+  // Set to true to trigger smooth camera reset animation inside Canvas
+  const cameraResetRef = useRef(false)
 
   // agent id → active task title
   const taskMap = useMemo(() => {
@@ -1431,8 +1477,18 @@ export function VirtualOffice3DView() {
     setFocusTarget(null)
   }, [])
 
+  const handleResetCamera = useCallback(() => {
+    setSelectedAgent(null)
+    setFocusTarget(null)
+    cameraResetRef.current = true
+  }, [])
+
   const busyCount   = agents.filter((a) => a.status === 'busy' || a.id in taskMap).length
   const onlineCount = agents.filter((a) => a.status === 'online').length
+
+  if (mode === '2d') {
+    return <VirtualOffice2DView onToggle3D={() => setMode('3d')} />
+  }
 
   if (loading) return (
     <div className="flex items-center justify-center h-full min-h-[500px]">
@@ -1456,6 +1512,19 @@ export function VirtualOffice3DView() {
       <div className="absolute top-3 left-3 z-10 flex items-center gap-3 bg-[#070C1A]/90 backdrop-blur rounded-lg px-3 py-2 border border-white/[0.08]">
         <span className="text-[10px] font-black text-[#00D4FF] font-mono uppercase tracking-widest">WAI Office</span>
         <span className="w-px h-3 bg-white/10" />
+        {/* 2D / 3D Toggle */}
+        <div className="flex rounded overflow-hidden border border-white/[0.1]">
+          <button
+            className="px-2 py-0.5 text-[8px] font-mono text-slate-500 hover:text-slate-300 transition-colors"
+            style={{ background: 'none' }}
+            onClick={() => setMode('2d')}
+          >2D</button>
+          <button
+            className="px-2 py-0.5 text-[8px] font-mono font-bold cursor-default"
+            style={{ background: 'rgba(0,212,255,0.15)', color: '#00D4FF' }}
+          >3D</button>
+        </div>
+        <span className="w-px h-3 bg-white/10" />
         <span className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           {onlineCount + busyCount} / {agents.length} online
@@ -1469,6 +1538,14 @@ export function VirtualOffice3DView() {
             </span>
           </>
         )}
+        <span className="w-px h-3 bg-white/10" />
+        <button
+          onClick={handleResetCamera}
+          className="text-[9px] font-mono text-slate-500 hover:text-[#00D4FF] transition-colors flex items-center gap-1 leading-none"
+          title="Reset camera to default view"
+        >
+          ⊙ reset view
+        </button>
       </div>
 
       {/* ── Zone activity chips (top-center) ── */}
@@ -1495,11 +1572,12 @@ export function VirtualOffice3DView() {
         drag · scroll · click agent to focus
       </div>
 
-      {/* ── Three.js Canvas ── */}
+      {/* ── Three.js Canvas — explicit z:0 so DOM overlays stack above it ── */}
       <Canvas
         camera={{ position: [2, 30, 28], fov: 52, near: 0.1, far: 230 }}
         gl={{ antialias: true, alpha: false }}
         onPointerMissed={handleClose}
+        style={{ position: 'absolute', inset: 0, zIndex: 0 }}
       >
         <color attach="background" args={['#0a1828']} />
         <fog attach="fog" args={['#0a1828', 48, 88]} />
@@ -1509,6 +1587,7 @@ export function VirtualOffice3DView() {
             taskMap={taskMap}
             focusTarget={focusTarget}
             controlsRef={controlsRef}
+            cameraResetRef={cameraResetRef}
             onAgentSelect={handleSelect}
           />
         </Suspense>
