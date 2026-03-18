@@ -138,6 +138,20 @@ export function useProjects(clientId?: string) {
   return useRealtimeTable<Project>('projects', fetchProjects)
 }
 
+export function useInvoicedProjects() {
+  const fetchProjects = useCallback(async (): Promise<Project[]> => {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('status', 'invoiced')
+      .order('created_at', { ascending: false })
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Project[]
+  }, [])
+
+  return useRealtimeTable<Project>('projects', fetchProjects)
+}
+
 export function useProjectState() {
   const [state, setState] = useState<ProjectState | null>(null)
   const [loading, setLoading] = useState(true)

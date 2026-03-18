@@ -82,6 +82,8 @@
 
 | T045 | Revenue flow: /invoice command + consulting chain completion | ✅ Done | Claude | 1 | Consulting chain → `delivered`; `/invoice` command; `revenue_recorded` event |
 | T046 | Invoice prompt: SaaS + Marketing chain completion | ✅ Done | Claude | 1 | `dev_saas`, `content_creator`, `social_manager` ora includono `/invoice client/project` quando il progetto va in `review` |
+| T047 | Natural Language CEO Interface | ✅ Done | Claude | 1 | Testo libero su Telegram → CEO analizza intento, chiede info mancanti, esegue azioni autonome |
+| T048 | Revenue View nel Dashboard | ✅ Done | Claude | 2 | View "Revenue" con tabella progetti invoiced, stats totale/media, filtro per tipo, real-time |
 
 ---
 
@@ -98,6 +100,17 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-18 — Sessione 21: T047 + T048 — Natural Language CEO + Revenue View ✅
+
+- **T047** `backend/src/agents/ceo_intake.ts` — nuovo modulo `runCeoNaturalLanguageHandler(chatId, text, reply, notify)`: gestisce conversazioni multi-turn con stato in-memory (Map<chatId, IntakeContext>, TTL 10 min); usa GPT-5.4 per analizzare l'intento e rispondere con JSON strutturato (`ask` / `execute` / `reply` / `unclear`); esegue direttamente: `create_client`, `create_project`, `write_brief`, `create_task` (+ fire-and-forget CEO agent), `list_clients`, `list_projects`, `status_report`; logga eventi `founder_command` su Supabase
+- **T047** `backend/src/services/telegram.ts` — sostituito il catch-all `bot.on('message', ...)` con due handler separati: `/comando` non riconosciuto → "Unknown command"; testo libero → `runCeoNaturalLanguageHandler`; aggiornato `/start` con nota sulla NL interface; aggiunto import `runCeoNaturalLanguageHandler`
+- **T048** `dashboard/src/hooks/useSupabaseRealtime.ts` — aggiunto `useInvoicedProjects()`: hook Realtime specializzato per `projects.status = invoiced`
+- **T048** `dashboard/src/components/RevenueView.tsx` — nuova view "Revenue": 3 stat card (totale ricavi, n. progetti fatturati, ricavo medio), tabella con colonne cliente/progetto/tipo/valore USD/data, footer con totale, filtro per tipo progetto; dati real-time via `useInvoicedProjects` + `useClients`
+- **T048** `dashboard/src/components/ui/Icon.tsx` — aggiunta icona `revenue` ($ con freccia)
+- **T048** `dashboard/src/components/Sidebar.tsx` — aggiunto `revenue` a `ViewId` e `NAV_ITEMS`
+- **T048** `dashboard/src/App.tsx` — aggiunto `revenue` a `VIEW_META` + `ViewContent` switch + import `RevenueView`
+- **VERIFY** `pnpm typecheck && pnpm build` verdi su backend e dashboard
 
 ### 2026-03-18 — Sessione 20: T046 — Invoice prompt SaaS + Marketing chain ✅
 

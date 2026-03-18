@@ -47,6 +47,7 @@ import {
 } from './workspace.js'
 import { setModelOverride } from '../config/models.js'
 import { runCeoAgent } from '../agents/ceo.js'
+import { runCeoNaturalLanguageHandler } from '../agents/ceo_intake.js'
 import type { CreateTaskInput, ProjectType, RepoProvider } from '../types/index.js'
 
 const PROJECT_TYPES: ProjectType[] = [
@@ -150,7 +151,9 @@ function registerHandlers(bot: Bot): void {
     if (!requireFounder(ctx)) return
     await ctx.reply(
       '🤖 *WAI – Wawen Autonomous Industries*\n\n' +
-        '*Tasks:*\n' +
+        '💬 *Natural Language:* Scrivi in testo libero e il CEO capirà cosa vuoi fare.\n' +
+        'Es: "Crea un cliente chiamato Acme Corp" oppure "Lancia una campagna marketing per il progetto X"\n\n' +
+        '*Tasks (comandi diretti):*\n' +
         '/task descrizione – Crea un task\n' +
         '/task client/project descrizione – Task con scope progetto\n' +
         '/brief client/project testo – Aggiorna brief.md del progetto\n' +
@@ -1290,10 +1293,29 @@ function registerHandlers(bot: Bot): void {
     }
   })
 
-  // Unknown commands
-  bot.on('message', async (ctx) => {
+  // Free-text natural language → CEO Intake Handler
+  bot.on('message:text', async (ctx) => {
     if (!requireFounder(ctx)) return
-    await ctx.reply('Unknown command. Use /start for help.')
+
+    const text = ctx.message?.text ?? ''
+
+    // Commands not matched by any handler above → show help
+    if (text.startsWith('/')) {
+      await ctx.reply('Unknown command. Use /start for help.')
+      return
+    }
+
+    // Free-text message: route to CEO natural language handler
+    const chatId = String(ctx.chat?.id ?? ctx.from?.id ?? 'unknown')
+    const reply = async (msg: string) => {
+      await ctx.reply(msg, { parse_mode: 'Markdown' })
+    }
+    const notify = sendTelegramNotification
+
+    void runCeoNaturalLanguageHandler(chatId, text, reply, notify).catch((err: unknown) => {
+      log.error({ err, chatId }, 'CEO Intake handler error')
+      void ctx.reply('❌ Errore interno. Riprova.')
+    })
   })
 }
 
