@@ -1438,6 +1438,156 @@ function gitignoreForType(projectType: string): string {
   return GITIGNORE_BY_TYPE[projectType] ?? DEFAULT_GITIGNORE
 }
 
+async function writeTypeAwareStubs(repoPath: string, projectName: string, projectType: string): Promise<void> {
+  if (projectType === 'website') {
+    await writeFile(
+      join(repoPath, 'index.html'),
+      `<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="${projectName}" />
+  <title>${projectName}</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <script src="script.js"></script>
+</body>
+</html>
+`,
+      'utf-8'
+    )
+    await writeFile(
+      join(repoPath, 'style.css'),
+      `/* ${projectName} – Styles */
+
+/* Reset */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Custom properties */
+:root {
+  --color-primary: #0066cc;
+  --color-bg: #ffffff;
+  --color-text: #1a1a1a;
+  --font-sans: system-ui, -apple-system, sans-serif;
+  --max-width: 1200px;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+}
+`,
+      'utf-8'
+    )
+    await writeFile(
+      join(repoPath, 'script.js'),
+      `// ${projectName} – Main script
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Application logic here
+})
+`,
+      'utf-8'
+    )
+    return
+  }
+
+  if (projectType === 'app' || projectType === 'saas') {
+    await writeFile(
+      join(repoPath, 'package.json'),
+      JSON.stringify(
+        {
+          name: projectName.toLowerCase().replace(/\s+/g, '-'),
+          version: '0.1.0',
+          private: true,
+          scripts: {
+            dev: 'tsx watch src/index.ts',
+            build: 'tsc --project tsconfig.json',
+            typecheck: 'tsc --noEmit',
+          },
+          dependencies: {},
+          devDependencies: {
+            typescript: '^5.0.0',
+            tsx: '^4.0.0',
+          },
+        },
+        null,
+        2
+      ) + '\n',
+      'utf-8'
+    )
+    await mkdir(join(repoPath, 'src'), { recursive: true })
+    await writeFile(
+      join(repoPath, 'src', 'index.ts'),
+      `// ${projectName} – Entry point
+
+export {}
+`,
+      'utf-8'
+    )
+    await writeFile(
+      join(repoPath, 'tsconfig.json'),
+      JSON.stringify(
+        {
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'NodeNext',
+            moduleResolution: 'NodeNext',
+            strict: true,
+            exactOptionalPropertyTypes: true,
+            outDir: 'dist',
+            rootDir: 'src',
+            declaration: true,
+            skipLibCheck: true,
+          },
+          include: ['src/**/*'],
+          exclude: ['node_modules', 'dist'],
+        },
+        null,
+        2
+      ) + '\n',
+      'utf-8'
+    )
+    return
+  }
+
+  if (projectType === 'marketing' || projectType === 'content') {
+    await writeFile(
+      join(repoPath, 'brief-template.md'),
+      `# ${projectName} – Brief Template
+
+## Obiettivo
+<!-- Descrivi l'obiettivo principale del progetto -->
+
+## Target audience
+<!-- Chi è il pubblico di destinazione? -->
+
+## Messaggi chiave
+<!-- Quali sono i 3-5 messaggi principali da comunicare? -->
+
+## Tono e stile
+<!-- Formale / informale / tecnico / emozionale? -->
+
+## Deliverable richiesti
+<!-- Lista di output attesi -->
+
+## Scadenze
+<!-- Date importanti -->
+
+## Note aggiuntive
+<!-- Qualsiasi altra informazione rilevante -->
+`,
+      'utf-8'
+    )
+    return
+  }
+}
+
 export interface WorkspaceRepoInitResult {
   repoPath: string
   alreadyExisted: boolean
@@ -1494,6 +1644,9 @@ export async function initWorkspaceRepo(options: {
     `# ${projectName}\n\n> WAI (Wawen Autonomous Industries) — automated project scaffold\n> Created: ${today}\n`,
     'utf-8'
   )
+
+  // Write type-aware stub files
+  await writeTypeAwareStubs(repoPath, projectName, projectType)
 
   // Initial commit
   let committed = false

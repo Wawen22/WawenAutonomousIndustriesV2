@@ -92,6 +92,12 @@
 | T054 | Notifiche errore più ricche su Telegram | ✅ Done | Claude | 2 | catch block in architect/dev_general/qa include task ID, agent, error reale (400 chars), retry hint con /task |
 | T056 | TaskBoard improvements: client/project context + filter bar | ✅ Done | Claude | 2 | TaskCard mostra client chip + project chip da metadata; routing agent chain; expand on click; FilterBar con search/client/project/agent; Done capped a 12 task |
 | T057 | Dashboard UX: per-client dynamic colors + Runs/Activity/Overview context | ✅ Done | Claude | 2 | Palette deterministica 8 colori per cliente; RunsView mostra client+project chip + filtro cliente; EventTimeline mostra client chip; Overview ActiveTaskCard mostra cliente |
+| T058 | Fixed deliverable filenames + Project Files tab in dashboard | ✅ Done | Claude | 2 | Tutti gli agenti usano filename fisso (dev-general-1.md, marketing-plan.md, ecc.); backend scansiona anche repo/ per file codice; tab "Output Files" → "Project Files" mostra file da output/ e repo/ con badge origine |
+| T059 | E2E test bootstrap nuovo cliente | ⬜ Todo | Neb | 1 | Test manuale via Telegram: nuovo cliente+progetto → CEO → Architect → dev_general_1 crea index.html reale in bootstrap mode |
+| T060 | CEO update_brief action | ✅ Done | Claude | 2 | `ceo_intake.ts`: nuova action `update_brief` — legge brief.md esistente e fa append sezione datata; LLM sceglie write_brief per nuovi progetti, update_brief per follow-up |
+| T061 | Scaffold tipo-aware in initWorkspaceRepo | ✅ Done | Claude | 2 | `software_repo_runtime.ts`: `writeTypeAwareStubs()` scrive nel repo iniziale — website: index.html+style.css+script.js; app/saas: package.json+src/index.ts+tsconfig.json; marketing/content: brief-template.md |
+| T062 | HTML preview inline in ProjectsView | ✅ Done | Claude | 3 | `index.ts`: endpoint GET /api/file?path= per servire file testo/HTML; `ProjectsView.tsx`: pulsante Preview per .html → iframe sandboxed collassabile nel pannello Project Files |
+| T063 | Unified file viewer in ProjectsView | ✅ Done | Claude | 2 | Viewer per tutti i tipi: HTML in repo/→iframe con CSS/JS via /api/repo static route; .md→rendered markdown; code→pre/code; click su qualsiasi riga per aprire |
 
 ---
 
@@ -108,6 +114,37 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-18 — Sessione 24j: T063b — File viewer modale ✅
+
+- **T063b** `dashboard/src/components/ProjectsView.tsx` — viewer convertito da espansione inline a **modale portal** (`createPortal` → `document.body`): backdrop blur con click-to-close, ESC-to-close, `overflow: hidden` su body mentre aperto; header modale con nome file / badge repo / size+date / link "open ↗" per HTML / pulsante ✕; `FileViewer` accetta prop `modal` — in modal mode iframe occupa `100%` altezza, TextViewer usa `flex-1 h-full`; `FileTable` diventa riga-cliccabile pura (no espansione inline), apre `FileModal`; rimosso `▾/▸` toggle — sostituito con `▸` statico che si illumina su hover
+
+### 2026-03-18 — Sessione 24i: T063 — Unified file viewer in ProjectsView ✅
+
+- **T063** `backend/src/index.ts` — nuova route `GET /api/repo/<workspace/client/project/repo/...>`: static serving dell'intera cartella `repo/` con risoluzione corretta dei path relativi (CSS/JS si caricano); mime map completa (.html/.css/.js/.ts/.json/.svg/.png/.jpg/.ico/.woff/.woff2/.txt/.md); path sanitization (reject traversal, richiede segmento `repo/`); immagini e font serviti come buffer binario
+- **T063** `dashboard/src/components/ProjectsView.tsx` — rimossa colonna "Preview" separata; ogni riga della FileTable ora è cliccabile con ▸/▾ toggle; componente `FileViewer` unificato per tutti i tipi: HTML in `repo/` → `<iframe sandbox>` puntato a `/api/repo/` (CSS/JS caricati correttamente); tutti gli altri file → fetch testuale via `/api/file`; componente `TextViewer` con variante: `.md` → `dangerouslySetInnerHTML` con `renderMarkdown()` (headings, bold, italic, code, lists, blockquote, hr); altri estensioni → `<pre>` mono con scroll; accent color per estensione (.md=violet, .html=amber, .css=sky, .js=yellow, .ts=blue, .json=emerald); link "open ↗" per HTML preview
+- **T063** `dashboard/src/index.css` — aggiunte classi `.prose-wai` per markdown rendering (h1/h2/h3/h4/p/strong/em/code/pre/li/blockquote/hr)
+- **typecheck** verde su backend e dashboard
+
+### 2026-03-18 — Sessione 24h: T060+T061+T062 — CEO update_brief + Scaffold tipo-aware + HTML preview ✅
+
+- **T060** `backend/src/agents/ceo_intake.ts` — nuova action `update_brief` (params: client_slug, project_slug, update_text): legge `brief.md` esistente (o crea base se assente), appende sezione `---` datata con il testo Neb; il LLM ora distingue `write_brief` (nuovo progetto) da `update_brief` (follow-up su progetto esistente con brief già scritto); aggiunto `readFile`+`existsSync` da `fs/promises`+`fs`
+- **T061** `backend/src/agents/software_repo_runtime.ts` — aggiunta `writeTypeAwareStubs()` chiamata da `initWorkspaceRepo()` prima del commit iniziale: type=website → `index.html` (HTML5 base con viewport+meta+link a style.css e script.js) + `style.css` (reset CSS + custom properties) + `script.js` (DOMContentLoaded vuoto); type=app/saas → `package.json` + `src/index.ts` + `tsconfig.json` (strict mode); type=marketing/content → `brief-template.md` con sezioni standard; tutti gli stub inclusi nel commit `chore: initial project scaffold`
+- **T062** `backend/src/index.ts` — nuovo endpoint `GET /api/file?path=workspace/...`: sanitizza path (strip traversal, estensioni whitelist), serve file testo/HTML con Content-Type corretto; `dashboard/src/components/ProjectsView.tsx` — `FileTable` ora accetta `workspacePath`; `HtmlPreviewFrame` component con `<iframe sandbox="allow-scripts">`; pulsante Preview per ogni `.html` → toggle iframe collassabile (altezza 420px); colonna Preview aggiunta alla tabella
+- **typecheck** `pnpm tsc --noEmit` verde su backend e dashboard
+
+### 2026-03-18 — Sessione 24g: T058 — Fixed deliverable filenames + Project Files tab ✅
+
+- **FIXED filenames** in tutti gli agenti che usavano filename dinamici con task-id suffix; ora ogni agente sovrascrive un file fisso:
+  - `dev_general.ts`: `dev-general-1.md` / `dev-general-2.md` e `repo-execution-dev-general-1.md` / `repo-execution-dev-general-2.md`
+  - `dev_saas.ts`: `dev-saas-1.md` / `dev-saas-2.md`
+  - `marketing_strategist.ts`: `marketing-plan.md`
+  - `content_creator.ts`: `content-package.md`
+  - `social_manager.ts`: `social-calendar.md`
+  - Già fissi (invariati): `architecture_plan.md`, `qa_report.md`, `proposal.md`, `analysis.md`, `sprint_plan.md`
+- **Backend `index.ts`**: `/api/deliverables` ora scansiona anche `repo/` (ricorsiva, depth ≤3, skip .git/node_modules/dist/build/out); file codice (`.html`, `.css`, `.js`, `.ts`, `.jsx`, `.tsx`, `.py`, `.json`, `.yaml`, `.yml`, `.sh`) inclusi con `dir: 'repo'`; file `.md` esclusi da repo/ (già in deliverables/)
+- **Dashboard `ProjectsView.tsx`**: tab "Output Files" → "**Project Files**"; unisce file da `output/` (progetti senza repo) e `repo/` (progetti con git repo); badge `repo` (blu) su ogni file per mostrare l'origine; interfaccia `DeliverableFile.dir` estesa con `'repo'`
+- **VERIFY** `pnpm tsc --noEmit` verde su backend e dashboard
 
 ### 2026-03-18 — Sessione 24f: Fix pipeline modifica file esistenti (3 root cause) ✅
 

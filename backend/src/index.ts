@@ -3,7 +3,7 @@
 // ============================================================
 
 import { createServer, IncomingMessage, ServerResponse } from 'node:http'
-import { readdir, stat } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { log, recordEvent } from './services/logger.js'
@@ -61,11 +61,16 @@ async function main(): Promise<void> {
       const projectDir = join(getWorkspaceRoot(), ...parts)
       const deliverableDir = join(projectDir, 'deliverables')
       const outputDir = join(projectDir, 'output')
+      const repoDir = join(projectDir, 'repo')
 
       void (async () => {
         try {
-          // Helper: scan a directory and annotate files with their source dir
           const DELIVERABLE_EXTS = new Set(['.md', '.pdf', '.txt', '.html', '.css', '.js', '.ts', '.py', '.json', '.yaml', '.yml'])
+          // Code-only extensions shown in the Project Files tab (no .md — those live in deliverables)
+          const CODE_EXTS = new Set(['.html', '.css', '.js', '.ts', '.jsx', '.tsx', '.py', '.json', '.yaml', '.yml', '.sh', '.env.example'])
+          const IGNORED_REPO_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'coverage', '.next', '.turbo', '.cache', '.vercel'])
+
+          // Flat scan of a single directory (no recursion)
           async function scanDir(dir: string, dirType: 'deliverable' | 'output') {
             if (!existsSync(dir)) return []
             const entries = await readdir(dir, { withFileTypes: true })
@@ -77,22 +82,45 @@ async function main(): Promise<void> {
             return Promise.all(
               fileEntries.map(async (e) => {
                 const fileStat = await stat(join(dir, e.name))
-                return {
-                  name: e.name,
-                  modified_at: fileStat.mtime.toISOString(),
-                  size_bytes: fileStat.size,
-                  dir: dirType,
-                }
+                return { name: e.name, modified_at: fileStat.mtime.toISOString(), size_bytes: fileStat.size, dir: dirType }
               })
             )
           }
 
-          const [deliverableFiles, outputFiles] = await Promise.all([
+          // Recursive scan of repo/ — max depth 3, skip ignored dirs, code files only
+          async function scanRepo(dir: string, relBase: string, depth: number): Promise<Array<{ name: string; modified_at: string; size_bytes: number; dir: 'repo' }>> {
+            if (!existsSync(dir) || depth > 3) return []
+            const entries = await readdir(dir, { withFileTypes: true })
+            const results: Array<{ name: string; modified_at: string; size_bytes: number; dir: 'repo' }> = []
+            for (const e of entries) {
+              if (e.isDirectory()) {
+                if (!IGNORED_REPO_DIRS.has(e.name)) {
+                  const sub = await scanRepo(join(dir, e.name), relBase ? `${relBase}/${e.name}` : e.name, depth + 1)
+                  results.push(...sub)
+                }
+              } else if (e.isFile()) {
+                const ext = e.name.lastIndexOf('.') >= 0 ? e.name.slice(e.name.lastIndexOf('.')) : ''
+                if (CODE_EXTS.has(ext)) {
+                  const fileStat = await stat(join(dir, e.name))
+                  results.push({
+                    name: relBase ? `${relBase}/${e.name}` : e.name,
+                    modified_at: fileStat.mtime.toISOString(),
+                    size_bytes: fileStat.size,
+                    dir: 'repo',
+                  })
+                }
+              }
+            }
+            return results
+          }
+
+          const [deliverableFiles, outputFiles, repoFiles] = await Promise.all([
             scanDir(deliverableDir, 'deliverable'),
             scanDir(outputDir, 'output'),
+            scanRepo(repoDir, '', 0),
           ])
 
-          const allFiles = [...deliverableFiles, ...outputFiles]
+          const allFiles = [...deliverableFiles, ...outputFiles, ...repoFiles]
           allFiles.sort((a, b) => b.modified_at.localeCompare(a.modified_at))
 
           res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -101,6 +129,143 @@ async function main(): Promise<void> {
           log.error({ err, projectDir }, 'Deliverables API error')
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // GET /api/file?path=workspace/client/project/repo/index.html
+    if (url.pathname === '/api/file' && req.method === 'GET') {
+      const relPath = url.searchParams.get('path')
+
+      if (!relPath) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Missing path query param' }))
+        return
+      }
+
+      // Sanitize path: strip leading "workspace/", reject traversal
+      const stripped = relPath.replace(/^workspace\//, '')
+      const parts = stripped.split('/').filter((p) => p && !p.includes('..'))
+
+      if (parts.length < 3) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Invalid path' }))
+        return
+      }
+
+      const absPath = join(getWorkspaceRoot(), ...parts)
+
+      void (async () => {
+        try {
+          if (!existsSync(absPath)) {
+            res.writeHead(404, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'File not found' }))
+            return
+          }
+
+          const fileStat = await stat(absPath)
+          if (!fileStat.isFile()) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Not a file' }))
+            return
+          }
+
+          // Only allow safe text/code extensions
+          const ALLOWED_EXTS = new Set(['.html', '.css', '.js', '.ts', '.json', '.md', '.txt', '.yaml', '.yml'])
+          const ext = absPath.lastIndexOf('.') >= 0 ? absPath.slice(absPath.lastIndexOf('.')) : ''
+          if (!ALLOWED_EXTS.has(ext)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'File type not allowed' }))
+            return
+          }
+
+          const content = await readFile(absPath, 'utf-8')
+          const contentType = ext === '.html' ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8'
+          res.writeHead(200, { 'Content-Type': contentType })
+          res.end(content)
+        } catch (err) {
+          log.error({ err, absPath }, 'File API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // GET /api/repo/workspace/<client>/<project>/repo/<...file>
+    // Static-serves files from a repo directory so relative CSS/JS refs resolve.
+    if (url.pathname.startsWith('/api/repo/') && req.method === 'GET') {
+      const rawPath = url.pathname.slice('/api/repo/'.length) // "workspace/client/project/repo/index.html"
+
+      // Sanitize: reject traversal, must start with "workspace/"
+      const parts = rawPath.split('/').filter((p) => p !== '' && !p.includes('..'))
+      if (parts.length < 5 || parts[0] !== 'workspace') {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Invalid path' }))
+        return
+      }
+
+      // Must pass through the "repo" segment for safety
+      const repoIdx = parts.indexOf('repo')
+      if (repoIdx < 0) {
+        res.writeHead(403, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Only repo/ files are served via this route' }))
+        return
+      }
+
+      const absPath = join(getWorkspaceRoot(), ...parts.slice(1)) // strip "workspace" prefix — getWorkspaceRoot already is workspace/
+
+      void (async () => {
+        try {
+          if (!existsSync(absPath)) {
+            res.writeHead(404)
+            res.end()
+            return
+          }
+
+          const fileStat = await stat(absPath)
+          if (!fileStat.isFile()) {
+            res.writeHead(404)
+            res.end()
+            return
+          }
+
+          const EXT_MIME: Record<string, string> = {
+            '.html': 'text/html; charset=utf-8',
+            '.css':  'text/css; charset=utf-8',
+            '.js':   'application/javascript; charset=utf-8',
+            '.ts':   'application/javascript; charset=utf-8',
+            '.json': 'application/json; charset=utf-8',
+            '.svg':  'image/svg+xml',
+            '.png':  'image/png',
+            '.jpg':  'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.ico':  'image/x-icon',
+            '.woff': 'font/woff',
+            '.woff2': 'font/woff2',
+            '.txt':  'text/plain; charset=utf-8',
+            '.md':   'text/plain; charset=utf-8',
+          }
+
+          const extRaw = absPath.lastIndexOf('.') >= 0 ? absPath.slice(absPath.lastIndexOf('.')) : ''
+          const mime = EXT_MIME[extRaw] ?? 'application/octet-stream'
+
+          // For binary files (images, fonts) serve as buffer; text as utf-8
+          const isBinary = ['.png', '.jpg', '.jpeg', '.ico', '.woff', '.woff2'].includes(extRaw)
+          if (isBinary) {
+            const buf = await import('node:fs/promises').then((m) => m.readFile(absPath))
+            res.writeHead(200, { 'Content-Type': mime })
+            res.end(buf)
+          } else {
+            const content = await readFile(absPath, 'utf-8')
+            res.writeHead(200, { 'Content-Type': mime })
+            res.end(content)
+          }
+        } catch (err) {
+          log.error({ err, absPath }, 'Repo static API error')
+          res.writeHead(500)
+          res.end()
         }
       })()
       return

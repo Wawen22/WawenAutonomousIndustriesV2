@@ -363,7 +363,9 @@ Constraints:
     if (workspaceAbsPath) {
       const deliverableDir = join(workspaceAbsPath, 'deliverables')
       await mkdir(deliverableDir, { recursive: true })
-      filename = `${sanitizeFilePart(agentId)}-${sanitizeFilePart(task.title).slice(0, 48) || 'implementation'}-${task.id.slice(0, 8)}.md`
+      // Fixed filename — one file per agent, overwritten each run.
+      // Git history in the project repo provides the version trail.
+      filename = `${sanitizeFilePart(agentId)}.md`
       artifactPath = join(deliverableDir, filename)
       await writeFile(
         artifactPath,
@@ -443,7 +445,7 @@ Constraints:
 
       if (repoExecution) {
         const deliverableDir = join(workspaceAbsPath, 'deliverables')
-        const executionFilename = `repo-execution-${sanitizeFilePart(agentId)}-${task.id.slice(0, 8)}.md`
+        const executionFilename = `repo-execution-${sanitizeFilePart(agentId)}.md`
         executionReportPath = join(deliverableDir, executionFilename)
         await writeFile(
           executionReportPath,

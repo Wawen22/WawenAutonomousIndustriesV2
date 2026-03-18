@@ -5,7 +5,8 @@
 // con un unico messaggio riassuntivo.
 // ============================================================
 
-import { writeFile } from 'fs/promises'
+import { readFile, writeFile } from 'fs/promises'
+import { existsSync } from 'fs'
 import { join } from 'path'
 import { runAgent } from '../services/llm.js'
 import {
@@ -91,7 +92,8 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 ## ACTIONS YOU CAN EXECUTE (in sequence)
 - create_client      → params: name, email? (auto-generates slug from name)
 - create_project     → params: client_slug, project_name, project_type, contract_value_usd?
-- write_brief        → params: client_slug, project_slug, brief_text
+- write_brief        → params: client_slug, project_slug, brief_text  (use ONLY for NEW projects without a brief)
+- update_brief       → params: client_slug, project_slug, update_text  (use when a brief ALREADY EXISTS — appends new info)
 - create_task        → params: title, description, client_slug?, project_slug?
 - list_clients       → no params
 - list_projects      → params: client_slug?
@@ -107,7 +109,7 @@ ${clientContext}
 2. When you create a client, you know its slug (slugify the name). Use that slug in subsequent commands.
 3. When you create a project, you know its slug (slugify the project name). Use that slug in subsequent commands.
 4. If client/project already exists (check existing state above), skip the create step and use existing slugs.
-5. Only include write_brief if Neb explicitly provides project description/goal text.
+5. Only include write_brief / update_brief if Neb explicitly provides project description/goal text. Use write_brief for new projects; use update_brief when the project already exists and Neb is adding/changing requirements (the system will append the text to the existing brief).
 6. A task description should be detailed enough for the CEO routing agent to understand the deliverable.
 7. Only ask (action: "ask") when you genuinely cannot determine a required field from context.
 8. **CRITICAL — ONE TASK PER PROJECT**: When creating work for a project, create EXACTLY ONE create_task command that covers the FULL deliverable. NEVER create 2 or 3 separate tasks for the same project in the same plan — this causes multiple Architect agents to run in parallel and collide on the same repository. One comprehensive task (e.g., "Crea landing page completa per [Client]") is always better than several partial tasks. If Neb asks to "launch tasks" or "start work" on a project, create ONE task that covers everything.
@@ -363,6 +365,44 @@ async function executeAction(
       })
 
       return `✅ Brief scritto per *${project.name}*`
+    }
+
+    // ── update_brief ──────────────────────────────────────────────────────
+    case 'update_brief': {
+      const clientSlug = getString(params, 'client_slug')
+      const projectSlug = getString(params, 'project_slug')
+      const updateText = getString(params, 'update_text')
+
+      if (!clientSlug) throw new Error('client_slug mancante per update_brief')
+      if (!projectSlug) throw new Error('project_slug mancante per update_brief')
+      if (!updateText) throw new Error('update_text mancante per update_brief')
+
+      const client = await getClientBySlug(clientSlug)
+      if (!client) throw new Error(`Cliente \`${clientSlug}\` non trovato`)
+
+      const project = await getProjectBySlug(client.id, projectSlug)
+      if (!project) throw new Error(`Progetto \`${projectSlug}\` non trovato per ${client.name}`)
+
+      const workspacePath = getProjectWorkspacePath(clientSlug, projectSlug)
+      const briefPath = join(workspacePath, 'brief.md')
+      const now = new Date().toISOString()
+
+      let existingContent = ''
+      if (existsSync(briefPath)) {
+        existingContent = await readFile(briefPath, 'utf-8')
+      } else {
+        // No existing brief — create one from scratch instead
+        existingContent = `# ${project.name} – Brief\n\n`
+      }
+
+      const appendSection = `\n---\n\n> Aggiornamento: ${now}\n\n${updateText}\n`
+      await writeFile(briefPath, existingContent + appendSection, 'utf-8')
+
+      await recordEvent('founder_command', {
+        payload: { command: 'nl_update_brief', project_id: project.id, source: 'natural_language' },
+      })
+
+      return `✅ Brief aggiornato per *${project.name}* — nuove info aggiunte`
     }
 
     // ── create_task ───────────────────────────────────────────────────────

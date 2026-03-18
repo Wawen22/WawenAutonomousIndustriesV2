@@ -3,7 +3,8 @@
 // Lista progetti filtrabili per client / status / tipo.
 // ============================================================
 
-import { useState, useMemo, useEffect, Fragment } from 'react'
+import { useState, useMemo, useEffect, Fragment, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
 import { Panel } from './ui/Panel.js'
@@ -20,7 +21,7 @@ interface DeliverableFile {
   name: string
   modified_at: string
   size_bytes: number
-  dir: 'deliverable' | 'output'
+  dir: 'deliverable' | 'output' | 'repo'
 }
 
 function useDeliverables(workspacePath: string | null) {
@@ -82,12 +83,276 @@ function fileIcon(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// File table (shared between tabs)
+// File viewer — unified viewer for all file types
 // ---------------------------------------------------------------------------
 
 type FileTab = 'deliverables' | 'output' | 'info'
 
-function FileTable({ items }: { items: DeliverableFile[] }) {
+const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? 'http://localhost:3001'
+
+/** Returns a relative "workspace/..." path for the /api/file endpoint */
+function buildApiPath(f: DeliverableFile, workspacePath: string): string {
+  const relBase = workspacePath.startsWith('workspace/')
+    ? workspacePath
+    : `workspace/${workspacePath}`
+  const subdir = f.dir === 'deliverable' ? 'deliverables' : f.dir === 'output' ? 'output' : 'repo'
+  return `${relBase}/${subdir}/${f.name}`
+}
+
+/** Returns the URL for the /api/repo static route (HTML with CSS/JS resolved) */
+function buildStaticUrl(f: DeliverableFile, workspacePath: string): string {
+  const relBase = workspacePath.startsWith('workspace/')
+    ? workspacePath
+    : `workspace/${workspacePath}`
+  return `${BACKEND_URL}/api/repo/${relBase}/repo/${f.name}`
+}
+
+/** Minimal markdown → HTML (headings, bold, italic, inline code, fenced code, hr, lists) */
+function renderMarkdown(md: string): string {
+  let html = md
+    // Fenced code blocks
+    .replace(/```[\w]*\n([\s\S]*?)```/g, (_m, code: string) =>
+      `<pre><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`)
+    // Headings
+    .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    // Horizontal rule
+    .replace(/^---+$/gm, '<hr />')
+    // Bold + italic
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Unordered lists
+    .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
+    // Blockquote
+    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+    // Paragraphs: double newline → <p>
+    .replace(/\n{2,}/g, '</p><p>')
+  return `<p>${html}</p>`
+}
+
+function useTextContent(fetchUrl: string | null) {
+  const [content, setContent] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!fetchUrl) return
+    setLoading(true)
+    setContent(null)
+    setError(null)
+    fetch(fetchUrl)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.text()
+      })
+      .then((text) => { setContent(text); setLoading(false) })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Error')
+        setLoading(false)
+      })
+  }, [fetchUrl])
+
+  return { content, loading, error }
+}
+
+interface FileViewerProps {
+  file: DeliverableFile
+  workspacePath: string | null
+  modal?: boolean
+}
+
+function FileViewer({ file, workspacePath, modal = false }: FileViewerProps) {
+  const ext = file.name.includes('.') ? `.${file.name.split('.').pop()!.toLowerCase()}` : ''
+  const isHtmlInRepo = ext === '.html' && file.dir === 'repo'
+
+  // HTML inside repo/ → iframe via /api/repo static route (CSS/JS resolves correctly)
+  // Zoom-out trick: render at 1/SCALE viewport, then scale down visually —
+  // the browser lays out the full desktop page and we show it at ~72% zoom.
+  if (isHtmlInRepo && workspacePath) {
+    const staticUrl = buildStaticUrl(file, workspacePath)
+    const SCALE = 0.72
+    // Container fills the modal area; iframe is inflated then scaled back down.
+    return (
+      <div className="w-full bg-white overflow-hidden" style={{ height: modal ? '100%' : '460px' }}>
+        <iframe
+          src={staticUrl}
+          sandbox="allow-scripts allow-same-origin"
+          title={file.name}
+          style={{
+            display: 'block',
+            border: 'none',
+            width: `${100 / SCALE}%`,
+            height: `${100 / SCALE}%`,
+            transform: `scale(${SCALE})`,
+            transformOrigin: 'top left',
+          }}
+        />
+      </div>
+    )
+  }
+
+  // All other files → fetch raw text and display
+  const apiPath = workspacePath ? buildApiPath(file, workspacePath) : null
+  const fetchUrl = apiPath ? `${BACKEND_URL}/api/file?path=${encodeURIComponent(apiPath)}` : null
+
+  return <TextViewer fetchUrl={fetchUrl} ext={ext} filename={file.name} modal={modal} />
+}
+
+function TextViewer({ fetchUrl, ext, filename, modal = false }: { fetchUrl: string | null; ext: string; filename: string; modal?: boolean }) {
+  const { content, loading, error } = useTextContent(fetchUrl)
+
+  const isMarkdown = ext === '.md'
+
+  return (
+    <div className={clsx('flex flex-col', modal ? 'h-full' : 'max-h-[500px]')}>
+      {loading && (
+        <div className="flex items-center justify-center flex-1 p-6">
+          <span className="text-[11px] text-slate-600 font-mono animate-pulse">Loading {filename}…</span>
+        </div>
+      )}
+      {error && (
+        <div className="p-4">
+          <p className="text-[11px] text-rose-400 font-mono">Error: {error}</p>
+        </div>
+      )}
+      {!loading && !error && content !== null && (
+        <div className={clsx('overflow-auto', modal ? 'flex-1 p-5' : 'p-3')}>
+          {isMarkdown ? (
+            <div
+              className="prose-wai leading-relaxed"
+              style={{ fontSize: '87%' }}
+              // eslint-disable-next-line react/no-danger
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+            />
+          ) : (
+            <pre className="text-[10px] font-mono text-slate-300 whitespace-pre-wrap break-words leading-relaxed">
+              {content}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// File modal — portal-based overlay for file preview
+// ---------------------------------------------------------------------------
+
+interface FileModalProps {
+  file: DeliverableFile
+  workspacePath: string | null
+  onClose: () => void
+}
+
+function FileModal({ file, workspacePath, onClose }: FileModalProps) {
+  const ext = file.name.includes('.') ? `.${file.name.split('.').pop()!.toLowerCase()}` : ''
+
+  // Close on ESC
+  const handleKey = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') onClose()
+  }, [onClose])
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKey)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', handleKey)
+      document.body.style.overflow = ''
+    }
+  }, [handleKey])
+
+  const EXT_ACCENT: Record<string, string> = {
+    '.md':   'text-violet-300 border-violet-700/50',
+    '.html': ext === '.html' ? 'text-emerald-300 border-emerald-700/50' : 'text-amber-300 border-amber-700/50',
+    '.css':  'text-sky-300 border-sky-700/50',
+    '.js':   'text-yellow-300 border-yellow-700/50',
+    '.ts':   'text-blue-300 border-blue-700/50',
+    '.tsx':  'text-blue-300 border-blue-700/50',
+    '.json': 'text-emerald-300 border-emerald-700/50',
+  }
+  const accentClass = EXT_ACCENT[ext] ?? 'text-slate-300 border-white/10'
+  const [accentText] = accentClass.split(' ')
+
+  const isHtmlInRepo = ext === '.html' && file.dir === 'repo'
+  const modalHeight = isHtmlInRepo ? 'calc(100vh - 8rem)' : 'calc(100vh - 10rem)'
+
+  return createPortal(
+    // Backdrop
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 lg:p-10"
+      style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)' }}
+      onClick={onClose}
+    >
+      {/* Modal panel — stop propagation so click inside doesn't close */}
+      <div
+        className="relative w-full max-w-[92vw] flex flex-col rounded-xl border border-white/[0.1] bg-[#0c0c14] shadow-2xl"
+        style={{ maxHeight: 'calc(100vh - 4rem)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.08] shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-base">{fileIcon(file.name)}</span>
+            <span className={`font-mono text-[13px] font-semibold truncate ${accentText}`}>
+              {file.name}
+            </span>
+            {file.dir === 'repo' && (
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-sky-950/60 border border-sky-800/40 text-sky-500 shrink-0">
+                repo
+              </span>
+            )}
+            <span className="text-[10px] text-slate-600 font-mono shrink-0">
+              {file.size_bytes < 1024 ? `${file.size_bytes}B` : `${(file.size_bytes / 1024).toFixed(1)}KB`}
+              {' · '}
+              {format(new Date(file.modified_at), 'MMM d, HH:mm')}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0 ml-4">
+            {isHtmlInRepo && workspacePath && (
+              <a
+                href={buildStaticUrl(file, workspacePath)}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-mono text-slate-500 hover:text-slate-200 transition-colors"
+                onClick={(e) => e.stopPropagation()}
+              >
+                open ↗
+              </a>
+            )}
+            <button
+              onClick={onClose}
+              className="text-slate-500 hover:text-white transition-colors text-lg leading-none px-1"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="overflow-auto" style={{ height: modalHeight }}>
+          <FileViewer file={file} workspacePath={workspacePath} modal />
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// ---------------------------------------------------------------------------
+// File table (shared between tabs)
+// ---------------------------------------------------------------------------
+
+function FileTable({ items, workspacePath }: { items: DeliverableFile[]; workspacePath: string | null }) {
+  const [openFile, setOpenFile] = useState<DeliverableFile | null>(null)
+
   if (items.length === 0) {
     return (
       <p className="text-[11px] text-slate-600 font-mono py-4">
@@ -95,37 +360,57 @@ function FileTable({ items }: { items: DeliverableFile[] }) {
       </p>
     )
   }
+
   return (
-    <table className="w-full text-xs">
-      <thead>
-        <tr className="border-b border-white/[0.05] text-left">
-          <th className="pb-2.5 pt-1 text-[10px] uppercase tracking-wider font-semibold text-slate-500">File</th>
-          <th className="pb-2.5 pt-1 text-[10px] uppercase tracking-wider font-semibold text-slate-500 text-right">Size</th>
-          <th className="pb-2.5 pt-1 text-[10px] uppercase tracking-wider font-semibold text-slate-500 text-right">Modified</th>
-        </tr>
-      </thead>
-      <tbody>
-        {items.map((f) => (
-          <tr
-            key={`${f.dir}-${f.name}`}
-            className="border-b border-white/[0.025] hover:bg-white/[0.025] transition-colors"
-          >
-            <td className="py-2 text-slate-300 font-mono text-[11px]">
-              {fileIcon(f.name)}{' '}
-              <span className="hover:text-white transition-colors">{f.name}</span>
-            </td>
-            <td className="py-2 text-right text-slate-600 font-mono text-[10px]">
-              {f.size_bytes < 1024
-                ? `${f.size_bytes}B`
-                : `${(f.size_bytes / 1024).toFixed(1)}KB`}
-            </td>
-            <td className="py-2 text-right text-slate-600 font-mono text-[10px]">
-              {format(new Date(f.modified_at), 'MMM d, HH:mm')}
-            </td>
+    <>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-white/[0.05] text-left">
+            <th className="pb-2.5 pt-1 text-[10px] uppercase tracking-wider font-semibold text-slate-500">File</th>
+            <th className="pb-2.5 pt-1 text-[10px] uppercase tracking-wider font-semibold text-slate-500 text-right">Size</th>
+            <th className="pb-2.5 pt-1 text-[10px] uppercase tracking-wider font-semibold text-slate-500 text-right">Modified</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {items.map((f) => {
+            const fileKey = `${f.dir}-${f.name}`
+            return (
+              <Fragment key={fileKey}>
+                <tr
+                  className="border-b border-white/[0.025] hover:bg-white/[0.02] transition-colors cursor-pointer group"
+                  onClick={() => setOpenFile(f)}
+                >
+                  <td className="py-2 text-slate-300 font-mono text-[11px]">
+                    <span className="mr-1 text-[10px] text-slate-600 group-hover:text-slate-400 select-none transition-colors">▸</span>
+                    {fileIcon(f.name)}{' '}
+                    <span className="group-hover:text-white transition-colors">{f.name}</span>
+                    {f.dir === 'repo' && (
+                      <span className="ml-1.5 text-[9px] font-mono px-1 py-0.5 rounded bg-sky-950/60 border border-sky-800/40 text-sky-500">repo</span>
+                    )}
+                  </td>
+                  <td className="py-2 text-right text-slate-600 font-mono text-[10px]">
+                    {f.size_bytes < 1024
+                      ? `${f.size_bytes}B`
+                      : `${(f.size_bytes / 1024).toFixed(1)}KB`}
+                  </td>
+                  <td className="py-2 text-right text-slate-600 font-mono text-[10px]">
+                    {format(new Date(f.modified_at), 'MMM d, HH:mm')}
+                  </td>
+                </tr>
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+
+      {openFile && (
+        <FileModal
+          file={openFile}
+          workspacePath={workspacePath}
+          onClose={() => setOpenFile(null)}
+        />
+      )}
+    </>
   )
 }
 
@@ -142,18 +427,19 @@ function DeliverablesPanel({ project }: DeliverablesPanelProps) {
   const hasRepoContext = Boolean(project.repo_local_path || project.repo_url)
 
   const deliverableFiles = files.filter((f) => f.dir === 'deliverable')
-  const outputFiles = files.filter((f) => f.dir === 'output')
+  // "Project Files" = actual code files from output/ (no-repo projects) or repo/ (git projects)
+  const projectFiles = files.filter((f) => f.dir === 'output' || f.dir === 'repo')
 
   // Default to whichever tab has content, or 'info'
   const defaultTab: FileTab =
-    deliverableFiles.length > 0 ? 'deliverables' : outputFiles.length > 0 ? 'output' : 'info'
+    deliverableFiles.length > 0 ? 'deliverables' : projectFiles.length > 0 ? 'output' : 'info'
   const [activeTab, setActiveTab] = useState<FileTab>(defaultTab)
 
   // Switch to a tab with content when files load
   useEffect(() => {
     if (deliverableFiles.length > 0 && activeTab === 'info') setActiveTab('deliverables')
-    else if (outputFiles.length > 0 && activeTab === 'info') setActiveTab('output')
-  }, [deliverableFiles.length, outputFiles.length]) // eslint-disable-line react-hooks/exhaustive-deps
+    else if (projectFiles.length > 0 && activeTab === 'info') setActiveTab('output')
+  }, [deliverableFiles.length, projectFiles.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const tabs: Array<{ id: FileTab; label: string; count?: number; accent: string }> = [
     {
@@ -164,8 +450,8 @@ function DeliverablesPanel({ project }: DeliverablesPanelProps) {
     },
     {
       id: 'output',
-      label: 'Output Files',
-      count: outputFiles.length,
+      label: 'Project Files',
+      count: projectFiles.length,
       accent: 'emerald',
     },
     {
@@ -238,11 +524,11 @@ function DeliverablesPanel({ project }: DeliverablesPanelProps) {
         {!loading && !error && (
           <>
             {activeTab === 'deliverables' && (
-              <FileTable items={deliverableFiles} />
+              <FileTable items={deliverableFiles} workspacePath={project.workspace_path ?? null} />
             )}
 
             {activeTab === 'output' && (
-              <FileTable items={outputFiles} />
+              <FileTable items={projectFiles} workspacePath={project.workspace_path ?? null} />
             )}
 
             {activeTab === 'info' && (

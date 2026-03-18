@@ -225,7 +225,7 @@ Constraints:
     if (workspaceAbsPath) {
       const deliverableDir = join(workspaceAbsPath, 'deliverables')
       await mkdir(deliverableDir, { recursive: true })
-      const filename = `social-calendar-${task.id.slice(0, 8)}.md`
+      const filename = `social-calendar.md`
       artifactPath = join(deliverableDir, filename)
       await writeFile(
         artifactPath,

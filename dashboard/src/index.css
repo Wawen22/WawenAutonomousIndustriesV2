@@ -29,3 +29,18 @@
   }
   .font-tabular { font-variant-numeric: tabular-nums; }
 }
+
+/* Markdown viewer styles */
+.prose-wai h1 { font-size: 1.25rem; font-weight: 700; color: #e2e8f0; margin: 1rem 0 0.5rem; }
+.prose-wai h2 { font-size: 1.1rem; font-weight: 600; color: #cbd5e1; margin: 0.9rem 0 0.4rem; border-bottom: 1px solid rgb(255 255 255 / 0.08); padding-bottom: 0.2rem; }
+.prose-wai h3 { font-size: 1rem; font-weight: 600; color: #94a3b8; margin: 0.8rem 0 0.3rem; }
+.prose-wai h4 { font-size: 0.9rem; font-weight: 600; color: #64748b; margin: 0.6rem 0 0.2rem; }
+.prose-wai p  { margin: 0.4rem 0; color: #cbd5e1; }
+.prose-wai strong { color: #e2e8f0; font-weight: 600; }
+.prose-wai em { color: #94a3b8; font-style: italic; }
+.prose-wai code { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; background: rgb(0 212 255 / 0.08); border: 1px solid rgb(0 212 255 / 0.15); border-radius: 3px; padding: 0.1em 0.35em; color: #67e8f9; }
+.prose-wai pre { background: rgb(0 0 0 / 0.4); border: 1px solid rgb(255 255 255 / 0.08); border-radius: 6px; padding: 0.75rem 1rem; overflow-x: auto; margin: 0.6rem 0; }
+.prose-wai pre code { background: none; border: none; padding: 0; color: #94a3b8; }
+.prose-wai li { margin-left: 1.25rem; list-style-type: disc; color: #94a3b8; margin-bottom: 0.2rem; }
+.prose-wai blockquote { border-left: 2px solid rgb(0 212 255 / 0.3); padding-left: 0.75rem; color: #64748b; margin: 0.5rem 0; font-style: italic; }
+.prose-wai hr { border: none; border-top: 1px solid rgb(255 255 255 / 0.08); margin: 0.8rem 0; }
