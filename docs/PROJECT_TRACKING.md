@@ -133,6 +133,13 @@
 
 ## CHANGELOG
 
+### 2026-03-18 — Sessione 34b: LandingPage retry verificato end-to-end ✅
+
+- **LandingPage** task `dev_general_2` (`0b019a0a`) ritentato con successo: completato (`done`), QA (`b9b121ea`) attivato automaticamente dal fix P1
+- **QA** ha trovato blocking issues sul codice LandingPage → task QA in `blocked` + `requires_human_review = true` → appare in Pending Review (P3 verificato live)
+- **Founder Ops** sezione Pending Review funzionante: founder può Approve (procedi) o Reject (cancella e rifai il dev)
+- **Docs** `docs/FOUNDER_OPERATIONS_PLAYBOOK.md` aggiornato con sezione "Come funziona il sistema di decisioni" (Blocked/Retry, Pending Review/Approve/Reject, Invoice Queue)
+
 ### 2026-03-18 — Sessione 34: P1 QA retry fix + B001 memory tuning + P3 human_review wiring ✅
 
 - **P1 BUG FIX** `backend/src/agents/dev_general.ts` — `processDevGeneralFollowUps` ora tenta `transitionTaskStatus(qaTask.id, 'blocked', 'in_progress')` se il primo tentativo `'todo'→'in_progress'` fallisce; fix critico per il retry flow: quando dev_general_2 viene ritentato e la QA era `blocked`, la QA viene ora correttamente attivata

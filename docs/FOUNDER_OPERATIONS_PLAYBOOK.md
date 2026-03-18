@@ -149,20 +149,77 @@ Shows the founder help message on Telegram.
 
 ### Founder Ops dashboard
 
-The dashboard now has a dedicated **Founder Ops** view.
+The dashboard has a dedicated **Founder Ops** view — the main decision panel for Neb.
 
-It is the fastest place to operate when Neb needs to make decisions rather than inspect raw system data.
+---
 
-What it shows:
+#### Come funziona il sistema di decisioni
+
+Il sistema distingue tre tipi di situazioni che richiedono l'intervento del founder:
+
+---
+
+**1. Blocked Tasks → Retry / Cancel**
+
+Un task diventa `blocked` quando un agente non riesce a completare il suo lavoro (errore LLM, dipendenza non risolta, problema nel codice del progetto).
+
+Il task appare nella sezione **Blocked Tasks** con due azioni:
+
+| Azione | Cosa fa |
+|--------|---------|
+| **Retry** | Rilancia l'agente sullo stesso task. Il sistema controlla le dipendenze: se mancano task precedenti, il retry viene messo in coda; se tutto è pronto, l'agente parte subito. |
+| **Cancel** | Cancella il task definitivamente. Il progetto non avanza. |
+
+Quando usare Retry: quando pensi che il problema fosse temporaneo (errore API, timeout, contesto insufficiente).
+Quando usare Cancel: quando il task non ha più senso o il brief è cambiato.
+
+Comportamento automatico dopo il Retry di un task software (`dev_general_*`):
+- Se il task completato sblocca tutti i dev worker, il sistema attiva **QA automaticamente** senza che Neb debba fare nulla.
+
+---
+
+**2. Pending Review → Approve / Reject**
+
+Un task entra in **Pending Review** quando il sistema non può decidere da solo e ha bisogno di una decisione umana.
+
+Quando succede:
+- **QA trova problemi bloccanti** → il task QA rimane aperto con `requires_human_review = true`, progetto in stato `blocked`
+- Altri task strategici creati con flag `requires_human_review` esplicito
+
+| Azione | Cosa fa |
+|--------|---------|
+| **Approve** | Chiude il task come `done`. Significa: "ho letto il report, decido di procedere comunque". |
+| **Reject** | Cancella il task (`cancelled`). Significa: "il lavoro non va, non procedo". |
+
+Esempio concreto — QA blocca una LandingPage:
+1. QA analizza il codice e trova problemi seri (es. CSS non funziona, layout rotto)
+2. Invece di chiudersi da solo, il task QA va in Pending Review con il summary dei problemi
+3. Neb legge il report QA (`deliverables/qa_report.md`) e decide:
+   - **Approve** → si procede a `delivered` / fatturazione
+   - **Reject** → si cancella il task QA; poi si fa Retry del dev per correggere i problemi
+
+---
+
+**3. Invoice Queue e Outstanding Payments**
+
+Sezioni puramente revenue:
+- **Invoice Queue**: progetti `delivered` o `review` pronti per essere fatturati
+- **Outstanding Payments**: progetti `invoiced` con saldo ancora da incassare
+
+---
+
+What the Founder Ops view shows:
 - blocked tasks with `Retry` and `Cancel`
+- tasks awaiting founder decision (`Pending Review`) with `Approve` and `Reject`
 - projects ready to invoice
 - invoiced projects with outstanding balance
 - recent founder decisions (`task_unblocked`, approvals/rejections, invoicing, payments)
 
 What it is for:
 - clearing operational bottlenecks
+- reviewing QA escalations before delivery
 - moving projects from delivery to invoicing
-- tracking simulated or real collections without switching back to Telegram
+- tracking collections without switching back to Telegram
 
 ### `/new_client`
 
