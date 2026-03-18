@@ -7,9 +7,12 @@
 import OpenAI from 'openai'
 import { getModelForAgent, getModelById, estimateCost } from '../config/models.js'
 import { log, recordRun } from './logger.js'
+import { createAgentMemory, formatMemoriesForPrompt, recallAgentMemories } from './memory.js'
 import type { ModelRoutingContext, RunOutcome, TaskType } from '../types/index.js'
 
 const DEFAULT_RUN_TIMEOUT_MS = 300_000 // 5 min default; file generation uses 6 min override
+const MEMORY_WARNING_COOLDOWN_MS = 300_000
+let lastMemoryWarningAt = 0
 
 function getRunTimeoutMs(): number {
   const raw = process.env['LLM_RUN_TIMEOUT_MS']
@@ -57,6 +60,7 @@ export interface RunOptions {
   requiresComplex?: boolean
   modelOverride?: string
   timeoutMs?: number
+  captureMemory?: boolean
 }
 
 export interface RunResult {
@@ -112,10 +116,64 @@ async function callLLM(
   return { content, tokensInput, tokensOutput }
 }
 
+function buildMemoryQuery(messages: ChatMessage[]): string {
+  const relevantMessages = messages.filter((message) => message.role !== 'system')
+  if (relevantMessages.length === 0) return ''
+
+  return relevantMessages
+    .slice(-2)
+    .map((message) => message.content)
+    .join('\n\n')
+    .trim()
+}
+
+function buildRunMemoryContent(messages: ChatMessage[], output: string, taskType?: TaskType): string {
+  const query = buildMemoryQuery(messages)
+  return [
+    taskType ? `Task type: ${taskType}` : '',
+    query ? `Task context:\n${query}` : '',
+    output ? `Result:\n${output}` : '',
+  ].filter(Boolean).join('\n\n')
+}
+
+function logMemoryWarning(err: unknown, agentId: string, message: string, taskId?: string): void {
+  const now = Date.now()
+  if (now - lastMemoryWarningAt < MEMORY_WARNING_COOLDOWN_MS) return
+
+  lastMemoryWarningAt = now
+  log.warn({ err, agentId, taskId }, message)
+}
+
+async function injectMemoryRecall(messages: ChatMessage[], agentId: string): Promise<ChatMessage[]> {
+  const query = buildMemoryQuery(messages)
+  if (query.length < 24) return messages
+
+  try {
+    const memories = await recallAgentMemories({ agentId, query })
+    const memoryPrompt = formatMemoriesForPrompt(memories)
+    if (!memoryPrompt) return messages
+
+    const firstNonSystemIndex = messages.findIndex((message) => message.role !== 'system')
+    if (firstNonSystemIndex < 0) {
+      return [...messages, { role: 'system', content: memoryPrompt }]
+    }
+
+    return [
+      ...messages.slice(0, firstNonSystemIndex),
+      { role: 'system', content: memoryPrompt },
+      ...messages.slice(firstNonSystemIndex),
+    ]
+  } catch (err) {
+    logMemoryWarning(err, agentId, 'Memory recall unavailable; continuing without long-term memory context')
+    return messages
+  }
+}
+
 export async function runAgent(
   messages: ChatMessage[],
   opts: RunOptions
 ): Promise<RunResult> {
+  const preparedMessages = await injectMemoryRecall(messages, opts.agentId)
   const routingCtx: ModelRoutingContext = {
     agentId: opts.agentId,
     ...(opts.taskType !== undefined && { taskType: opts.taskType }),
@@ -141,7 +199,7 @@ export async function runAgent(
 
   try {
     try {
-      const result = await callLLM(client, model.id, messages, abortController.signal)
+      const result = await callLLM(client, model.id, preparedMessages, abortController.signal)
       content = result.content
       tokensInput = result.tokensInput
       tokensOutput = result.tokensOutput
@@ -159,7 +217,7 @@ export async function runAgent(
           agent_id: opts.agentId,
           ...(opts.taskId !== undefined && { task_id: opts.taskId }),
           model_id: model.id,
-          input_summary: messages[messages.length - 1]?.content?.substring(0, 500) ?? '',
+          input_summary: preparedMessages[preparedMessages.length - 1]?.content?.substring(0, 500) ?? '',
           output_summary: '',
           tokens_input: 0,
           tokens_output: 0,
@@ -169,7 +227,7 @@ export async function runAgent(
           duration_ms: Date.now() - startMs,
         })
 
-        const fallbackResult = await callLLM(client, FALLBACK_MODEL_ID, messages, abortController.signal)
+        const fallbackResult = await callLLM(client, FALLBACK_MODEL_ID, preparedMessages, abortController.signal)
         content = fallbackResult.content
         tokensInput = fallbackResult.tokensInput
         tokensOutput = fallbackResult.tokensOutput
@@ -177,6 +235,15 @@ export async function runAgent(
       } else {
         throw primaryErr
       }
+    }
+
+    if ((opts.captureMemory ?? true) && opts.taskId && content.trim().length >= 80) {
+      void createAgentMemory({
+        agentId: opts.agentId,
+        content: buildRunMemoryContent(messages, content, opts.taskType),
+      }).catch((err: unknown) => {
+        logMemoryWarning(err, opts.agentId, 'Failed to persist agent memory', opts.taskId)
+      })
     }
   } catch (err) {
     outcome = 'failure'
@@ -203,7 +270,7 @@ export async function runAgent(
       agent_id: opts.agentId,
       ...(opts.taskId !== undefined && { task_id: opts.taskId }),
       model_id: usedModelId,
-      input_summary: messages[messages.length - 1]?.content?.substring(0, 500) ?? '',
+      input_summary: preparedMessages[preparedMessages.length - 1]?.content?.substring(0, 500) ?? '',
       output_summary: content.substring(0, 500),
       tokens_input: tokensInput,
       tokens_output: tokensOutput,

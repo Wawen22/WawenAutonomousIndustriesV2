@@ -4,7 +4,18 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase.js'
-import type { Agent, AgentRun, AgentRunWithContext, Client, Project, ProjectState, SystemEvent, SystemEventWithContext, Task } from '../types/index.js'
+import type {
+  Agent,
+  AgentMemory,
+  AgentRun,
+  AgentRunWithContext,
+  Client,
+  Project,
+  ProjectState,
+  SystemEvent,
+  SystemEventWithContext,
+  Task,
+} from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Generic realtime hook
@@ -187,6 +198,26 @@ export function useInvoicedProjects() {
   }, [])
 
   return useRealtimeTable<Project>('projects', fetchProjects)
+}
+
+export function useAgentMemories(limit = 500, agentId?: string) {
+  const fetchMemories = useCallback(async (): Promise<AgentMemory[]> => {
+    let query = supabase
+      .from('agent_memories')
+      .select('id, agent_id, content, created_at, ttl')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (agentId) {
+      query = query.eq('agent_id', agentId)
+    }
+
+    const { data, error } = await query
+    if (error) throw new Error(error.message)
+    return (data ?? []) as AgentMemory[]
+  }, [agentId, limit])
+
+  return useRealtimeTable<AgentMemory>('agent_memories', fetchMemories)
 }
 
 /** Per-agent run counts (total) and last 3 runs — for Team Org view. */

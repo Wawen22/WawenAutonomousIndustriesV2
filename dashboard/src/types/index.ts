@@ -130,6 +130,14 @@ export interface AgentRun {
   created_at: string
 }
 
+export interface AgentMemory {
+  id: string
+  agent_id: string
+  content: string
+  created_at: string
+  ttl: string | null
+}
+
 export interface ProjectState {
   id: number
   version: string

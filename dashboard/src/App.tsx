@@ -11,6 +11,7 @@ import { ClientsView } from './components/ClientsView.js'
 import { ProjectsView } from './components/ProjectsView.js'
 import { RevenueView } from './components/RevenueView.js'
 import { TeamOrgView } from './components/TeamOrgView.js'
+import { MemoryView } from './components/MemoryView.js'
 
 const VirtualOffice3DView = lazy(() =>
   import('./components/VirtualOffice3DView.js').then((m) => ({ default: m.VirtualOffice3DView }))
@@ -144,7 +145,7 @@ function ViewContent({ view }: { view: ViewId }) {
         <VirtualOffice3DView />
       </Suspense>
     )
-    case 'memory':    return <div className="flex items-center justify-center h-40 text-slate-600 text-sm">Memory System — coming soon (T066)</div>
+    case 'memory':    return <MemoryView />
   }
 }
 

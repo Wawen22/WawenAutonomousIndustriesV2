@@ -100,7 +100,7 @@
 | T063 | Unified file viewer in ProjectsView | ✅ Done | Claude | 2 | Viewer per tutti i tipi: HTML in repo/→iframe con CSS/JS via /api/repo static route; .md→rendered markdown; code→pre/code; click su qualsiasi riga per aprire |
 | T064 | Team Org screen | ✅ Done | Claude | 1 | `TeamOrgView.tsx`: org chart Neb→CEO→teams; avatar generativi; status+model badge; slide-in panel con runs+tasks; `useAgentStats` hook; sidebar entry |
 | T065 | Virtual Office screen | ✅ Done | Claude | 2 | `VirtualOffice3DView.tsx`: ufficio 3D con Three.js/R3F; 17 agent avatar animati; zone (Desk/Meeting/Lounge/Neb Corner); monitor glow; click info panel; idle wandering; working pulse; fog+lighting |
-| T066 | Memory system (backend + UI) | ⬜ Todo | Claude | 3 | Prossima sessione |
+| T066 | Memory system (backend + UI) | ✅ Done | Codex | 1 | `agent_memories` + pgvector recall + dashboard Memory view |
 | T067 | Virtual Office 2D view | ✅ Done | Claude | 2 | `VirtualOffice2DView.tsx`: mappa 2D flat con 4 zone (Desk/Meeting/HotDesk/Lounge); AgentAvatar2D con bordo team-color, badge tool arancione, pulse working; meeting zone con tavolo SVG + dashed lines; sidebar con stats/agent list/event timeline; popup agente con runs/tools/eventi; toggle 2D/3D in topbar sia in 2D che in 3D |
 | T068 | Virtual Office 3D — polish v3 | ✅ Done | Claude | 2 | Rimozione CeilingLights; reset camera button (⊙ reset view) con animazione lerp verso default [2,30,28]; Neb Founder 3D avatar gold con body+head+halo+ring+sonar pulse+head bob; fix z-index AgentInfoPanel (WebGL stacking issue: Canvas zIndex:0, panel z-[50]) |
 
@@ -110,7 +110,7 @@
 
 | ID | Title | Owner | Notes |
 |----|-------|-------|-------|
-| B001 | Implement pgvector for agent memory | architect | Future enhancement |
+| B001 | Tune memory relevance, summarization, and TTL policies | architect | Follow-up optimization after T066 |
 | B002 | Add Ollama local model support | dev_general_1 | Phase 3 |
 | B003 | Build Consulting delivery pipeline | consulting_lead | Q2 |
 | B004 | Marketing automation: blog → social | content_creator | Q2 |
@@ -119,6 +119,16 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-18 — Sessione 27: T066 — Agent memory system ✅
+
+- **T066** `supabase/migrations/005_agent_memories.sql` — nuova tabella `agent_memories` con `embedding vector(256)`, `ttl`, indice `ivfflat`, RLS read-only per dashboard e funzione SQL `match_agent_memories(...)` per similarity recall su pgvector
+- **T066** `backend/src/services/memory.ts` — nuovo service typed per store/list/recall delle memorie; embedding locale deterministico hashed → pgvector-safe senza dipendere da un embedding provider esterno; helper prompt `formatMemoriesForPrompt()`
+- **T066** `backend/src/services/llm.ts` — `runAgent()` ora esegue recall automatico delle memorie rilevanti prima di ogni run e persiste una memoria sintetica dopo i run task-bound di successo; aggiunto cooldown per evitare log spam se la migration non è ancora applicata
+- **T066** `backend/src/agents/software_repo_runtime.ts` — i run interni di repo-edit/file-generation impostano `captureMemory: false` per non inquinare la memoria a lungo termine con step intermedi
+- **T066** `dashboard/src/hooks/useSupabaseRealtime.ts`, `dashboard/src/components/MemoryView.tsx`, `dashboard/src/App.tsx`, `dashboard/src/types/index.ts` — Memory view reale con stats, filtro agente, ricerca full-text client-side, visibilità TTL/expired e distribuzione per agente via Supabase Realtime
+- **DOCS** `docs/SUPABASE_SCHEMA.md` e `docs/ARCHITECTURE.md` aggiornati per includere `agent_memories`, recall flow e service `memory.ts`
+- **VERIFY** `pnpm typecheck` verde su backend e dashboard
 
 ### 2026-03-18 — Sessione 26: T068 — Virtual Office 3D polish v3 ✅
 

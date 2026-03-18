@@ -49,6 +49,7 @@ WAI is built on four pillars:
           │  │  tables:               │ │
           │  │  agents, tasks, runs,  │ │
           │  │  events, models,       │ │
+          │  │  agent_memories,       │ │
           │  │  project_state         │ │
           │  └────────────────────────┘ │
           │  Realtime │ Auth │ Storage  │
@@ -132,11 +133,13 @@ Neb → Telegram Bot → OpenClaw Gateway
 
 ```
 Dev Agent session (OpenClaw)
+→ recallAgentMemories(agent_id, current_prompt) → pgvector similarity match on supabase.agent_memories
 → Calls getModelForAgent('dev_saas', 'dev_complex') → GPT-5.4
 → LLM generates code
 → Tool: shell (run tests)
 → Tool: github (create PR)
 → logRun() → INSERT into supabase.runs (tokens, cost, outcome)
+→ createAgentMemory() → INSERT into supabase.agent_memories
 → UPDATE supabase.tasks SET status='done'
 → INSERT into supabase.events (task_completed)
 → Dashboard Realtime update (client sees instantly)
@@ -249,6 +252,7 @@ wai/
 │   │   └── openclaw.ts   # OpenClaw Gateway config
 │   ├── services/
 │   │   ├── supabase.ts   # DB client + typed helpers
+│   │   ├── memory.ts     # Agent memory store + pgvector recall
 │   │   ├── telegram.ts   # Telegram bot handler
 │   │   ├── logger.ts     # Centralized run/event logger
 │   │   └── budget.ts     # Cost tracking + alert service

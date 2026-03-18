@@ -134,6 +134,14 @@ export interface AgentRun {
   created_at: string
 }
 
+export interface AgentMemory {
+  id: string
+  agent_id: string
+  content: string
+  created_at: string
+  ttl: string | null
+}
+
 export interface LogRunInput {
   agent_id: string
   task_id?: string

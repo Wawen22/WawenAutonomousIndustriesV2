@@ -139,6 +139,26 @@ Records every LLM invocation or tool execution.
 
 ---
 
+### `agent_memories`
+
+Persistent long-term memory per agent, stored as pgvector embeddings for similarity recall before each run.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `uuid` PK | Auto-generated |
+| `agent_id` | `text` FK→agents | Owning agent |
+| `content` | `text` | Normalized memory text stored for recall |
+| `embedding` | `vector(256)` | Deterministic hashed embedding used by pgvector similarity search |
+| `created_at` | `timestamptz` | Memory creation time |
+| `ttl` | `timestamptz` | Expiry time; expired memories are excluded from recall |
+
+Notes:
+- Recall is executed through the SQL function `match_agent_memories(...)`.
+- The backend stores memory automatically after successful task-bound LLM runs.
+- The Dashboard Memory view reads this table directly via Supabase Realtime.
+
+---
+
 ### `events` (activity_log)
 
 High-level audit log of important system events.
@@ -190,6 +210,7 @@ clients ←────────── projects (client_id)
 projects ←────────── tasks (project_id)
 agents ←────────── tasks (assignee_agent_id, delegator_agent_id)
 agents ←────────── runs (agent_id)
+agents ←────────── agent_memories (agent_id)
 agents ←────────── events (agent_id)
 tasks  ←────────── runs (task_id)
 tasks  ←────────── events (task_id)
@@ -210,6 +231,7 @@ The following tables have Realtime enabled and are subscribed to by the Dashboar
 | `tasks` | INSERT, UPDATE | Task Board (Kanban) |
 | `events` | INSERT | Event Timeline |
 | `runs` | INSERT | Cost Panel, Agent Activity |
+| `agent_memories` | INSERT, UPDATE | Memory View |
 | `project_state` | UPDATE | Header stats |
 | `clients` | INSERT, UPDATE | Clients View |
 | `projects` | INSERT, UPDATE | Projects View |
@@ -224,7 +246,7 @@ All tables have RLS enabled. Policies:
 |------|--------|
 | `service_role` | Full access (backend uses this) |
 | `anon` | No access (public not allowed) |
-| `authenticated` | Read-only on `agents`, `tasks`, `events`, `project_state` (dashboard user) |
+| `authenticated` | Read-only on `agents`, `tasks`, `events`, `project_state`, `agent_memories` (dashboard user) |
 
 Agent-specific write policies are enforced at the service layer (not Supabase RLS) since all backend calls use `service_role`.
 

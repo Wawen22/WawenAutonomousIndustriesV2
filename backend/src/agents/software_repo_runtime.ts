@@ -938,6 +938,7 @@ Write COMPLETE, WORKING file contents. No placeholders. No "TODO" comments.
       taskType,
       requiresComplex: agentId === 'dev_general_1' || agentId === 'dev_saas_1',
       tools: ['file_system', 'shell'],
+      captureMemory: false,
     }
   )
 
@@ -1316,6 +1317,7 @@ Rules:
       requiresComplex: true,
       tools: ['file_system'],
       timeoutMs: 360_000, // 6 min — file generation produces large output
+      captureMemory: false,
     }
   )
 
