@@ -77,6 +77,20 @@
   .animate-thinking-rain {
     animation: thinking-rain 4s linear infinite;
   }
+
+  @keyframes glitch-color {
+    0% { color: inherit; }
+    50% { color: #00D4FF; text-shadow: 0 0 8px rgba(0, 212, 255, 0.5); }
+    100% { color: inherit; }
+  }
+  .animate-glitch-color {
+    animation: glitch-color 0.3s ease-in-out;
+  }
+
+  .font-terminal {
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: -0.02em;
+  }
 }
 
 /* Markdown viewer styles */

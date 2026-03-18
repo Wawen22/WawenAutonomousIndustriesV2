@@ -1,76 +1,57 @@
+// ============================================================
+// WAI Dashboard – Resource Burn Terminal (T074)
+// High-tech cost tracking with Odometer and Model diagnostics.
+// ============================================================
+
+import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
 import { Panel } from './ui/Panel.js'
 import { Stat } from './ui/Stat.js'
 import { Badge } from './ui/Badge.js'
+import { Odometer } from './ui/Odometer.js'
+import { Icon } from './ui/Icon.js'
 import { useProjectState, useRecentRuns } from '../hooks/useSupabaseRealtime.js'
 
 // ---------------------------------------------------------------------------
-// Budget bar
+// Constants
 // ---------------------------------------------------------------------------
 
-function BudgetGauge({ current, total }: { current: number; total: number }) {
-  const pct    = Math.min((current / total) * 100, 100)
-  const color  = pct >= 90 ? 'bg-rose-500'    : pct >= 70 ? 'bg-amber-500'  : 'bg-emerald-500'
-  const glow   = pct >= 90 ? 'shadow-glow-rose': pct >= 70 ? ''              : 'shadow-glow-emerald'
-  const label  = pct >= 90 ? 'text-rose-400'  : pct >= 70 ? 'text-amber-400': 'text-emerald-400'
+const COST_INFO = {
+  session: "Total API infrastructure costs accrued during the current active monitoring session.",
+  quota: "Accumulated monthly expenditure compared against the predefined operational budget.",
+  efficiency: "The ratio of successful agent executions vs total attempts in the last 50 cycles.",
+  tokens: "Total neural data volume (Input + Output) processed by the system models."
+}
 
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+function InfoTooltip({ text }: { text: string }) {
+  return (
+    <div className="group relative inline-block ml-2">
+      <Icon name="info" size={10} className="text-slate-600 hover:text-cyan-400 cursor-help transition-colors" />
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 rounded-lg bg-[#0A1628] border border-white/10 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[150] pointer-events-none">
+        <p className="text-[8px] leading-relaxed text-slate-400 font-black uppercase tracking-widest">{text}</p>
+        <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0A1628] border-r border-b border-white/10 rotate-45 -mt-1" />
+      </div>
+    </div>
+  )
+}
+
+function DiagnosticBar({ label, value, max, colorClass }: { label: string; value: number; max: number; colorClass: string }) {
+  const pct = max > 0 ? (value / max) * 100 : 0
   return (
     <div className="space-y-2">
-      <div className="flex items-baseline justify-between">
-        <span className="text-xs text-slate-500 uppercase tracking-wider font-medium">Monthly Budget</span>
-        <span className={clsx('text-sm font-bold font-tabular', label)}>
-          ${current.toFixed(2)} <span className="text-slate-600 font-normal">/ ${total.toFixed(0)}</span>
-        </span>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</span>
+        <span className="text-[10px] font-mono font-bold text-white">${value.toFixed(4)}</span>
       </div>
-
-      {/* Track */}
-      <div className="relative h-2 bg-white/[0.06] rounded-full overflow-hidden">
-        <div
-          className={clsx('h-full rounded-full transition-all duration-700', color, glow)}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-
-      <div className="flex justify-between">
-        <span className={clsx('text-[11px] font-semibold font-tabular', label)}>
-          {pct.toFixed(1)}% used
-        </span>
-        <span className="text-[11px] text-slate-600">
-          ${(total - current).toFixed(2)} remaining
-        </span>
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Model cost bar
-// ---------------------------------------------------------------------------
-
-function ModelBar({ modelId, cost, maxCost }: { modelId: string; cost: number; maxCost: number }) {
-  const pct = maxCost > 0 ? (cost / maxCost) * 100 : 0
-  const isGpt = modelId.includes('gpt')
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <span
-          className={clsx(
-            'text-xs font-mono font-semibold px-1.5 py-0.5 rounded',
-            isGpt
-              ? 'text-[#00D4FF] bg-[#00D4FF]/[0.07]'
-              : 'text-violet-400 bg-violet-400/[0.07]'
-          )}
-        >
-          {modelId}
-        </span>
-        <span className="text-xs font-semibold font-tabular text-white">${cost.toFixed(4)}</span>
-      </div>
-      <div className="h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
-        <div
-          className={clsx('h-full rounded-full transition-all duration-500', isGpt ? 'bg-[#00D4FF]' : 'bg-violet-500')}
-          style={{ width: `${pct}%` }}
+      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden flex p-0.5">
+        <div 
+          className={clsx("h-full rounded-full transition-all duration-1000 shadow-[0_0_8px_currentColor]", colorClass)} 
+          style={{ width: `${pct}%` }} 
         />
       </div>
     </div>
@@ -78,165 +59,203 @@ function ModelBar({ modelId, cost, maxCost }: { modelId: string; cost: number; m
 }
 
 // ---------------------------------------------------------------------------
-// Run row
-// ---------------------------------------------------------------------------
-
-function RunRow({ run }: { run: { id: string; agent_id: string; model_id: string; outcome: string; cost_usd: number; duration_ms: number; created_at: string } }) {
-  const isSuccess = run.outcome === 'success'
-  const isGpt     = run.model_id.includes('gpt')
-
-  return (
-    <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 items-center py-2.5 border-b border-white/[0.04] last:border-0 text-xs">
-      <div className="min-w-0">
-        <p className="text-slate-300 font-mono truncate">{run.agent_id}</p>
-        <p className="text-slate-600 font-mono text-[10px]">{format(new Date(run.created_at), 'HH:mm:ss')}</p>
-      </div>
-      <span
-        className={clsx(
-          'text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded whitespace-nowrap',
-          isGpt ? 'text-[#00D4FF] bg-[#00D4FF]/[0.07]' : 'text-violet-400 bg-violet-400/[0.07]'
-        )}
-      >
-        {run.model_id.split('-').slice(0, 2).join('-')}
-      </span>
-      <Badge variant={isSuccess ? 'done' : run.outcome === 'partial' ? 'warning' : 'error'}>
-        {run.outcome}
-      </Badge>
-      <span className="text-slate-400 font-mono font-tabular text-right whitespace-nowrap">
-        ${run.cost_usd.toFixed(4)}
-      </span>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Main
+// Main Component
 // ---------------------------------------------------------------------------
 
 export function CostPanel() {
   const { state, loading: sLoad } = useProjectState()
-  const { data: runs, loading: rLoad } = useRecentRuns(50)
-
-  if (sLoad || rLoad) {
-    return (
-      <div className="flex items-center justify-center h-40">
-        <div className="w-5 h-5 border-2 border-[#00D4FF]/30 border-t-[#00D4FF] rounded-full animate-spin" />
-      </div>
-    )
-  }
+  const { data: runs, loading: rLoad } = useRecentRuns(100)
 
   // Derived metrics
-  const totalCost   = runs.reduce((s, r) => s + (r.cost_usd ?? 0), 0)
-  const successRate = runs.length > 0
-    ? Math.round((runs.filter((r) => r.outcome === 'success').length / runs.length) * 100)
-    : 100
-  const avgDuration = runs.length > 0
-    ? Math.round(runs.reduce((s, r) => s + r.duration_ms, 0) / runs.length)
-    : 0
-  const totalTokens = runs.reduce((s, r) => s + r.tokens_input + r.tokens_output, 0)
+  const stats = useMemo(() => {
+    const totalCost = runs.reduce((s, r) => s + (r.cost_usd ?? 0), 0)
+    const successRate = runs.length > 0 ? Math.round((runs.filter(r => r.outcome === 'success').length / runs.length) * 100) : 100
+    const totalTokens = runs.reduce((s, r) => s + r.tokens_input + r.tokens_output, 0)
+    
+    const costByModel = runs.reduce<Record<string, number>>((acc, r) => {
+      acc[r.model_id] = (acc[r.model_id] ?? 0) + (r.cost_usd ?? 0)
+      return acc
+    }, {})
 
-  // Cost by model
-  const costByModel = runs.reduce<Record<string, number>>((acc, r) => {
-    acc[r.model_id] = (acc[r.model_id] ?? 0) + (r.cost_usd ?? 0)
-    return acc
-  }, {})
-  const maxModelCost = Math.max(...Object.values(costByModel), 0.0001)
+    const costByAgent = runs.reduce<Record<string, number>>((acc, r) => {
+      acc[r.agent_id] = (acc[r.agent_id] ?? 0) + (r.cost_usd ?? 0)
+      return acc
+    }, {})
+
+    // Model efficiency (cost per run)
+    const modelMetrics = Object.keys(costByModel).map(id => {
+      const modelRuns = runs.filter(r => r.model_id === id)
+      const avgCost = costByModel[id] / (modelRuns.length || 1)
+      return { id, avgCost, count: modelRuns.length }
+    })
+
+    return { totalCost, successRate, totalTokens, costByModel, costByAgent, modelMetrics }
+  }, [runs])
+
+  const maxModelCost = Math.max(...Object.values(stats.costByModel), 0.0001)
+
+  if (sLoad || rLoad) return (
+    <div className="flex flex-col items-center justify-center h-64 gap-4 animate-pulse">
+      <div className="w-10 h-10 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin" />
+      <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">Synching Resource Matrix...</p>
+    </div>
+  )
 
   return (
-    <div className="animate-fade-in space-y-5">
-
-      {/* Budget gauge */}
-      {state && (
-        <Panel>
-          <BudgetGauge current={state.monthly_cost_usd} total={state.monthly_budget_usd} />
-        </Panel>
-      )}
-
-      {/* Stats row */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <Stat
-          label="Runs Tracked"
-          value={runs.length}
-          sub="last 50 shown"
-          color="sky"
-        />
-        <Stat
-          label="Success Rate"
-          value={`${successRate}%`}
-          sub={`${runs.filter((r) => r.outcome === 'failure').length} failures`}
-          color={successRate < 90 ? 'amber' : 'emerald'}
-        />
-        <Stat
-          label="Total Cost"
-          value={`$${totalCost.toFixed(4)}`}
-          sub="last 50 runs"
-          color="cyan"
-        />
-        <Stat
-          label="Avg Duration"
-          value={`${(avgDuration / 1000).toFixed(1)}s`}
-          sub={`${(totalTokens / 1000).toFixed(1)}k tokens`}
-          color="default"
-        />
-      </div>
-
-      {/* Two-col: model breakdown + run log */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-
-        {/* Model cost breakdown */}
-        <Panel title="Cost by Model">
-          {Object.keys(costByModel).length === 0 ? (
-            <p className="text-sm text-slate-600 text-center py-4">No runs yet</p>
-          ) : (
-            <div className="space-y-4">
-              {Object.entries(costByModel)
-                .sort(([, a], [, b]) => b - a)
-                .map(([modelId, cost]) => (
-                  <ModelBar key={modelId} modelId={modelId} cost={cost} maxCost={maxModelCost} />
-                ))}
+    <div className="space-y-6 animate-fade-in pb-20">
+      
+      {/* ── Burn Terminal Header ── */}
+      <div className="bg-[#070C1A] border border-white/10 rounded-3xl p-8 relative overflow-hidden">
+        <div className="absolute inset-0 bg-grid opacity-[0.03] pointer-events-none" />
+        
+        <div className="relative z-10 flex flex-col md:flex-row items-center gap-12">
+          <div className="flex items-center gap-6 border-r border-white/5 pr-12">
+            <div className="w-16 h-16 rounded-2xl bg-cyan-500/5 border-2 border-cyan-500/20 flex items-center justify-center text-cyan-400 shadow-[0_0_30px_rgba(6,182,212,0.15)]">
+              <Icon name="costs" size={32} />
             </div>
-          )}
-        </Panel>
-
-        {/* Cost by agent (top 5) */}
-        <Panel title="Top Agents by Cost">
-          {runs.length === 0 ? (
-            <p className="text-sm text-slate-600 text-center py-4">No runs yet</p>
-          ) : (
-            <div className="space-y-3">
-              {Object.entries(
-                runs.reduce<Record<string, number>>((acc, r) => {
-                  acc[r.agent_id] = (acc[r.agent_id] ?? 0) + (r.cost_usd ?? 0)
-                  return acc
-                }, {})
-              )
-                .sort(([, a], [, b]) => b - a)
-                .slice(0, 6)
-                .map(([agentId, cost]) => (
-                  <div key={agentId} className="flex items-center justify-between">
-                    <span className="text-xs text-slate-400 font-mono">{agentId}</span>
-                    <span className="text-xs font-semibold font-tabular text-white">${cost.toFixed(4)}</span>
-                  </div>
-                ))}
+            <div>
+              <h1 className="text-2xl font-black text-white uppercase tracking-tighter italic leading-none">Resource Burn</h1>
+              <p className="text-[11px] text-slate-500 font-mono tracking-[0.2em] mt-2 uppercase italic">Neural Infrastructure usage</p>
             </div>
-          )}
-        </Panel>
-      </div>
-
-      {/* Recent runs table */}
-      <Panel title="Recent Runs" headerRight={
-        <span className="text-[11px] text-slate-600 font-mono">{runs.length} total</span>
-      } noPad>
-        {runs.length === 0 ? (
-          <p className="text-sm text-slate-600 text-center py-8">No runs recorded yet</p>
-        ) : (
-          <div className="px-5 py-1 max-h-72 overflow-y-auto">
-            {runs.slice(0, 25).map((r) => (
-              <RunRow key={r.id} run={r} />
-            ))}
           </div>
-        )}
-      </Panel>
+
+          <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-8">
+            <div className="space-y-1">
+              <div className="flex items-center">
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Session Burn</span>
+                <InfoTooltip text={COST_INFO.session} />
+              </div>
+              <p className="text-2xl font-mono font-black text-white tracking-tighter italic">
+                <Odometer value={stats.totalCost} prefix="$" decimals={4} />
+              </p>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center">
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Monthly Quota</span>
+                <InfoTooltip text={COST_INFO.quota} />
+              </div>
+              <p className="text-2xl font-mono font-black text-cyan-400 tracking-tighter italic">
+                <Odometer value={state?.monthly_cost_usd || 0} prefix="$" decimals={2} />
+              </p>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center">
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Efficiency</span>
+                <InfoTooltip text={COST_INFO.efficiency} />
+              </div>
+              <p className="text-2xl font-mono font-black text-emerald-400 tracking-tighter italic">{stats.successRate}%</p>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center">
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Throughput</span>
+                <InfoTooltip text={COST_INFO.tokens} />
+              </div>
+              <p className="text-2xl font-mono font-black text-violet-400 tracking-tighter italic">
+                {Math.round(stats.totalTokens / 1000)}<span className="text-sm ml-1 text-slate-600">K</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Model Allocation */}
+        <div className="lg:col-span-2 bg-[#070C1A] border border-white/5 rounded-3xl p-6 space-y-8 shadow-xl relative overflow-hidden group">
+          <div className="absolute inset-0 bg-scanline opacity-[0.01] pointer-events-none" />
+          <div className="flex items-center justify-between border-b border-white/5 pb-4">
+            <h3 className="text-[11px] font-black text-white uppercase tracking-[0.3em]">Model Efficiency Matrix</h3>
+            <span className="text-[9px] font-mono text-slate-600 uppercase">Avg Cost / Exec</span>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              {Object.entries(stats.costByModel).sort(([, a], [, b]) => b - a).map(([id, cost]) => (
+                <DiagnosticBar 
+                  key={id} label={id} value={cost} max={maxModelCost} 
+                  colorClass={id.includes('gpt') ? 'bg-[#00D4FF] text-[#00D4FF]' : 'bg-violet-500 text-violet-500'} 
+                />
+              ))}
+            </div>
+            <div className="flex flex-col justify-center gap-4 border-l border-white/5 pl-8">
+               {stats.modelMetrics.map(m => (
+                 <div key={m.id} className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-slate-500">{m.id.split('-').slice(0,2).join('-').toUpperCase()}</span>
+                    <span className="text-[11px] font-mono font-bold text-white">${m.avgCost.toFixed(5)} <span className="text-[9px] text-slate-700 ml-1">/run</span></span>
+                 </div>
+               ))}
+            </div>
+          </div>
+        </div>
+
+        {/* High-Burn Nodes */}
+        <div className="bg-[#070C1A] border border-white/5 rounded-3xl p-6 flex flex-col shadow-xl relative overflow-hidden">
+          <div className="absolute inset-0 bg-grid opacity-[0.02] pointer-events-none" />
+          <h3 className="text-[11px] font-black text-white uppercase tracking-[0.3em] border-b border-white/5 pb-4 text-center">Top Cost Center Nodes</h3>
+          <div className="flex-1 overflow-y-auto custom-scrollbar mt-4">
+            <div className="space-y-1">
+              {Object.entries(stats.costByAgent).sort(([, a], [, b]) => b - a).slice(0, 10).map(([id, cost]) => (
+                <div key={id} className="flex items-center justify-between p-3 rounded-xl hover:bg-white/[0.02] transition-colors border border-transparent hover:border-white/5 group">
+                  <div className="flex items-center gap-3">
+                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-500/40 group-hover:bg-cyan-400 transition-colors" />
+                    <span className="text-[11px] font-black text-slate-400 group-hover:text-white uppercase tracking-tight transition-colors">{id}</span>
+                  </div>
+                  <span className="text-[11px] font-mono font-bold text-white">${cost.toFixed(4)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Execution Ledger */}
+      <div className="bg-[#070C1A] border border-white/5 rounded-3xl overflow-hidden shadow-2xl">
+        <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-white/[0.01]">
+          <h3 className="text-[11px] font-black text-white uppercase tracking-[0.3em]">Resource Consumption Ledger</h3>
+          <div className="flex items-center gap-4">
+            <span className="text-[10px] font-mono text-slate-600 uppercase font-bold tracking-tighter italic">Live Audit Mode</span>
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_5px_#10b981]" />
+          </div>
+        </div>
+        <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-white/[0.02] border-b border-white/5 sticky top-0 z-10 backdrop-blur-md">
+                <th className="py-3 px-6 text-[9px] font-black text-slate-600 uppercase tracking-widest">Timestamp</th>
+                <th className="py-3 px-6 text-[9px] font-black text-slate-600 uppercase tracking-widest">Node Identity</th>
+                <th className="py-3 px-6 text-[9px] font-black text-slate-600 uppercase tracking-widest">Architecture</th>
+                <th className="py-3 px-6 text-[9px] font-black text-slate-600 uppercase tracking-widest">Outcome</th>
+                <th className="py-3 px-6 text-[9px] font-black text-slate-600 uppercase tracking-widest text-right">Burn Cost</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.02]">
+              {runs.map((r) => (
+                <tr key={r.id} className="group hover:bg-cyan-500/[0.03] transition-colors">
+                  <td className="py-3 px-6">
+                    <span className="text-[10px] font-mono text-slate-500 group-hover:text-slate-300 transition-colors">
+                      {format(new Date(r.created_at), 'dd MMM HH:mm:ss')}
+                    </span>
+                  </td>
+                  <td className="py-3 px-6 text-[11px] font-black text-slate-300 uppercase truncate max-w-[120px] group-hover:text-white">{r.agent_id}</td>
+                  <td className="py-3 px-6">
+                    <span className={clsx(
+                      "text-[9px] font-black px-1.5 py-0.5 rounded border uppercase",
+                      r.model_id.includes('gpt') ? 'text-[#00D4FF] border-[#00D4FF]/20 bg-[#00D4FF]/5' : 'text-violet-400 border-violet-400/20 bg-violet-400/5'
+                    )}>
+                      {r.model_id}
+                    </span>
+                  </td>
+                  <td className="py-3 px-6">
+                    <Badge variant={r.outcome === 'success' ? 'done' : r.outcome === 'partial' ? 'warning' : 'error'}>
+                      {r.outcome.toUpperCase()}
+                    </Badge>
+                  </td>
+                  <td className="py-3 px-6 text-right font-mono text-[11px] font-bold text-white group-hover:text-cyan-400 transition-colors">${r.cost_usd.toFixed(4)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
