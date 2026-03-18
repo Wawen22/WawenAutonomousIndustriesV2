@@ -28,8 +28,10 @@ import {
 } from './software_delivery_utils.js'
 import {
   executeRepoImplementation,
+  executeWorkspaceFileCreation,
   renderRepoExecutionMarkdown,
 } from './software_repo_runtime.js'
+import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import type { Task, TaskType } from '../types/index.js'
 
 interface DevGeneralOutput {
@@ -355,7 +357,9 @@ Constraints:
     let repoBlockingIssues: string[] = []
     let repoWarnings: string[] = []
     let repoCommandsExecuted = 0
+    let wsOutputDir: string | null = null
     let filename = ''
+
     if (workspaceAbsPath) {
       const deliverableDir = join(workspaceAbsPath, 'deliverables')
       await mkdir(deliverableDir, { recursive: true })
@@ -368,7 +372,8 @@ Constraints:
       )
     }
 
-    const repoExecution = await executeRepoImplementation({
+    // Try repo-based execution first
+    const repoExecution = repoLocalPath ? await executeRepoImplementation({
       agentId,
       task,
       taskType: taskTypeForAgent(agentId),
@@ -387,8 +392,47 @@ Constraints:
         technicalApproach ? `Architect technical approach: ${technicalApproach}` : '',
         implementationFocus ? `Implementation focus: ${implementationFocus}` : '',
       ].filter(Boolean),
-      ...(repoLocalPath ? { repoLocalPath } : {}),
-    })
+      repoLocalPath,
+    }) : null
+
+    // If no repo: write actual output files directly into the workspace output/ dir
+    if (!repoExecution && workspaceAbsPath) {
+      const wsContext = await loadAllWorkspaceContext(workspaceAbsPath).catch(() => '')
+      const wsResult = await executeWorkspaceFileCreation({
+        agentId,
+        task,
+        taskType: taskTypeForAgent(agentId),
+        workspaceAbsPath,
+        projectName,
+        clientName,
+        projectType,
+        taskDescription: task.description,
+        implementationTitle: implementation.title,
+        implementationSummary: implementation.summary,
+        implementationApproach: implementation.implementationApproach,
+        filesToCreate: implementation.filesToTouch,
+        architecturePlanContent,
+        additionalContext: [
+          solutionOverview ? `Solution overview: ${solutionOverview}` : '',
+          technicalApproach ? `Architect technical approach: ${technicalApproach}` : '',
+          implementationFocus ? `Implementation focus: ${implementationFocus}` : '',
+        ].filter(Boolean),
+        workspaceContext: wsContext,
+      })
+
+      wsOutputDir = wsResult.outputDir
+      repoTouchedFiles = wsResult.touchedFiles
+      repoBlockingIssues = wsResult.blockers
+      repoWarnings = wsResult.warnings
+      repoExecutionSummary = wsResult.summary
+
+      await appendProjectProgress(workspaceAbsPath, `${agentId} created workspace output files`, [
+        `Output dir: ${wsResult.outputDir}`,
+        `Files written: ${wsResult.touchedFiles.join(', ') || 'none'}`,
+        `Summary: ${wsResult.summary}`,
+        `Blocking issues: ${String(wsResult.blockers.length)}`,
+      ])
+    }
 
     if (workspaceAbsPath) {
       await appendProjectProgress(workspaceAbsPath, `${agentId} prepared implementation deliverable`, [
@@ -436,6 +480,7 @@ Constraints:
         implementation_title: implementation.title,
         artifact_path: artifactPath,
         execution_report_path: executionReportPath,
+        workspace_output_dir: wsOutputDir ?? undefined,
         files_to_touch_count: implementation.filesToTouch.length,
         repo_touched_files: repoTouchedFiles,
         repo_commands_executed: repoCommandsExecuted,
@@ -461,6 +506,11 @@ Constraints:
       `📝 ${implementation.summary}`,
       repoExecution
         ? `🛠️ Repo: ${repoTouchedFiles.length > 0 ? `${repoTouchedFiles.length} file(s) changed` : 'no file changes'}`
+        : wsOutputDir
+          ? `📁 Output: ${repoTouchedFiles.length > 0 ? `${repoTouchedFiles.length} file(s) written → \`${wsOutputDir}\`` : 'no files written'}`
+          : '',
+      repoBlockingIssues.length > 0
+        ? `⚠️ Blockers: ${repoBlockingIssues.join(', ')}`
         : '',
       startedDependentTasks.length > 0
         ? `⏭️ Unblocked: ${startedDependentTasks.map((item) => `${item.assignee} (${item.title})`).join(', ')}`
@@ -471,7 +521,7 @@ Constraints:
       repoExecution
         ? `🧪 Checks: ${String(repoCommandsExecuted)} command(s) executed${repoBlockingIssues.length > 0 ? `, ${repoBlockingIssues.length} blocker(s)` : ''}`
         : '',
-      artifactPath ? `\n💾 Saved: \`${artifactPath}\`` : '',
+      artifactPath ? `\n💾 Brief: \`${artifactPath}\`` : '',
       executionReportPath ? `💾 Repo report: \`${executionReportPath}\`` : '',
       qaActivated ? `\n🧪 QA gate activated` : '',
     ].filter((line) => line !== '').join('\n')

@@ -1037,6 +1037,206 @@ export function renderRepoExecutionMarkdown(options: {
   return lines.join('\n')
 }
 
+// ---------------------------------------------------------------------------
+// executeWorkspaceFileCreation
+// Used when no git repo is configured (e.g. static HTML/CSS projects).
+// The LLM generates actual file contents and we write them to
+// workspace/{client}/{project}/output/.
+// ---------------------------------------------------------------------------
+
+interface WorkspaceFileItem {
+  path: string
+  content: string
+}
+
+interface WorkspaceCreationPlan {
+  summary: string
+  warnings: string[]
+  blockers: string[]
+  files: WorkspaceFileItem[]
+}
+
+// Parse marker-based format — avoids JSON escaping issues with large file contents:
+//
+//   === SUMMARY ===
+//   <one-liner>
+//
+//   === FILE: index.html ===
+//   <full file content>
+//
+//   === FILE: style.css ===
+//   <full file content>
+//
+function parseWorkspaceCreationPlan(raw: string): WorkspaceCreationPlan {
+  const files: WorkspaceFileItem[] = []
+  let summary = ''
+  const warnings: string[] = []
+
+  // Extract summary
+  const summaryMatch = raw.match(/===\s*SUMMARY\s*===\s*\n([\s\S]*?)(?===\s*FILE:|$)/)
+  if (summaryMatch?.[1]) {
+    summary = summaryMatch[1].trim()
+  }
+
+  // Extract each FILE block
+  const filePattern = /===\s*FILE:\s*([^\s=]+)\s*===\s*\n([\s\S]*?)(?====\s*(?:FILE:|SUMMARY|WARNING)|$)/g
+  let match: RegExpExecArray | null
+  while ((match = filePattern.exec(raw)) !== null) {
+    const path = match[1]?.trim()
+    const content = match[2]?.trimEnd() ?? ''
+    if (path && content) {
+      files.push({ path, content })
+    }
+  }
+
+  // Extract optional warnings
+  const warningMatch = raw.match(/===\s*WARNING\s*===\s*\n([\s\S]*?)(?====|$)/)
+  if (warningMatch?.[1]) {
+    warnings.push(warningMatch[1].trim())
+  }
+
+  if (!summary && files.length === 0) {
+    warnings.push('Could not parse any files from LLM response')
+  }
+
+  return { summary: summary || 'Files generated', warnings, blockers: [], files }
+}
+
+export interface WorkspaceCreationResult {
+  outputDir: string
+  touchedFiles: string[]
+  summary: string
+  warnings: string[]
+  blockers: string[]
+}
+
+export async function executeWorkspaceFileCreation(options: {
+  agentId: string
+  task: Task
+  taskType: TaskType
+  workspaceAbsPath: string
+  projectName: string
+  clientName: string
+  projectType?: string
+  taskDescription: string
+  implementationTitle: string
+  implementationSummary: string
+  implementationApproach: string
+  filesToCreate: string[]
+  architecturePlanContent?: string
+  additionalContext?: string[]
+  workspaceContext?: string
+}): Promise<WorkspaceCreationResult> {
+  const {
+    agentId,
+    task,
+    taskType,
+    workspaceAbsPath,
+    projectName,
+    clientName,
+    projectType,
+    taskDescription,
+    implementationTitle,
+    implementationSummary,
+    implementationApproach,
+    filesToCreate,
+    architecturePlanContent,
+    additionalContext = [],
+    workspaceContext = '',
+  } = options
+
+  const outputDir = join(workspaceAbsPath, 'output')
+  await mkdir(outputDir, { recursive: true })
+
+  const systemPrompt = `You are ${agentId}, a software delivery agent inside WAI (Wawen Autonomous Industries).
+Your task: generate the COMPLETE, REAL file contents for the deliverable described below.
+You are writing ACTUAL files that will be saved to disk — not plans, not summaries.
+
+Output format — use EXACTLY this marker-based format (do NOT use JSON, do NOT use markdown code fences):
+
+=== SUMMARY ===
+<brief description of what was created>
+
+=== FILE: <filename> ===
+<full file content — raw, no escaping>
+
+=== FILE: <filename> ===
+<full file content — raw, no escaping>
+
+Rules:
+- Decide yourself which files to create and how many, based on the project type and architecture plan.
+- Write COMPLETE files. No placeholders, no "// TODO", no partial code.
+- Files will be saved as-is to disk and must work immediately when opened.
+- Use real content matching the client and project — no generic lorem ipsum unless no other info is available.
+- Do NOT wrap content in JSON. Do NOT use markdown code fences. Raw text only.`
+
+  const userMessage = [
+    `Client: ${clientName}`,
+    `Project: ${projectName}`,
+    projectType ? `Project type: ${projectType}` : '',
+    `Worker: ${agentId}`,
+    `Task title: ${task.title}`,
+    `Task description: ${taskDescription}`,
+    `Implementation title: ${implementationTitle}`,
+    `Implementation summary: ${implementationSummary}`,
+    `Implementation approach: ${implementationApproach}`,
+    filesToCreate.length > 0 ? `Files to create: ${filesToCreate.join(', ')}` : '',
+    architecturePlanContent ? `\nArchitecture Plan:\n${architecturePlanContent.slice(0, 8000)}` : '',
+    workspaceContext ? `\nWorkspace context (existing deliverables/brief):\n${workspaceContext.slice(0, 4000)}` : '',
+    additionalContext.length > 0 ? `\nAdditional context:\n${additionalContext.join('\n')}` : '',
+    `\nNow generate the complete file contents. Write real, working, production-quality code.`,
+  ].filter(Boolean).join('\n')
+
+  const result = await runAgent(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage },
+    ],
+    {
+      agentId,
+      taskId: task.id,
+      taskType,
+      requiresComplex: true,
+      tools: ['file_system'],
+      timeoutMs: 360_000, // 6 min — file generation produces large output
+    }
+  )
+
+  const plan = parseWorkspaceCreationPlan(result.content)
+
+  const touchedFiles: string[] = []
+  const blockers: string[] = [...plan.blockers]
+
+  const MAX_FILES = 12
+  for (const file of plan.files.slice(0, MAX_FILES)) {
+    const safePath = file.path.replace(/\.\./g, '').replace(/^\//, '')
+    if (!safePath) continue
+
+    const absPath = join(outputDir, safePath)
+    // Prevent path traversal
+    if (!absPath.startsWith(outputDir)) {
+      blockers.push(`Refused path that escapes output dir: ${file.path}`)
+      continue
+    }
+
+    try {
+      await mkdir(dirname(absPath), { recursive: true })
+      await writeFile(absPath, file.content, 'utf-8')
+      touchedFiles.push(safePath)
+    } catch (err) {
+      plan.warnings.push(`Failed to write ${safePath}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  return {
+    outputDir,
+    touchedFiles,
+    summary: plan.summary,
+    warnings: plan.warnings,
+    blockers,
+  }
+}
+
 export async function assessRepoForQa(options: {
   repoLocalPath?: string
   qaScope?: string[]

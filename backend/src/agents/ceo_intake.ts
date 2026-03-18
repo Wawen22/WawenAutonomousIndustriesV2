@@ -1,7 +1,8 @@
 // ============================================================
 // WAI – CEO Natural Language Intake Handler
-// Neb scrive testo libero su Telegram; il CEO capisce, verifica,
-// esegue in autonomia e risponde con un unico messaggio ricco.
+// Neb scrive testo libero su Telegram; il CEO capisce, pianifica
+// una sequenza di azioni, le esegue tutte in autonomia, e risponde
+// con un unico messaggio riassuntivo.
 // ============================================================
 
 import { writeFile } from 'fs/promises'
@@ -42,7 +43,6 @@ interface IntakeContext {
 }
 
 const CONTEXT_TTL_MS = 10 * 60 * 1000
-
 const _conversations = new Map<string, IntakeContext>()
 
 function getConversation(chatId: string): IntakeContext | null {
@@ -73,75 +73,74 @@ const PROJECT_TYPES: ProjectType[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// System prompt – injected with live client/project context
+// System prompt
 // ---------------------------------------------------------------------------
 
 function buildSystemPrompt(clientContext: string): string {
   return `You are the CEO of WAI (Wawen Autonomous Industries), a fully autonomous Zero Human Company.
-Neb (the founder) sends you free-text messages on Telegram instead of slash commands.
+Neb (the founder) sends you free-text messages on Telegram. Your job: understand the full intent and plan ALL the steps needed to complete it.
 
 ## YOUR PHILOSOPHY: MAXIMUM AUTONOMY
-- When intent is clear → EXECUTE immediately. Never ask "vuoi che proceda?" or "sei sicuro?".
-- Only ask ONE focused question when you genuinely CANNOT act without a specific missing piece of info.
-- Never ask for confirmation of obvious intent. Never ask non-essential details.
-- Use sensible defaults (e.g. project type = "other" if unclear, priority = 2).
+- Parse the ENTIRE request at once. Plan ALL steps in one shot.
+- Never ask "vuoi che proceda?" or "sei sicuro?". Never ask for confirmation.
+- Only ask ONE focused question if you genuinely cannot act without missing critical info.
+- Use sensible defaults: project_type = "website" for landing pages/sites, priority = 2, etc.
+- Slugs are generated as: lowercase, spaces/special chars → "-", trim dashes. Example: "CasaFacile" → "casafacile", "Wawen22" → "wawen22".
 - Be concise. Respond in the same language Neb uses (Italian or English).
 
-## ACTIONS YOU CAN EXECUTE
-- create_client      → needs: name (you auto-generate slug). Optional: email.
-- create_project     → needs: client_slug (existing), project_name, project_type.
-- write_brief        → needs: client_slug, project_slug, brief_text (extract from Neb's message).
-- create_task        → needs: title, description. Optional: client_slug, project_slug.
-- list_clients       → no params.
-- list_projects      → optional: client_slug.
-- status_report      → no params.
+## ACTIONS YOU CAN EXECUTE (in sequence)
+- create_client      → params: name, email? (auto-generates slug from name)
+- create_project     → params: client_slug, project_name, project_type, contract_value_usd?
+- write_brief        → params: client_slug, project_slug, brief_text
+- create_task        → params: title, description, client_slug?, project_slug?
+- list_clients       → no params
+- list_projects      → params: client_slug?
+- status_report      → no params
 
 Valid project types: ${PROJECT_TYPES.join(', ')}
 
-## EXISTING WAI STATE (use this to resolve references)
+## EXISTING WAI STATE
 ${clientContext}
 
-## DECISION RULES
-1. If client/project mentioned → check the existing state above first. Use exact existing slugs.
-2. If client mentioned but NOT in the list → ask: "Non trovo il cliente [X]. Esiste con un nome diverso o vuoi che lo crei?"
-3. If project mentioned but NOT in the list → list the client's projects and ask which one, or if to create a new one.
-4. "campagna marketing", "contenuto social", "piano marketing" → create_task scoped to project if given.
-5. "crea cliente X" or "aggiungi cliente X" → create_client immediately.
-6. "crea progetto X per Y" → create_project immediately if client Y exists.
-7. "status", "come va", "aggiornami" → status_report.
-8. "lista clienti" / "lista progetti" → list_clients or list_projects.
-9. If user confirms creation after a clarification ("sì, crealo" / "yes, create it") → create_client or create_project.
-10. For task creation: include project scope whenever a project is mentioned or clearly implied.
+## PLANNING RULES
+1. If Neb's message implies multiple steps (create client + project + task), include ALL steps in commands[].
+2. When you create a client, you know its slug (slugify the name). Use that slug in subsequent commands.
+3. When you create a project, you know its slug (slugify the project name). Use that slug in subsequent commands.
+4. If client/project already exists (check existing state above), skip the create step and use existing slugs.
+5. Only include write_brief if Neb explicitly provides project description/goal text.
+6. A task description should be detailed enough for the CEO routing agent to understand the deliverable.
+7. Only ask (action: "ask") when you genuinely cannot determine a required field from context.
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
-  "action": "ask" | "execute" | "reply" | "unclear",
-  "message": "<message to send Neb — for execute this is the post-execution summary>",
-  "command": {
-    "type": "<action name>",
-    "params": { <parameters> }
-  }
+  "action": "execute" | "ask" | "reply" | "unclear",
+  "message": "<shown to Neb — for execute: what you planned to do, shown BEFORE execution>",
+  "commands": [
+    { "type": "<action>", "params": { <parameters> } }
+  ]
 }
 
 Rules:
-- "command" is required when action is "execute" or "reply".
-- For "execute": "message" = brief what you just did (shown AFTER execution succeeds).
-- For "ask": no command. "message" = exactly ONE focused question.
-- For "reply": "message" = intro to the data. Command fetches the data.
-- For "unclear": no command. Politely ask to rephrase.`
+- "commands" array is required when action is "execute" or "reply". Can have 1 or more items.
+- Commands execute IN ORDER — use predicted slugs from earlier steps in later steps.
+- For "ask": no commands array. "message" = exactly ONE focused question.
+- For "unclear": no commands. Politely ask to rephrase.
+- For "reply" (list/status queries): single command in array.`
 }
 
 // ---------------------------------------------------------------------------
 // LLM response type and parser
 // ---------------------------------------------------------------------------
 
+interface CommandItem {
+  type: string
+  params: Record<string, unknown>
+}
+
 interface IntentResponse {
   action: 'ask' | 'execute' | 'reply' | 'unclear'
   message: string
-  command?: {
-    type: string
-    params: Record<string, unknown>
-  }
+  commands?: CommandItem[]
 }
 
 function parseIntentResponse(raw: string): IntentResponse | null {
@@ -163,7 +162,26 @@ function parseIntentResponse(raw: string): IntentResponse | null {
     return null
   }
 
-  return parsed as unknown as IntentResponse
+  // Parse commands array
+  const commands: CommandItem[] = []
+  if (Array.isArray(parsed['commands'])) {
+    for (const item of parsed['commands']) {
+      if (
+        typeof item === 'object' && item !== null &&
+        typeof (item as Record<string, unknown>)['type'] === 'string'
+      ) {
+        const cmd = item as Record<string, unknown>
+        commands.push({
+          type: cmd['type'] as string,
+          params: (typeof cmd['params'] === 'object' && cmd['params'] !== null
+            ? cmd['params']
+            : {}) as Record<string, unknown>,
+        })
+      }
+    }
+  }
+
+  return { action: action as IntentResponse['action'], message, commands }
 }
 
 // ---------------------------------------------------------------------------
@@ -180,41 +198,31 @@ function getString(params: Record<string, unknown>, key: string): string | undef
 }
 
 // ---------------------------------------------------------------------------
-// Execution result type
-// ---------------------------------------------------------------------------
-
-interface ExecResult {
-  result: string
-  clarificationNeeded?: string // set → execution skipped, ask this instead
-}
-
-// ---------------------------------------------------------------------------
-// Execute action
+// Execute a single action — returns a summary line or throws
 // ---------------------------------------------------------------------------
 
 async function executeAction(
-  command: { type: string; params: Record<string, unknown> },
+  command: CommandItem,
   notify: (msg: string) => Promise<void>
-): Promise<ExecResult> {
+): Promise<string> {
   const { type, params } = command
 
   switch (type) {
 
-    // ── list_clients ───────────────────────────────────────────────────────
+    // ── list_clients ─────────────────────────────────────────────────────
     case 'list_clients': {
       const clients = await getClients()
       if (clients.length === 0) {
-        return { result: 'Nessun cliente ancora. Scrivimi "crea cliente [nome]" per aggiungerne uno.' }
+        return 'Nessun cliente ancora. Scrivimi "crea cliente [nome]" per aggiungerne uno.'
       }
       const icon = (s: string) => s === 'active' ? '🟢' : s === 'completed' ? '✅' : s === 'archived' ? '⬜' : '🟡'
       const lines = clients.map((c) => `${icon(c.status)} *${c.name}* — \`${c.slug}\``)
-      return { result: `*Clienti WAI (${clients.length}):*\n\n${lines.join('\n')}` }
+      return `*Clienti WAI (${clients.length}):*\n\n${lines.join('\n')}`
     }
 
-    // ── list_projects ──────────────────────────────────────────────────────
+    // ── list_projects ─────────────────────────────────────────────────────
     case 'list_projects': {
       const clientSlug = getString(params, 'client_slug')
-
       let projects: Awaited<ReturnType<typeof getProjectsByClient>>
       if (clientSlug) {
         projects = await getProjectsByClient(clientSlug)
@@ -222,22 +230,18 @@ async function executeAction(
         const { getProjects } = await import('../services/supabase.js')
         projects = await getProjects()
       }
-
       if (projects.length === 0) {
-        const ctx = clientSlug ? ` per \`${clientSlug}\`` : ''
-        return { result: `Nessun progetto trovato${ctx}.` }
+        return `Nessun progetto trovato${clientSlug ? ` per \`${clientSlug}\`` : ''}.`
       }
-
       const icon = (s: string) =>
         s === 'active' ? '🟢' : s === 'delivered' ? '✅' : s === 'invoiced' ? '💰' :
         s === 'blocked' ? '⛔' : s === 'review' ? '🔍' : '🔵'
-
       const lines = projects.map((p) => `${icon(p.status)} *${p.name}* (\`${p.slug}\`) — ${p.type} — ${p.status}`)
       const title = clientSlug ? `Progetti di \`${clientSlug}\`` : 'Tutti i progetti WAI'
-      return { result: `*${title} (${projects.length}):*\n\n${lines.join('\n')}` }
+      return `*${title} (${projects.length}):*\n\n${lines.join('\n')}`
     }
 
-    // ── status_report ──────────────────────────────────────────────────────
+    // ── status_report ─────────────────────────────────────────────────────
     case 'status_report': {
       const [agents, state, inProgress, todo] = await Promise.all([
         getAgents(),
@@ -250,33 +254,28 @@ async function executeAction(
       const budget = state?.monthly_budget_usd ?? 500
       const pct = Math.round((cost / budget) * 100)
       const bar = '█'.repeat(Math.floor(pct / 10)) + '░'.repeat(10 - Math.floor(pct / 10))
-
-      return {
-        result: [
-          `*WAI — Status Report*`,
-          ``,
-          `🎯 Milestone: ${state?.current_milestone ?? 'none'}`,
-          `🤖 Agents online: ${onlineCount}/${agents.length}`,
-          `⚡ Tasks in progress: ${inProgress.length}`,
-          `📋 Tasks in coda: ${todo.length}`,
-          `💸 Budget mensile: [${bar}] ${pct}% ($${cost.toFixed(2)} / $${budget})`,
-        ].join('\n'),
-      }
+      return [
+        `*WAI — Status Report*`,
+        ``,
+        `🎯 Milestone: ${state?.current_milestone ?? 'none'}`,
+        `🤖 Agents online: ${onlineCount}/${agents.length}`,
+        `⚡ Tasks in progress: ${inProgress.length}`,
+        `📋 Tasks in coda: ${todo.length}`,
+        `💸 Budget mensile: [${bar}] ${pct}% ($${cost.toFixed(2)} / $${budget})`,
+      ].join('\n')
     }
 
-    // ── create_client ──────────────────────────────────────────────────────
+    // ── create_client ─────────────────────────────────────────────────────
     case 'create_client': {
       const name = getString(params, 'name')
-      if (!name) return { result: '', clarificationNeeded: '❓ Come si chiama il cliente che vuoi creare?' }
+      if (!name) throw new Error('Nome cliente mancante')
 
       const email = getString(params, 'email')
       const slug = slugify(name)
 
       const existing = await getClientBySlug(slug)
       if (existing) {
-        return {
-          result: `⚠️ Il cliente *${existing.name}* esiste già (slug: \`${slug}\`).\nPuoi usarlo direttamente.`,
-        }
+        return `⚠️ Cliente *${existing.name}* già esistente (\`${slug}\`) — uso quello esistente`
       }
 
       const client = await createClient({ name, slug, email })
@@ -286,37 +285,23 @@ async function executeAction(
         payload: { command: 'nl_create_client', client_id: client.id, slug, source: 'natural_language' },
       })
 
-      return {
-        result:
-          `✅ *Cliente creato!*\n\n` +
-          `Nome: *${client.name}*\n` +
-          `Slug: \`${slug}\`\n` +
-          `Workspace: \`${workspacePath}\`\n\n` +
-          `Prossimo step: dimmi quale progetto aprire per ${client.name}.`,
-      }
+      return `✅ Cliente *${client.name}* creato — slug: \`${slug}\` — workspace: \`${workspacePath}\``
     }
 
-    // ── create_project ─────────────────────────────────────────────────────
+    // ── create_project ────────────────────────────────────────────────────
     case 'create_project': {
       const clientSlug = getString(params, 'client_slug')
       const projectName = getString(params, 'project_name')
       const projectTypeRaw = getString(params, 'project_type')
+      const contractValue = typeof params['contract_value_usd'] === 'number'
+        ? params['contract_value_usd']
+        : undefined
 
-      if (!clientSlug) return { result: '', clarificationNeeded: '❓ Per quale cliente vuoi creare il progetto?' }
-      if (!projectName) return { result: '', clarificationNeeded: `❓ Come si chiama il progetto per \`${clientSlug}\`?` }
+      if (!clientSlug) throw new Error('client_slug mancante per create_project')
+      if (!projectName) throw new Error('project_name mancante per create_project')
 
       const client = await getClientBySlug(clientSlug)
-      if (!client) {
-        const all = await getClients()
-        const suggestions = all.map((c) => `\`${c.slug}\``).join(', ') || 'nessuno'
-        return {
-          result: '',
-          clarificationNeeded:
-            `❓ Non trovo il cliente \`${clientSlug}\`.\n` +
-            `Clienti presenti: ${suggestions}.\n` +
-            `Vuoi usarne uno esistente o creare \`${clientSlug}\`?`,
-        }
-      }
+      if (!client) throw new Error(`Cliente \`${clientSlug}\` non trovato`)
 
       const type: ProjectType = PROJECT_TYPES.includes(projectTypeRaw as ProjectType)
         ? (projectTypeRaw as ProjectType)
@@ -325,58 +310,46 @@ async function executeAction(
       const projectSlug = slugify(projectName)
       const relPath = getRelativeProjectPath(clientSlug, projectSlug)
 
+      // Check if already exists
+      const existing = await getProjectBySlug(client.id, projectSlug)
+      if (existing) {
+        return `⚠️ Progetto *${existing.name}* già esistente (\`${projectSlug}\`) — uso quello esistente`
+      }
+
       const project = await createProject({
         client_id: client.id,
         name: projectName,
         slug: projectSlug,
         type,
         workspace_path: relPath,
+        ...(contractValue !== undefined ? { contract_value_usd: contractValue } : {}),
       })
 
-      const absPath = await createProjectWorkspace(clientSlug, projectSlug, projectName, type, client.name)
+      await createProjectWorkspace(clientSlug, projectSlug, projectName, type, client.name)
       await updateProjectWorkspacePath(project.id, relPath)
 
       await recordEvent('founder_command', {
         payload: { command: 'nl_create_project', project_id: project.id, client_slug: clientSlug, source: 'natural_language' },
       })
 
-      return {
-        result:
-          `✅ *Progetto creato!*\n\n` +
-          `Progetto: *${project.name}*\n` +
-          `Cliente: ${client.name}\n` +
-          `Tipo: ${type}\n` +
-          `Workspace: \`${absPath}\`\n\n` +
-          `Prossimo step: dimmi il brief del progetto e lo scrivo io, oppure usa:\n` +
-          `\`/brief ${clientSlug}/${projectSlug} <descrizione>\`\n` +
-          `\`/task ${clientSlug}/${projectSlug} <cosa fare>\``,
-      }
+      return `✅ Progetto *${project.name}* creato — tipo: ${type}${contractValue !== undefined ? ` — budget: $${contractValue}` : ''} — workspace pronto`
     }
 
-    // ── write_brief ────────────────────────────────────────────────────────
+    // ── write_brief ───────────────────────────────────────────────────────
     case 'write_brief': {
       const clientSlug = getString(params, 'client_slug')
       const projectSlug = getString(params, 'project_slug')
       const briefText = getString(params, 'brief_text')
 
-      if (!clientSlug) return { result: '', clarificationNeeded: '❓ Per quale cliente vuoi scrivere il brief?' }
-      if (!projectSlug) return { result: '', clarificationNeeded: `❓ Per quale progetto di \`${clientSlug}\`?` }
-      if (!briefText) return { result: '', clarificationNeeded: '❓ Cosa vuoi scrivere nel brief? Descrivimi il progetto.' }
+      if (!clientSlug) throw new Error('client_slug mancante per write_brief')
+      if (!projectSlug) throw new Error('project_slug mancante per write_brief')
+      if (!briefText) throw new Error('brief_text mancante per write_brief')
 
       const client = await getClientBySlug(clientSlug)
-      if (!client) {
-        return { result: '', clarificationNeeded: `❓ Non trovo il cliente \`${clientSlug}\`.` }
-      }
+      if (!client) throw new Error(`Cliente \`${clientSlug}\` non trovato`)
 
       const project = await getProjectBySlug(client.id, projectSlug)
-      if (!project) {
-        const projects = await getProjectsByClient(clientSlug)
-        const slugs = projects.map((p) => `\`${p.slug}\``).join(', ') || 'nessuno'
-        return {
-          result: '',
-          clarificationNeeded: `❓ Non trovo il progetto \`${projectSlug}\` per ${client.name}.\nProgetti esistenti: ${slugs}.`,
-        }
-      }
+      if (!project) throw new Error(`Progetto \`${projectSlug}\` non trovato per ${client.name}`)
 
       const workspacePath = getProjectWorkspacePath(clientSlug, projectSlug)
       const briefPath = join(workspacePath, 'brief.md')
@@ -388,65 +361,33 @@ async function executeAction(
         payload: { command: 'nl_write_brief', project_id: project.id, source: 'natural_language' },
       })
 
-      return {
-        result:
-          `✅ *Brief aggiornato!*\n\n` +
-          `Progetto: *${project.name}*\n` +
-          `Cliente: ${client.name}\n` +
-          `Path: \`${briefPath}\`\n\n` +
-          `Ora puoi lanciare il task:\n` +
-          `\`/task ${clientSlug}/${projectSlug} <cosa fare>\`\n` +
-          `Oppure scrivimi tu cosa deve fare il team e lo lancio io.`,
-      }
+      return `✅ Brief scritto per *${project.name}*`
     }
 
-    // ── create_task ────────────────────────────────────────────────────────
+    // ── create_task ───────────────────────────────────────────────────────
     case 'create_task': {
       const title = getString(params, 'title')
       const description = getString(params, 'description') ?? title ?? ''
       const clientSlug = getString(params, 'client_slug')
       const projectSlug = getString(params, 'project_slug')
 
-      if (!title) return { result: '', clarificationNeeded: '❓ Cosa vuoi che faccia il team? Descrivimi il task.' }
+      if (!title) throw new Error('title mancante per create_task')
 
       let projectId: string | undefined
       let taskMetadata: Record<string, unknown> = {}
       let scopeLabel = ''
       let clientObj: Client | null = null
 
-      // Validate client/project if provided
       if (clientSlug) {
         clientObj = await getClientBySlug(clientSlug)
-
-        if (!clientObj) {
-          const all = await getClients()
-          const suggestions = all.map((c) => `\`${c.slug}\``).join(', ') || 'nessuno'
-          return {
-            result: '',
-            clarificationNeeded:
-              `❓ Non trovo il cliente \`${clientSlug}\` in WAI.\n` +
-              `Clienti presenti: ${suggestions}.\n` +
-              `Vuoi usarne uno esistente o creare \`${clientSlug}\`?`,
-          }
-        }
+        if (!clientObj) throw new Error(`Cliente \`${clientSlug}\` non trovato`)
 
         if (projectSlug) {
           const project = await getProjectBySlug(clientObj.id, projectSlug)
-
-          if (!project) {
-            const projects = await getProjectsByClient(clientSlug)
-            const slugs = projects.map((p) => `\`${p.slug}\``).join(', ') || 'nessuno'
-            return {
-              result: '',
-              clarificationNeeded:
-                `❓ Non trovo il progetto \`${projectSlug}\` per *${clientObj.name}*.\n` +
-                `Progetti esistenti: ${slugs}.\n` +
-                `Vuoi usarne uno esistente o creare \`${projectSlug}\`?`,
-            }
-          }
+          if (!project) throw new Error(`Progetto \`${projectSlug}\` non trovato per ${clientObj.name}`)
 
           projectId = project.id
-          scopeLabel = `\nScope: *${clientObj.name}* / *${project.name}*`
+          scopeLabel = ` | *${clientObj.name}* / *${project.name}*`
           taskMetadata = {
             project_id: project.id,
             project_name: project.name,
@@ -461,8 +402,7 @@ async function executeAction(
             ...(project.repo_provider ? { repo_provider: project.repo_provider } : {}),
           }
         } else {
-          // Client known, no project — use client context only
-          scopeLabel = `\nScope: *${clientObj.name}*`
+          scopeLabel = ` | *${clientObj.name}*`
           taskMetadata = {
             client_name: clientObj.name,
             client_slug: clientSlug,
@@ -470,23 +410,17 @@ async function executeAction(
         }
       }
 
-      // Enrich description with workspace context (brief + existing deliverables)
-      // so the CEO agent can see what already exists and route correctly
+      // Enrich description with workspace context
       let enrichedDescription = description
-      if (projectId && taskMetadata['workspace_path']) {
+      if (projectId && clientSlug && projectSlug) {
         try {
-          const { getProjectWorkspacePath: getWsPath } = await import('../services/workspace.js')
-          const clientSlugForWs = getString(params, 'client_slug')
-          const projectSlugForWs = getString(params, 'project_slug')
-          if (clientSlugForWs && projectSlugForWs) {
-            const wsAbsPath = getWsPath(clientSlugForWs, projectSlugForWs)
-            const ctx = await loadAllWorkspaceContext(wsAbsPath)
-            if (ctx) {
-              enrichedDescription = `${description}\n\n[WORKSPACE CONTEXT — existing deliverables and brief]\n${ctx}`
-            }
+          const wsAbsPath = getProjectWorkspacePath(clientSlug, projectSlug)
+          const ctx = await loadAllWorkspaceContext(wsAbsPath)
+          if (ctx) {
+            enrichedDescription = `${description}\n\n[WORKSPACE CONTEXT — existing deliverables and brief]\n${ctx}`
           }
         } catch {
-          // best-effort — never block task creation
+          // best-effort
         }
       }
 
@@ -505,22 +439,16 @@ async function executeAction(
         payload: { command: 'nl_create_task', task_id: task.id, source: 'natural_language' },
       })
 
-      // Fire CEO agent async
+      // Fire CEO agent async (fire-and-forget)
       void runCeoAgent(task, notify).catch((err: unknown) => {
         log.error({ err, taskId: task.id }, 'CEO Intake: runCeoAgent failed')
       })
 
-      return {
-        result:
-          `🚀 *Task lanciato!*${scopeLabel}\n\n` +
-          `ID: \`${task.id}\`\n` +
-          `Titolo: ${title}\n\n` +
-          `Il CEO sta analizzando e delegando alla catena giusta. Ti avviso appena pronto.`,
-      }
+      return `🚀 Task \`${task.id.slice(0, 8)}\` lanciato${scopeLabel}: *${title}* — il CEO sta delegando alla catena`
     }
 
     default:
-      return { result: `⚠️ Azione non riconosciuta: ${type}` }
+      return `⚠️ Azione non riconosciuta: ${type}`
   }
 }
 
@@ -563,14 +491,10 @@ export async function runCeoNaturalLanguageHandler(
 ): Promise<void> {
   log.info({ chatId, text: text.substring(0, 120) }, 'CEO Intake: free-text received')
 
-  // Load client/project context for LLM
   const clientContext = await buildClientContext()
 
-  // Get or create conversation context
   const existing = getConversation(chatId)
   const messages: IntakeContext['messages'] = existing?.messages ?? []
-
-  // Add the new user message
   messages.push({ role: 'user', content: text })
 
   // Call LLM
@@ -587,7 +511,7 @@ export async function runCeoNaturalLanguageHandler(
       requiresComplex: true,
     })
 
-    log.debug({ raw: result.content.substring(0, 400) }, 'CEO Intake: LLM raw response')
+    log.debug({ raw: result.content.substring(0, 500) }, 'CEO Intake: LLM raw response')
     intent = parseIntentResponse(result.content)
   } catch (err) {
     log.error({ err }, 'CEO Intake: LLM call failed')
@@ -603,58 +527,54 @@ export async function runCeoNaturalLanguageHandler(
     return
   }
 
-  // Handle each action type
   switch (intent.action) {
 
     case 'ask': {
-      // LLM needs clarification — save context and ask
       messages.push({ role: 'assistant', content: intent.message })
       saveConversation(chatId, { messages, lastMessageAt: Date.now() })
       await reply(intent.message)
       break
     }
 
-    case 'execute': {
-      if (!intent.command) {
+    case 'execute':
+    case 'reply': {
+      const commands = intent.commands ?? []
+
+      if (commands.length === 0) {
         // Shouldn't happen, but graceful fallback
         await reply(intent.message)
         clearConversation(chatId)
         break
       }
 
-      // Execute — validation happens inside executeAction
-      const execResult: ExecResult = await executeAction(intent.command, notify).catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err)
-        log.error({ err, command: intent!.command?.type }, 'CEO Intake: action execution error')
-        return { result: `❌ Errore durante l'esecuzione: ${msg}` } satisfies ExecResult
-      })
+      // Execute all commands in sequence, collect summaries
+      const summaries: string[] = []
+      let failed = false
 
-      if (execResult.clarificationNeeded) {
-        // Validation failed → ask for clarification, keep conversation alive
-        messages.push({ role: 'assistant', content: execResult.clarificationNeeded })
-        saveConversation(chatId, { messages, lastMessageAt: Date.now() })
-        await reply(execResult.clarificationNeeded)
-      } else {
-        // Success → single rich post-execution message
-        messages.push({ role: 'assistant', content: execResult.result })
-        clearConversation(chatId) // done — fresh slate next time
-        await reply(execResult.result)
-      }
-      break
-    }
-
-    case 'reply': {
-      // Data query (list_*, status_report)
-      if (intent.command) {
-        const execResult = await executeAction(intent.command, notify).catch((err: unknown) => {
+      for (const command of commands) {
+        try {
+          const summary = await executeAction(command, notify)
+          summaries.push(summary)
+        } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
-          return { result: `❌ Errore: ${msg}` }
-        })
-        await reply(execResult.result || intent.message)
-      } else {
-        await reply(intent.message)
+          log.error({ err, command: command.type }, 'CEO Intake: action execution error')
+          summaries.push(`❌ Errore in \`${command.type}\`: ${msg}`)
+          failed = true
+          break // stop sequence on error
+        }
       }
+
+      // Single reply with all results
+      const body = summaries.join('\n')
+      const finalMessage = failed
+        ? `⚠️ *Piano parzialmente eseguito:*\n\n${body}`
+        : summaries.length === 1
+          ? body
+          : `*Piano eseguito — ${summaries.length} step:*\n\n${body}`
+
+      messages.push({ role: 'assistant', content: finalMessage })
       clearConversation(chatId)
+      await reply(finalMessage)
       break
     }
 

@@ -9,7 +9,7 @@ import { getModelForAgent, getModelById, estimateCost } from '../config/models.j
 import { log, recordRun } from './logger.js'
 import type { ModelRoutingContext, RunOutcome, TaskType } from '../types/index.js'
 
-const DEFAULT_RUN_TIMEOUT_MS = 180_000
+const DEFAULT_RUN_TIMEOUT_MS = 300_000 // 5 min default; file generation uses 6 min override
 
 function getRunTimeoutMs(): number {
   const raw = process.env['LLM_RUN_TIMEOUT_MS']
@@ -56,6 +56,7 @@ export interface RunOptions {
   tools?: string[]
   requiresComplex?: boolean
   modelOverride?: string
+  timeoutMs?: number
 }
 
 export interface RunResult {
@@ -73,23 +74,42 @@ export interface RunResult {
 
 const FALLBACK_MODEL_ID = 'gpt-5.4'
 
+// ---------------------------------------------------------------------------
+// callLLM — uses streaming so the connection stays alive during long responses.
+// Without streaming, a silent 4-5 min generation causes proxy/network timeouts
+// even before our AbortController fires.
+// ---------------------------------------------------------------------------
+
 async function callLLM(
   client: OpenAI,
   modelId: string,
   messages: ChatMessage[],
   signal: AbortSignal
 ): Promise<{ content: string; tokensInput: number; tokensOutput: number }> {
-  const completion = await client.chat.completions.create({
+  const stream = await client.chat.completions.create({
     model: modelId,
     messages,
     store: false,
+    stream: true,
+    stream_options: { include_usage: true },
   }, { signal })
 
-  return {
-    content: completion.choices[0]?.message?.content ?? '',
-    tokensInput: completion.usage?.prompt_tokens ?? 0,
-    tokensOutput: completion.usage?.completion_tokens ?? 0,
+  let content = ''
+  let tokensInput = 0
+  let tokensOutput = 0
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content
+    if (delta) content += delta
+
+    // Usage is included in the final chunk when stream_options.include_usage = true
+    if (chunk.usage) {
+      tokensInput = chunk.usage.prompt_tokens ?? 0
+      tokensOutput = chunk.usage.completion_tokens ?? 0
+    }
   }
+
+  return { content, tokensInput, tokensOutput }
 }
 
 export async function runAgent(
@@ -106,7 +126,7 @@ export async function runAgent(
   const model = getModelForAgent(routingCtx)
   const client = getClient()
   const startMs = Date.now()
-  const timeoutMs = getRunTimeoutMs()
+  const timeoutMs = opts.timeoutMs ?? getRunTimeoutMs()
 
   let outcome: RunOutcome = 'success'
   let errorMessage: string | undefined
