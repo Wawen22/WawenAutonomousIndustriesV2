@@ -317,6 +317,23 @@ export function useAgentStats() {
   return { runCounts, lastRuns, loading }
 }
 
+/** Tasks with requires_human_review = true that are not yet done or cancelled. */
+export function useReviewRequestedTasks() {
+  const fetchTasks = useCallback(async (): Promise<Task[]> => {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('requires_human_review', true)
+      .not('status', 'in', '("done","cancelled")')
+      .order('priority')
+      .order('created_at', { ascending: false })
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Task[]
+  }, [])
+
+  return useRealtimeTable<Task>('tasks', fetchTasks)
+}
+
 export function useProjectState() {
   const [state, setState] = useState<ProjectState | null>(null)
   const [loading, setLoading] = useState(true)

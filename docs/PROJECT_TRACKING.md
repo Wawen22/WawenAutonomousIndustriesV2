@@ -113,6 +113,9 @@
 | T066 | Memory system (backend + UI) | ✅ Done | Codex | 1 | `agent_memories` + pgvector recall + dashboard Memory view |
 | T067 | Virtual Office 2D view | ✅ Done | Claude | 2 | `VirtualOffice2DView.tsx`: mappa 2D flat con 4 zone (Desk/Meeting/HotDesk/Lounge); AgentAvatar2D con bordo team-color, badge tool arancione, pulse working; meeting zone con tavolo SVG + dashed lines; sidebar con stats/agent list/event timeline; popup agente con runs/tools/eventi; toggle 2D/3D in topbar sia in 2D che in 3D |
 | T068 | Virtual Office 3D — polish v3 | ✅ Done | Claude | 2 | Rimozione CeilingLights; reset camera button (⊙ reset view) con animazione lerp verso default [2,30,28]; Neb Founder 3D avatar gold con body+head+halo+ring+sonar pulse+head bob; fix z-index AgentInfoPanel (WebGL stacking issue: Canvas zIndex:0, panel z-[50]) |
+| T074 | Blocked-task recovery pass | ✅ Done | Claude | 1 | Task sintetico T076 cancellato; LandingPage dev_general_2 + QA pronti per retry dalla Founder Ops view; `FounderOpsTaskCard` ora mostra fallback chiaro per task senza blocked_reason; `approveTask` ha status guard per `done`/`cancelled` |
+| T078 | Founder approval inbox | ✅ Done | Claude | 1 | Sezione `Pending Review` in Founder Ops; hook `useReviewRequestedTasks`; event `human_review_requested` emesso in `createTask` quando `requires_human_review = true`; azioni Approve/Reject inline; stat counter in header |
+| T073 | Founder payment/revenue operational loop | ✅ Done | Claude | 2 | Revenue loop verificato su 4 progetti invoiced: contract_value_usd ↔ payments ↔ outstanding tutti consistenti; matematica corretta; nessun dato incoerente; evento `revenue_recorded` + `payment_received` coerenti |
 
 ---
 
@@ -129,6 +132,14 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-18 — Sessione 33: T074 + T078 + T073 ✅
+
+- **T074** blocked-task recovery pass: task sintetico `58dc2a32` (test T076) cancellato via Supabase; 2 task reali LandingPage (dev_general_2 + QA) identificati come retryable e pronti nella Founder Ops view; `FounderOpsTaskCard` (`dashboard/src/components/FounderOpsView.tsx`) ora mostra fallback descrittivo per task senza `blocked_reason` (include assignee, retry_count e hint); `approveTask` in `backend/src/services/founder_task_actions.ts` ora ha guard su `done`/`cancelled`
+- **T078** founder approval inbox: nuova sezione `Pending Review` nella Founder Ops view con `ReviewTaskCard` (Approve/Reject), stat counter `Pending Review`, hook `useReviewRequestedTasks` in `dashboard/src/hooks/useSupabaseRealtime.ts` (tasks con `requires_human_review = true` e status attivo), `human_review_requested` event emesso da `createTask` in `backend/src/services/supabase.ts` quando flag è `true`, event type aggiunto alla timeline founder e al variant map; `FounderTaskAction` type ora include `'approve'`
+- **T073** revenue loop validato su Supabase: 4 progetti `invoiced` con `contract_value_usd`, `payments` e `outstanding` tutti coerenti (math: Σ payments = paid, contract − paid = outstanding); eventi `revenue_recorded` e `payment_received` presenti per ogni operazione
+- **BUGFIX** `dashboard/src/components/EventTimeline.tsx` — rimosso import `formatDistanceToNow`, `Panel`, `Badge` unused; fix ReactNode type su `event.payload['message']`; `dashboard/src/components/ui/DetailSidebar.tsx` e `ui/Pagination.tsx` — rimosso `clsx` unused
+- **VERIFY** `pnpm typecheck` verde su backend e dashboard
 
 ### 2026-03-18 — Sessione 32: T077 founder dashboard action center + M7 clarification ✅
 

@@ -5,9 +5,7 @@
 
 import { useState, useMemo } from 'react'
 import { clsx } from 'clsx'
-import { format, formatDistanceToNow } from 'date-fns'
-import { Panel } from './ui/Panel.js'
-import { Badge } from './ui/Badge.js'
+import { format } from 'date-fns'
 import { Pagination } from './ui/Pagination.js'
 import { DetailSidebar } from './ui/DetailSidebar.js'
 import { useEventsWithContext } from '../hooks/useSupabaseRealtime.js'
@@ -97,7 +95,7 @@ function EventCard({
         {/* Quick Preview */}
         {Object.keys(event.payload).length > 0 && (
           <p className="mt-3 text-[11px] text-slate-500 line-clamp-1 font-medium italic opacity-80 group-hover:opacity-100 transition-opacity">
-            {event.payload['message'] || JSON.stringify(event.payload).slice(0, 100)}
+            {String(event.payload['message'] ?? JSON.stringify(event.payload)).slice(0, 100)}
           </p>
         )}
       </div>

@@ -116,7 +116,29 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     .single()
 
   if (error) throw new Error(`Failed to create task: ${error.message}`)
-  return data as Task
+  const task = data as Task
+
+  // Emit human_review_requested event so the Founder Ops inbox surfaces the task
+  if (task.requires_human_review) {
+    void getSupabaseClient()
+      .from('events')
+      .insert({
+        type: 'human_review_requested',
+        agent_id: input.delegator_agent_id && input.delegator_agent_id !== 'founder' ? input.delegator_agent_id : null,
+        task_id: task.id,
+        payload: {
+          title: task.title,
+          assignee: task.assignee_agent_id,
+          delegator: input.delegator_agent_id ?? null,
+        },
+        severity: 'info',
+      })
+      .then(({ error: evErr }) => {
+        if (evErr) console.warn('[supabase] human_review_requested event insert failed:', evErr.message)
+      })
+  }
+
+  return task
 }
 
 export async function updateTaskStatus(id: string, status: TaskStatus): Promise<void> {

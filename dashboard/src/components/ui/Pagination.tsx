@@ -1,5 +1,3 @@
-import { clsx } from 'clsx'
-
 interface PaginationProps {
   currentPage: number
   totalItems: number

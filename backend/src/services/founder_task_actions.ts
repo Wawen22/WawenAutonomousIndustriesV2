@@ -225,6 +225,13 @@ async function approveTask(
   source: string,
   reason?: string
 ): Promise<FounderTaskActionResult> {
+  if (task.status === 'done') {
+    throw new Error('Task is already done — no approval needed')
+  }
+  if (task.status === 'cancelled') {
+    throw new Error('Task is cancelled — cannot approve a cancelled task')
+  }
+
   const actionReason = normalizeReason(reason)
   await updateTaskStatus(task.id, 'done')
   await updateTaskMetadata(task.id, buildActionMetadata(task, 'approve', source, actionReason))

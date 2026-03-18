@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-import { clsx } from 'clsx'
 import { createPortal } from 'react-dom'
 import { useTask } from '../../hooks/useSupabaseRealtime.js'
 import { Badge } from './Badge.js'

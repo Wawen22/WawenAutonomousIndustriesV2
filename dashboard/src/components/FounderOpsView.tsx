@@ -10,6 +10,7 @@ import {
   usePayments,
   useProjects,
   useProjectState,
+  useReviewRequestedTasks,
   useTasks,
 } from '../hooks/useSupabaseRealtime.js'
 import { getClientColor } from '../lib/clientColors.js'
@@ -17,7 +18,7 @@ import type { Payment, Project, ProjectStatus, SystemEventWithContext, Task } fr
 
 const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? 'http://localhost:3001'
 
-type FounderTaskAction = 'retry' | 'reject'
+type FounderTaskAction = 'retry' | 'approve' | 'reject'
 type FounderRevenueAction = 'invoice' | 'mark_paid'
 
 interface ActionState {
@@ -63,6 +64,8 @@ function projectStatusVariant(status: ProjectStatus): string {
 
 function founderEventVariant(type: string): string {
   switch (type) {
+    case 'human_review_requested':
+      return 'in_progress'
     case 'task_unblocked':
       return 'info'
     case 'human_approved':
@@ -153,7 +156,14 @@ function FounderOpsTaskCard({
   const projectName = getMeta(task, 'project_name')
   const projectType = getMeta(task, 'project_type')
   const clientColor = clientName ? getClientColor(clientName) : null
-  const blockedReason = getMeta(task, 'blocked_reason') || getMeta(task, 'error') || 'No blocked reason recorded'
+  const retryCount = typeof task.metadata['retry_count'] === 'number' ? task.metadata['retry_count'] : null
+  const rawError = getMeta(task, 'blocked_reason') || getMeta(task, 'error')
+  const blockedReason = rawError || [
+    'Agent runtime failed or timed out (no error detail captured).',
+    `Assignee: ${task.assignee_agent_id ?? 'none'}.`,
+    retryCount !== null ? `Retry count: ${retryCount}.` : '',
+    'Use Retry to re-dispatch, or Cancel to close.',
+  ].filter(Boolean).join(' ')
 
   return (
     <div className="rounded-xl border border-orange-500/20 bg-orange-950/10 p-3 space-y-2.5">
@@ -218,6 +228,93 @@ function FounderOpsTaskCard({
           className="px-2.5 py-1.5 rounded-md text-[11px] font-mono border border-rose-500/25 text-rose-300 hover:bg-rose-500/10 disabled:opacity-50 transition-colors"
         >
           {state?.pending ? 'Cancelling…' : 'Cancel'}
+        </button>
+      </div>
+
+      {state?.message && <p className="text-[11px] text-emerald-400 font-mono">{state.message}</p>}
+      {state?.error && <p className="text-[11px] text-rose-400 font-mono">{state.error}</p>}
+    </div>
+  )
+}
+
+function ReviewTaskCard({
+  task,
+  state,
+  onApprove,
+  onReject,
+}: {
+  task: Task
+  state: ActionState | undefined
+  onApprove: (task: Task) => Promise<void>
+  onReject: (task: Task) => Promise<void>
+}) {
+  const clientName = getMeta(task, 'client_name')
+  const projectName = getMeta(task, 'project_name')
+  const projectType = getMeta(task, 'project_type')
+  const clientColor = clientName ? getClientColor(clientName) : null
+
+  return (
+    <div className="rounded-xl border border-violet-500/20 bg-violet-950/10 p-3 space-y-2.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Badge variant="in_progress">review</Badge>
+            <Badge variant={`p${task.priority}`}>P{task.priority}</Badge>
+            <span className="text-[10px] font-mono text-slate-500">{task.id.slice(0, 8)}</span>
+          </div>
+
+          {(clientName || projectName) && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {clientName && clientColor && (
+                <span
+                  className={clsx(
+                    'text-[10px] font-mono px-1.5 py-0.5 rounded border',
+                    clientColor.bg,
+                    clientColor.border,
+                    clientColor.text
+                  )}
+                >
+                  {clientName}
+                </span>
+              )}
+              {projectName && (
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/40 text-cyan-300">
+                  {projectType ? `${projectName} · ${projectType}` : projectName}
+                </span>
+              )}
+            </div>
+          )}
+
+          <p className="text-sm font-medium text-white leading-snug">{task.title}</p>
+          {task.description && (
+            <p className="text-[11px] text-slate-400 font-mono line-clamp-2">{task.description}</p>
+          )}
+        </div>
+
+        <div className="text-right flex-shrink-0">
+          <div className="text-[10px] text-slate-500 font-mono">
+            {formatDistanceToNow(new Date(task.updated_at), { addSuffix: true })}
+          </div>
+          <div className="text-[11px] text-violet-300 font-mono mt-1">
+            {task.assignee_agent_id ?? 'unassigned'}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => void onApprove(task)}
+          disabled={state?.pending}
+          className="px-2.5 py-1.5 rounded-md text-[11px] font-mono border border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50 transition-colors"
+        >
+          {state?.pending ? 'Approving…' : 'Approve'}
+        </button>
+        <button
+          onClick={() => void onReject(task)}
+          disabled={state?.pending}
+          className="px-2.5 py-1.5 rounded-md text-[11px] font-mono border border-rose-500/25 text-rose-300 hover:bg-rose-500/10 disabled:opacity-50 transition-colors"
+        >
+          {state?.pending ? 'Rejecting…' : 'Reject'}
         </button>
       </div>
 
@@ -348,6 +445,7 @@ function FounderEventRow({ event }: { event: SystemEventWithContext }) {
 
 export function FounderOpsView() {
   const { data: blockedTasks, loading: tasksLoading, error: tasksError } = useTasks('blocked')
+  const { data: reviewTasks, loading: reviewLoading, error: reviewError } = useReviewRequestedTasks()
   const { data: projects, loading: projectsLoading, error: projectsError } = useProjects()
   const { data: clients } = useClients()
   const { data: payments, loading: paymentsLoading, error: paymentsError } = usePayments()
@@ -394,7 +492,7 @@ export function FounderOpsView() {
   }, [clientMap, paymentMap, projects])
 
   const founderEvents = useMemo(() => {
-    const allowed = new Set(['task_unblocked', 'human_approved', 'human_rejected', 'revenue_recorded', 'payment_received'])
+    const allowed = new Set(['human_review_requested', 'task_unblocked', 'human_approved', 'human_rejected', 'revenue_recorded', 'payment_received'])
     return events.filter((event) => allowed.has(event.type)).slice(0, 12)
   }, [events])
 
@@ -402,11 +500,12 @@ export function FounderOpsView() {
     const outstandingUsd = outstandingRows.reduce((sum, row) => sum + row.outstandingUsd, 0)
     return {
       blocked: blockedTasks.length,
+      pendingReview: reviewTasks.length,
       invoiceable: invoiceQueue.length,
       outstandingProjects: outstandingRows.length,
       outstandingUsd,
     }
-  }, [blockedTasks.length, invoiceQueue.length, outstandingRows])
+  }, [blockedTasks.length, reviewTasks.length, invoiceQueue.length, outstandingRows])
 
   function setPendingState(key: string) {
     setActionStates((current) => ({
@@ -427,6 +526,20 @@ export function FounderOpsView() {
       ...current,
       [key]: { pending: false, message: null, error },
     }))
+  }
+
+  async function handleApprove(task: Task) {
+    const key = `task:${task.id}`
+    const reason = window.prompt('Optional approval note?', '')
+    if (reason === null) return
+
+    try {
+      setPendingState(key)
+      const message = await runFounderTaskAction(task.id, 'approve', reason || undefined)
+      setSuccessState(key, message)
+    } catch (err) {
+      setErrorState(key, err instanceof Error ? err.message : 'Unknown error')
+    }
   }
 
   async function handleRetry(task: Task) {
@@ -501,8 +614,8 @@ export function FounderOpsView() {
     }
   }
 
-  const loading = tasksLoading || projectsLoading || paymentsLoading
-  const error = tasksError ?? projectsError ?? paymentsError
+  const loading = tasksLoading || reviewLoading || projectsLoading || paymentsLoading
+  const error = tasksError ?? reviewError ?? projectsError ?? paymentsError
 
   return (
     <div className="space-y-5">
@@ -525,8 +638,9 @@ export function FounderOpsView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat label="Blocked Tasks" value={String(totals.blocked)} color="amber" />
+        <Stat label="Pending Review" value={String(totals.pendingReview)} color="violet" />
         <Stat label="Ready To Invoice" value={String(totals.invoiceable)} color="cyan" />
         <Stat label="Outstanding Invoices" value={String(totals.outstandingProjects)} color="violet" />
         <Stat label="Outstanding USD" value={formatUsd(totals.outstandingUsd)} color="emerald" />
@@ -561,6 +675,26 @@ export function FounderOpsView() {
                     task={task}
                     state={actionStates[`task:${task.id}`]}
                     onRetry={handleRetry}
+                    onReject={handleReject}
+                  />
+                ))}
+              </div>
+            </Panel>
+
+            <Panel title={`Pending Review (${reviewTasks.length})`} accent="violet">
+              <div className="space-y-3">
+                {reviewTasks.length === 0 && (
+                  <p className="text-[11px] text-slate-600 font-mono py-4">
+                    Nessuna task in attesa di approvazione founder. Le task create con <span className="text-violet-400">requires_human_review = true</span> compariranno qui.
+                  </p>
+                )}
+
+                {reviewTasks.map((task) => (
+                  <ReviewTaskCard
+                    key={task.id}
+                    task={task}
+                    state={actionStates[`task:${task.id}`]}
+                    onApprove={handleApprove}
                     onReject={handleReject}
                   />
                 ))}

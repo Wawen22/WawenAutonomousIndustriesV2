@@ -28,6 +28,15 @@
     background-size: 28px 28px;
   }
   .font-tabular { font-variant-numeric: tabular-nums; }
+  .bg-scanline {
+    background: linear-gradient(
+      to bottom,
+      transparent 50%,
+      rgba(0, 0, 0, 0.5) 51%,
+      transparent 51%
+    );
+    background-size: 100% 4px;
+  }
 }
 
 /* Markdown viewer styles */
