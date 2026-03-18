@@ -192,8 +192,18 @@ async function getGitStatusShort(repoPath: string): Promise<string[]> {
 
 async function getTrackedFiles(repoPath: string): Promise<string[]> {
   try {
-    const { stdout } = await runGit(repoPath, ['ls-files'])
-    return stdout.split('\n').map((line) => line.trim()).filter(Boolean)
+    // Include both committed files AND untracked (but non-ignored) files.
+    // This ensures that files written by a previous dev_general run (but not yet
+    // committed) are visible to subsequent agents and don't trigger bootstrap mode.
+    const [{ stdout: committed }, { stdout: untracked }] = await Promise.all([
+      runGit(repoPath, ['ls-files']),
+      runGit(repoPath, ['ls-files', '--others', '--exclude-standard']),
+    ])
+    const all = new Set([
+      ...committed.split('\n').map((l) => l.trim()).filter(Boolean),
+      ...untracked.split('\n').map((l) => l.trim()).filter(Boolean),
+    ])
+    return Array.from(all).sort()
   } catch {
     return []
   }
@@ -802,7 +812,7 @@ function repoFilesSection(files: RepoFileSnapshot[]): string {
 
   return files
     .map(
-      (file) => `## ${file.resolvedPath}\n\`\`\`\n${file.content.slice(0, 12000)}\n\`\`\``
+      (file) => `## ${file.resolvedPath}\n\`\`\`\n${file.content}\n\`\`\``
     )
     .join('\n\n')
 }
@@ -938,6 +948,19 @@ Write COMPLETE, WORKING file contents. No placeholders. No "TODO" comments.
 
   const gitStatusBefore = inspection.gitStatusShort
   const applyResult = await applyRepoEdits(repoLocalPath, parsedPlan.edits)
+
+  // Auto-commit every successful write so subsequent agents see the files as tracked.
+  // Non-fatal: files are already on disk even if the commit fails.
+  if (applyResult.touchedFiles.length > 0) {
+    try {
+      await runGit(repoLocalPath, ['add', '-A'])
+      const commitMsg = `feat(wai-agent): ${parsedPlan.summary.slice(0, 72)}`
+      await runGit(repoLocalPath, ['commit', '-m', commitMsg])
+    } catch {
+      // silent — files on disk regardless of commit outcome
+    }
+  }
+
   const manifests = await discoverPackageManifests(repoLocalPath)
   const checkResult = await runRepoChecks(
     repoLocalPath,

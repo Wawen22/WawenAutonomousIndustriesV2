@@ -109,6 +109,16 @@
 
 ## CHANGELOG
 
+### 2026-03-18 — Sessione 24f: Fix pipeline modifica file esistenti (3 root cause) ✅
+
+- **ROOT CAUSE 1** `getTrackedFiles()` usava solo `git ls-files` (file committati); file scritti da dev_general ma mai committati risultavano "untracked" → `isBootstrapRepo = true` → LLM riceveva "usa `create_file`" → safeguard rifiutava perché il file esisteva su disco → deadlock
+  **FIX**: `getTrackedFiles()` ora esegue in parallelo `git ls-files` + `git ls-files --others --exclude-standard`; l'unione include tutti i file reali (tracciati + untracked non-ignored)
+- **ROOT CAUSE 2** Nessun `git commit` dopo il primo dev_general run; ogni run successivo vedeva lo stesso stato untracked
+  **FIX**: `executeRepoImplementation()` ora esegue `git add -A && git commit` automaticamente dopo ogni `applyRepoEdits` con almeno un file toccato; commit message: `feat(wai-agent): {summary}`; non-fatal se il commit fallisce
+- **ROOT CAUSE 3** `repoFilesSection()` aveva una slice a 12,000 chars per file: footer di HTML lungo veniva troncato → LLM non vedeva il testo "2024" → impossibile fare `replace_in_file` corretto
+  **FIX**: rimossa la slice `content.slice(0, 12000)`; il contenuto viene inviato completo (già cappato a 120KB da `MAX_REPO_FILE_BYTES` durante il caricamento)
+- **VERIFY** `pnpm tsc --noEmit` verde su backend
+
 ### 2026-03-18 — Sessione 24e: T057 — Dashboard UX per-client colors + context propagation ✅
 
 - **NEW** `dashboard/src/lib/clientColors.ts` — utility `getClientColor(clientName)`: palette di 8 colori (violet/sky/emerald/amber/rose/orange/pink/teal) con hash deterministico; stesso cliente → stesso colore sempre, cyan escluso (riservato ai chip progetto)
