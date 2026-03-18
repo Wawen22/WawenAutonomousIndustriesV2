@@ -849,6 +849,16 @@ export async function executeRepoImplementation(options: {
   const inspection = await inspectRepo(repoLocalPath)
   const filesBefore = await loadRepoFiles(repoLocalPath, inspection.trackedFiles, filesToTouch)
 
+  const isBootstrapRepo =
+    inspection.trackedFiles.length <= 3 &&
+    !inspection.trackedFiles.some((f) =>
+      f === 'package.json' ||
+      f === 'requirements.txt' ||
+      f === 'index.html' ||
+      f.startsWith('src/') ||
+      f.startsWith('app/')
+    )
+
   const editSystemPrompt = `You are ${agentId}, a software execution agent inside WAI (Wawen Autonomous Industries).
 You must output ONLY a JSON object with this schema:
 {
@@ -859,7 +869,7 @@ You must output ONLY a JSON object with this schema:
     {
       "type": "create_file",
       "path": "<repo-relative path>",
-      "content": "<full file contents>",
+      "content": "<full file contents — complete, no placeholders>",
       "reason": "<why it was created>"
     },
     {
@@ -872,11 +882,21 @@ You must output ONLY a JSON object with this schema:
   ]
 }
 
-Constraints:
+${isBootstrapRepo ? `## BOOTSTRAP MODE — CRITICAL INSTRUCTIONS
+The repo currently contains only scaffold files (README.md, .gitignore). This is a FRESH BOOTSTRAP task.
+You MUST create ALL the project files from scratch using "create_file" operations.
+Do NOT try to replace_in_file on README.md or .gitignore — use create_file for every new file.
+For a website project, create at minimum: index.html, style.css, and script.js (or equivalent).
+For a Next.js/React project, create: package.json, tsconfig.json, next.config.js, tailwind.config.ts, src/app/page.tsx, src/app/layout.tsx, src/app/globals.css, postcss.config.js.
+Write COMPLETE, WORKING file contents. No placeholders. No "TODO" comments.
+
+` : ''}Constraints:
 - Only use repo-relative paths.
 - Never delete files.
-- For existing files, only use replace_in_file and copy oldText exactly from the provided file content.
+- Use create_file for NEW files that do not exist yet in the repo.
+- Use replace_in_file ONLY for files shown in "Current repo files selected for editing" — copy oldText exactly.
 - Keep edits focused on the task.
+- Write complete, production-quality file contents — not stubs or placeholders.
 - If the repo context is insufficient, leave edits empty and explain blockers.`
 
   const editUserMessage = [
@@ -892,7 +912,7 @@ Constraints:
     testingNotes.length > 0 ? `Testing notes: ${testingNotes.join(' | ')}` : '',
     architecturePlanContent ? `\nArchitecture Plan:\n${architecturePlanContent.slice(0, 8000)}` : '',
     additionalContext.length > 0 ? `\nAdditional context:\n${additionalContext.join('\n')}` : '',
-    `\nRepo inspection:\n- Branch: ${inspection.branch ?? 'unknown'}\n- Git status: ${inspection.gitStatusShort.join(' | ') || 'clean'}\n- Package scripts:\n${formatPackageSummaries(inspection.packageSummaries)}\n- Tracked files sample:\n${inspection.trackedFilesSample.join('\n')}`,
+    `\nRepo inspection:\n- Branch: ${inspection.branch ?? 'unknown'}\n- Bootstrap mode: ${isBootstrapRepo ? 'YES — repo is empty/scaffold-only, create ALL project files from scratch' : 'NO — repo has real project files, modify existing'}\n- Git status: ${inspection.gitStatusShort.join(' | ') || 'clean'}\n- Package scripts:\n${formatPackageSummaries(inspection.packageSummaries)}\n- Tracked files (${inspection.trackedFiles.length} total):\n${inspection.trackedFilesSample.join('\n')}`,
     `\nCurrent repo files selected for editing:\n${repoFilesSection(filesBefore.files)}`,
     filesBefore.warnings.length > 0 ? `\nRepo file loading warnings:\n- ${filesBefore.warnings.join('\n- ')}` : '',
   ].filter(Boolean).join('\n')
@@ -1110,6 +1130,41 @@ export interface WorkspaceCreationResult {
   blockers: string[]
 }
 
+// Load files already written in output/ (to support follow-up "modify" tasks)
+async function loadExistingOutputFiles(
+  outputDir: string
+): Promise<{ name: string; content: string }[]> {
+  if (!existsSync(outputDir)) return []
+
+  const READABLE_EXTS = new Set(['.html', '.css', '.js', '.ts', '.py', '.json', '.yaml', '.yml', '.md', '.txt', '.sh'])
+  const MAX_OUTPUT_FILE_BYTES = 60_000
+  const MAX_TOTAL_OUTPUT_BYTES = 180_000
+
+  const entries = await readdir(outputDir, { withFileTypes: true })
+  const result: { name: string; content: string }[] = []
+  let totalBytes = 0
+
+  for (const entry of entries) {
+    if (!entry.isFile()) continue
+    const ext = entry.name.lastIndexOf('.') >= 0 ? entry.name.slice(entry.name.lastIndexOf('.')) : ''
+    if (!READABLE_EXTS.has(ext)) continue
+
+    const absPath = join(outputDir, entry.name)
+    try {
+      const raw = await readFile(absPath, 'utf-8')
+      const bytes = Buffer.byteLength(raw, 'utf-8')
+      if (bytes > MAX_OUTPUT_FILE_BYTES) continue
+      if (totalBytes + bytes > MAX_TOTAL_OUTPUT_BYTES) break
+      totalBytes += bytes
+      result.push({ name: entry.name, content: raw })
+    } catch {
+      // skip unreadable files
+    }
+  }
+
+  return result
+}
+
 export async function executeWorkspaceFileCreation(options: {
   agentId: string
   task: Task
@@ -1148,7 +1203,41 @@ export async function executeWorkspaceFileCreation(options: {
   const outputDir = join(workspaceAbsPath, 'output')
   await mkdir(outputDir, { recursive: true })
 
-  const systemPrompt = `You are ${agentId}, a software delivery agent inside WAI (Wawen Autonomous Industries).
+  // Check for existing output files — if found, switch to "modify/extend" mode
+  const existingOutputFiles = await loadExistingOutputFiles(outputDir)
+  const isModifyMode = existingOutputFiles.length > 0
+
+  const existingFilesSection = isModifyMode
+    ? existingOutputFiles
+        .map((f) => `=== EXISTING FILE: ${f.name} ===\n${f.content}`)
+        .join('\n\n')
+    : ''
+
+  const systemPrompt = isModifyMode
+    ? `You are ${agentId}, a software delivery agent inside WAI (Wawen Autonomous Industries).
+EXISTING FILES are already present in the project output directory (provided below).
+Your task: READ them carefully and MODIFY or EXTEND them to fulfil the new request.
+You must output ALL files — both the ones you changed AND the ones you kept unchanged.
+
+Output format — use EXACTLY this marker-based format (do NOT use JSON, do NOT use markdown code fences):
+
+=== SUMMARY ===
+<brief description of what was changed/added>
+
+=== FILE: <filename> ===
+<full file content — raw, no escaping>
+
+=== FILE: <filename> ===
+<full file content — raw, no escaping>
+
+Rules:
+- Output EVERY file that should exist after your changes (include unchanged files too).
+- Modify only what the task requires. Preserve unrelated content.
+- Write COMPLETE files. No placeholders, no "// TODO".
+- Files will overwrite the existing ones on disk — output the complete final content.
+- Use real content matching the client and project.
+- Do NOT wrap content in JSON. Do NOT use markdown code fences. Raw text only.`
+    : `You are ${agentId}, a software delivery agent inside WAI (Wawen Autonomous Industries).
 Your task: generate the COMPLETE, REAL file contents for the deliverable described below.
 You are writing ACTUAL files that will be saved to disk — not plans, not summaries.
 
@@ -1180,11 +1269,16 @@ Rules:
     `Implementation title: ${implementationTitle}`,
     `Implementation summary: ${implementationSummary}`,
     `Implementation approach: ${implementationApproach}`,
-    filesToCreate.length > 0 ? `Files to create: ${filesToCreate.join(', ')}` : '',
+    filesToCreate.length > 0 ? `Files to create/modify: ${filesToCreate.join(', ')}` : '',
     architecturePlanContent ? `\nArchitecture Plan:\n${architecturePlanContent.slice(0, 8000)}` : '',
     workspaceContext ? `\nWorkspace context (existing deliverables/brief):\n${workspaceContext.slice(0, 4000)}` : '',
     additionalContext.length > 0 ? `\nAdditional context:\n${additionalContext.join('\n')}` : '',
-    `\nNow generate the complete file contents. Write real, working, production-quality code.`,
+    isModifyMode
+      ? `\n\nEXISTING OUTPUT FILES (modify/extend these):\n${existingFilesSection.slice(0, 40000)}`
+      : '',
+    isModifyMode
+      ? `\nNow output the complete modified/extended file set. Keep unchanged files intact, modify what's needed for the task.`
+      : `\nNow generate the complete file contents. Write real, working, production-quality code.`,
   ].filter(Boolean).join('\n')
 
   const result = await runAgent(
@@ -1207,7 +1301,8 @@ Rules:
   const touchedFiles: string[] = []
   const blockers: string[] = [...plan.blockers]
 
-  const MAX_FILES = 12
+  // In modify mode allow more files (existing + new additions)
+  const MAX_FILES = isModifyMode ? 20 : 12
   for (const file of plan.files.slice(0, MAX_FILES)) {
     const safePath = file.path.replace(/\.\./g, '').replace(/^\//, '')
     if (!safePath) continue
@@ -1228,13 +1323,168 @@ Rules:
     }
   }
 
+  const modeSuffix = isModifyMode ? ` [modify mode — ${existingOutputFiles.length} existing file(s) updated]` : ''
+
   return {
     outputDir,
     touchedFiles,
-    summary: plan.summary,
+    summary: plan.summary + modeSuffix,
     warnings: plan.warnings,
     blockers,
   }
+}
+
+// ---------------------------------------------------------------------------
+// initWorkspaceRepo
+// Creates a fresh git repo inside workspace/{client}/{project}/repo/ when
+// a project has no repo_local_path yet.  Returns the absolute repo path.
+// ---------------------------------------------------------------------------
+
+const GITIGNORE_BY_TYPE: Record<string, string> = {
+  website: `# Website project
+node_modules/
+dist/
+.cache/
+.env
+.env.local
+*.log
+.DS_Store
+`,
+  app: `# App project
+node_modules/
+dist/
+build/
+.cache/
+.env
+.env.local
+*.log
+.DS_Store
+`,
+  saas: `# SaaS project
+node_modules/
+dist/
+build/
+.turbo/
+.cache/
+.env
+.env*.local
+*.log
+.DS_Store
+`,
+  automation: `# Automation / scripting project
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+`,
+  ai: `# AI project
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+.env
+.env.local
+models/
+*.model
+*.h5
+*.log
+.DS_Store
+`,
+}
+
+const DEFAULT_GITIGNORE = `# WAI project
+node_modules/
+dist/
+build/
+.cache/
+.env
+.env.local
+*.log
+.DS_Store
+`
+
+function gitignoreForType(projectType: string): string {
+  return GITIGNORE_BY_TYPE[projectType] ?? DEFAULT_GITIGNORE
+}
+
+export interface WorkspaceRepoInitResult {
+  repoPath: string
+  alreadyExisted: boolean
+  committed: boolean
+  warnings: string[]
+}
+
+export async function initWorkspaceRepo(options: {
+  workspaceAbsPath: string
+  projectName: string
+  projectType: string
+}): Promise<WorkspaceRepoInitResult> {
+  const { workspaceAbsPath, projectName, projectType } = options
+  const repoPath = join(workspaceAbsPath, 'repo')
+  const warnings: string[] = []
+
+  // If repo already exists, just return it
+  if (existsSync(join(repoPath, '.git'))) {
+    return { repoPath, alreadyExisted: true, committed: false, warnings }
+  }
+
+  await mkdir(repoPath, { recursive: true })
+
+  // git init -b main
+  try {
+    await runGit(repoPath, ['init', '-b', 'main'])
+  } catch {
+    // Older git versions don't support -b; fallback
+    await runGit(repoPath, ['init'])
+    try {
+      await runGit(repoPath, ['checkout', '-b', 'main'])
+    } catch {
+      warnings.push('Could not rename default branch to main — using git default')
+    }
+  }
+
+  // git config user (needed for commit)
+  try {
+    await runGit(repoPath, ['config', 'user.email', 'wai@wawen.io'])
+    await runGit(repoPath, ['config', 'user.name', 'WAI Agent'])
+  } catch {
+    warnings.push('Could not set git config user — using system default')
+  }
+
+  // Write .gitignore
+  const gitignorePath = join(repoPath, '.gitignore')
+  await writeFile(gitignorePath, gitignoreForType(projectType), 'utf-8')
+
+  // Write README.md
+  const readmePath = join(repoPath, 'README.md')
+  const today = new Date().toISOString().split('T')[0]!
+  await writeFile(
+    readmePath,
+    `# ${projectName}\n\n> WAI (Wawen Autonomous Industries) — automated project scaffold\n> Created: ${today}\n`,
+    'utf-8'
+  )
+
+  // Initial commit
+  let committed = false
+  try {
+    await runGit(repoPath, ['add', '-A'])
+    await runGit(repoPath, ['commit', '-m', 'chore: initial project scaffold'])
+    committed = true
+  } catch (err) {
+    warnings.push(
+      `Initial git commit failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+
+  return { repoPath, alreadyExisted: false, committed, warnings }
 }
 
 export async function assessRepoForQa(options: {

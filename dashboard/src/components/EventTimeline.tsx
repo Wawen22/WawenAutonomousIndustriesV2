@@ -2,8 +2,9 @@ import { clsx } from 'clsx'
 import { format, formatDistanceToNow } from 'date-fns'
 import { Panel } from './ui/Panel.js'
 import { Badge } from './ui/Badge.js'
-import { useEvents } from '../hooks/useSupabaseRealtime.js'
-import type { EventSeverity, SystemEvent } from '../types/index.js'
+import { useEventsWithContext } from '../hooks/useSupabaseRealtime.js'
+import { getClientColor } from '../lib/clientColors.js'
+import type { EventSeverity, SystemEventWithContext } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -43,9 +44,20 @@ const EVENT_LABELS: Record<string, string> = {
 // EventRow
 // ---------------------------------------------------------------------------
 
-function EventRow({ event, showDate }: { event: SystemEvent; showDate: boolean }) {
+function EventRow({ event, showDate }: { event: SystemEventWithContext; showDate: boolean }) {
   const sev = SEV_STYLES[event.severity] ?? SEV_STYLES.info
   const ts  = new Date(event.created_at)
+
+  // Client/project from joined task metadata
+  const clientName  = ((): string => {
+    const v = event.task?.metadata?.['client_name']
+    return typeof v === 'string' && v.trim() ? v.trim() : ''
+  })()
+  const projectName = ((): string => {
+    const v = event.task?.metadata?.['project_name']
+    return typeof v === 'string' && v.trim() ? v.trim() : ''
+  })()
+  const clientColor = clientName ? getClientColor(clientName) : null
 
   return (
     <div className="relative pl-6 pb-4 last:pb-0 group animate-slide-up">
@@ -72,7 +84,7 @@ function EventRow({ event, showDate }: { event: SystemEvent; showDate: boolean }
             )}
           </div>
 
-          {/* Agent + task */}
+          {/* Agent + task + client/project */}
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             {event.agent_id && (
               <span className="text-[11px] text-slate-500 font-mono">{event.agent_id}</span>
@@ -80,6 +92,16 @@ function EventRow({ event, showDate }: { event: SystemEvent; showDate: boolean }
             {event.task_id && (
               <span className="text-[11px] text-slate-600 font-mono truncate max-w-[140px]" title={event.task_id}>
                 #{event.task_id.slice(0, 8)}
+              </span>
+            )}
+            {clientName && clientColor && (
+              <span
+                className={clsx(
+                  'text-[9px] font-mono px-1.5 py-0.5 rounded border',
+                  clientColor.bg, clientColor.border, clientColor.text
+                )}
+              >
+                {projectName ? `${clientName} · ${projectName}` : clientName}
               </span>
             )}
           </div>
@@ -113,7 +135,7 @@ function EventRow({ event, showDate }: { event: SystemEvent; showDate: boolean }
 // ---------------------------------------------------------------------------
 
 export function EventTimeline() {
-  const { data: events, loading, error } = useEvents(50)
+  const { data: events, loading, error } = useEventsWithContext(50)
 
   if (loading) {
     return (

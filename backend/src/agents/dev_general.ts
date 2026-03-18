@@ -547,12 +547,19 @@ Constraints:
         blockedDependentTasks: [],
       }))
 
+    const clientSlug = (task.metadata['client_slug'] as string | undefined) ?? ''
+    const projectSlugErr = (task.metadata['project_slug'] as string | undefined) ?? ''
+    const retryHint = clientSlug && projectSlugErr
+      ? `Riprova: \`/task ${clientSlug}/${projectSlugErr} ${task.title}\``
+      : 'Riprova inviando il task al CEO.'
+
     await notify(
       [
         `❌ *${agentId} Error*`,
         ``,
-        `Task: ${task.title}`,
-        `Error: ${errorMessage}`,
+        `🆔 Task: \`${task.id.slice(0, 8)}\` — ${task.title}`,
+        `🤖 Agent: ${agentId} | 📦 Project: ${clientName} / ${projectName}`,
+        `💥 Error: ${errorMessage.slice(0, 400)}`,
         startedDependentTasks.length > 0
           ? `⏭️ Unblocked: ${startedDependentTasks.map((item) => `${item.assignee} (${item.title})`).join(', ')}`
           : '',
@@ -560,6 +567,8 @@ Constraints:
           ? `⛔ Blocked dependents: ${blockedDependentTasks.map((item) => `${item.assignee} (${item.title})`).join(', ')}`
           : '',
         qaActivated ? `🧪 QA gate activated` : '',
+        ``,
+        `💡 ${retryHint}`,
       ].filter((line) => line !== '').join('\n')
     )
 

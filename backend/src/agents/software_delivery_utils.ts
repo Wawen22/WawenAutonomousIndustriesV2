@@ -57,6 +57,35 @@ export async function loadRepoContext(repoLocalPath?: string): Promise<string> {
   return buildRepoContext(repoLocalPath)
 }
 
+// Files/dirs that indicate a real project is already bootstrapped.
+// README.md and .gitignore are created by initWorkspaceRepo and do NOT count.
+const BOOTSTRAP_INDICATOR_FILES = new Set([
+  'package.json',
+  'requirements.txt',
+  'pyproject.toml',
+  'setup.py',
+  'Gemfile',
+  'go.mod',
+  'Cargo.toml',
+  'pom.xml',
+  'build.gradle',
+  'CMakeLists.txt',
+  'index.html',
+  'index.htm',
+])
+
+const BOOTSTRAP_INDICATOR_DIRS = new Set([
+  'src',
+  'app',
+  'lib',
+  'public',
+  'pages',
+  'components',
+])
+
+// Scaffold-only files added by initWorkspaceRepo — not meaningful for bootstrap check
+const WAI_SCAFFOLD_FILES = new Set(['README.md', '.gitignore'])
+
 export async function repoNeedsBootstrap(repoLocalPath?: string): Promise<boolean> {
   if (!repoLocalPath || !existsSync(repoLocalPath)) {
     return false
@@ -64,8 +93,25 @@ export async function repoNeedsBootstrap(repoLocalPath?: string): Promise<boolea
 
   try {
     const entries = await readdir(repoLocalPath, { withFileTypes: true })
-    const meaningfulEntries = entries.filter((entry) => entry.name !== '.git')
-    return meaningfulEntries.length === 0
+
+    // If repo is completely empty (excluding .git), definitely needs bootstrap
+    const nonGitEntries = entries.filter((entry) => entry.name !== '.git')
+    if (nonGitEntries.length === 0) return true
+
+    // If repo has only WAI scaffold files (README.md, .gitignore), still needs bootstrap
+    const nonScaffoldEntries = nonGitEntries.filter(
+      (entry) => !WAI_SCAFFOLD_FILES.has(entry.name)
+    )
+    if (nonScaffoldEntries.length === 0) return true
+
+    // Check for real project indicator files or dirs
+    for (const entry of nonScaffoldEntries) {
+      if (entry.isFile() && BOOTSTRAP_INDICATOR_FILES.has(entry.name)) return false
+      if (entry.isDirectory() && BOOTSTRAP_INDICATOR_DIRS.has(entry.name)) return false
+    }
+
+    // Has some files but none are known project indicators — still bootstrap
+    return true
   } catch {
     return false
   }

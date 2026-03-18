@@ -15,6 +15,7 @@ import {
   useProjectState,
   useRecentRuns,
 } from '../hooks/useSupabaseRealtime.js'
+import { getClientColor } from '../lib/clientColors.js'
 import type { Agent, AgentStatus, Task, TaskStatus, SystemEvent } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -134,6 +135,16 @@ function MissionBanner({
 // ---------------------------------------------------------------------------
 
 function ActiveTaskCard({ task }: { task: Task }) {
+  const clientName  = ((): string => {
+    const v = task.metadata?.['client_name']
+    return typeof v === 'string' && v.trim() ? v.trim() : ''
+  })()
+  const projectName = ((): string => {
+    const v = task.metadata?.['project_name']
+    return typeof v === 'string' && v.trim() ? v.trim() : ''
+  })()
+  const clientColor = clientName ? getClientColor(clientName) : null
+
   return (
     <div className={clsx(
       'border-l-2 pl-3 py-2.5 pr-3 rounded-r-lg',
@@ -141,9 +152,30 @@ function ActiveTaskCard({ task }: { task: Task }) {
       TASK_STATUS_ACCENT[task.status]
     )}>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm text-slate-200 font-medium leading-snug line-clamp-2 flex-1">
-          {task.title}
-        </p>
+        <div className="flex-1 min-w-0">
+          {/* Client / project chips */}
+          {clientName && clientColor && (
+            <div className="flex items-center gap-1 mb-1 flex-wrap">
+              <span
+                className={clsx(
+                  'text-[9px] font-mono px-1.5 py-0.5 rounded border truncate max-w-[100px]',
+                  clientColor.bg, clientColor.border, clientColor.text
+                )}
+                title={clientName}
+              >
+                {clientName}
+              </span>
+              {projectName && (
+                <span className="text-[9px] font-mono text-slate-600 truncate max-w-[90px]" title={projectName}>
+                  {projectName}
+                </span>
+              )}
+            </div>
+          )}
+          <p className="text-sm text-slate-200 font-medium leading-snug line-clamp-2">
+            {task.title}
+          </p>
+        </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <Badge variant={`p${task.priority}`}>P{task.priority}</Badge>
           <Badge variant={task.type}>{task.type}</Badge>

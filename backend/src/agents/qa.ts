@@ -400,7 +400,23 @@ Constraints:
 
     await updateTaskStatus(task.id, 'blocked').catch(() => {})
 
-    await notify(`❌ *QA Error*\n\nTask: ${task.title}\nError: ${errorMessage}`)
+    const qaClientSlug = (task.metadata['client_slug'] as string | undefined) ?? ''
+    const qaProjectSlug = (task.metadata['project_slug'] as string | undefined) ?? ''
+    const retryHint = qaClientSlug && qaProjectSlug
+      ? `Riprova: \`/task ${qaClientSlug}/${qaProjectSlug} ${task.title}\``
+      : 'Riprova inviando il task al CEO.'
+
+    await notify(
+      [
+        `❌ *QA Error*`,
+        ``,
+        `🆔 Task: \`${task.id.slice(0, 8)}\` — ${task.title}`,
+        `🤖 Agent: qa | 📦 Project: ${clientName} / ${projectName}`,
+        `💥 Error: ${errorMessage.slice(0, 400)}`,
+        ``,
+        `💡 ${retryHint}`,
+      ].join('\n')
+    )
 
     throw err
   }

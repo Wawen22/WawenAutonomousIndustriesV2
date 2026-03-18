@@ -9,8 +9,18 @@ import { format } from 'date-fns'
 import { Panel } from './ui/Panel.js'
 import { Badge } from './ui/Badge.js'
 import { Stat } from './ui/Stat.js'
-import { useRecentRuns } from '../hooks/useSupabaseRealtime.js'
-import type { AgentRun } from '../types/index.js'
+import { useRecentRunsWithContext } from '../hooks/useSupabaseRealtime.js'
+import { getClientColor } from '../lib/clientColors.js'
+import type { AgentRunWithContext } from '../types/index.js'
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function getRunMeta(run: AgentRunWithContext, key: string): string {
+  const v = run.task?.metadata?.[key]
+  return typeof v === 'string' && v.trim() ? v.trim() : ''
+}
 
 // ---------------------------------------------------------------------------
 // Filter bar
@@ -21,18 +31,21 @@ type OutcomeFilter = 'all' | 'success' | 'failure' | 'partial'
 interface FilterBarProps {
   agents: string[]
   models: string[]
+  clients: string[]
   agentFilter: string
   modelFilter: string
   outcomeFilter: OutcomeFilter
+  clientFilter: string
   onAgent: (v: string) => void
   onModel: (v: string) => void
   onOutcome: (v: OutcomeFilter) => void
+  onClient: (v: string) => void
 }
 
 function FilterBar({
-  agents, models,
-  agentFilter, modelFilter, outcomeFilter,
-  onAgent, onModel, onOutcome,
+  agents, models, clients,
+  agentFilter, modelFilter, outcomeFilter, clientFilter,
+  onAgent, onModel, onOutcome, onClient,
 }: FilterBarProps) {
   const selectClass = clsx(
     'text-xs font-mono bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-1.5',
@@ -46,6 +59,11 @@ function FilterBar({
       <select value={agentFilter} onChange={(e) => onAgent(e.target.value)} className={selectClass}>
         <option value="">All agents</option>
         {agents.map((a) => <option key={a} value={a}>{a}</option>)}
+      </select>
+
+      <select value={clientFilter} onChange={(e) => onClient(e.target.value)} className={selectClass}>
+        <option value="">All clients</option>
+        {clients.map((c) => <option key={c} value={c}>{c}</option>)}
       </select>
 
       <select value={modelFilter} onChange={(e) => onModel(e.target.value)} className={selectClass}>
@@ -67,11 +85,15 @@ function FilterBar({
 // Run row
 // ---------------------------------------------------------------------------
 
-function RunRow({ run }: { run: AgentRun }) {
+function RunRow({ run }: { run: AgentRunWithContext }) {
   const [expanded, setExpanded] = useState(false)
-  const isGpt = run.model_id.includes('gpt')
+  const isGpt    = run.model_id.includes('gpt')
   const isFailed = run.outcome === 'failure'
   const hasError = isFailed && !!run.error_message
+
+  const clientName  = getRunMeta(run, 'client_name')
+  const projectName = getRunMeta(run, 'project_name')
+  const clientColor = clientName ? getClientColor(clientName) : null
 
   return (
     <>
@@ -87,9 +109,27 @@ function RunRow({ run }: { run: AgentRun }) {
           {format(new Date(run.created_at), 'MM-dd HH:mm:ss')}
         </td>
 
-        {/* Agent */}
-        <td className="py-2.5 px-4 font-mono text-slate-300 whitespace-nowrap">
-          {run.agent_id}
+        {/* Agent + client/project context */}
+        <td className="py-2.5 px-4">
+          <span className="font-mono text-slate-300 whitespace-nowrap">{run.agent_id}</span>
+          {clientName && clientColor && (
+            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+              <span
+                className={clsx(
+                  'text-[9px] font-mono px-1 py-0.5 rounded border truncate max-w-[90px]',
+                  clientColor.bg, clientColor.border, clientColor.text
+                )}
+                title={clientName}
+              >
+                {clientName}
+              </span>
+              {projectName && (
+                <span className="text-[9px] font-mono text-slate-600 truncate max-w-[80px]" title={projectName}>
+                  {projectName}
+                </span>
+              )}
+            </div>
+          )}
         </td>
 
         {/* Model */}
@@ -164,15 +204,24 @@ function RunRow({ run }: { run: AgentRun }) {
 // ---------------------------------------------------------------------------
 
 export function RunsView() {
-  const { data: runs, loading } = useRecentRuns(200)
+  const { data: runs, loading } = useRecentRunsWithContext(200)
 
-  const [agentFilter, setAgentFilter]     = useState('')
-  const [modelFilter, setModelFilter]     = useState('')
+  const [agentFilter,   setAgentFilter]   = useState('')
+  const [modelFilter,   setModelFilter]   = useState('')
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('all')
+  const [clientFilter,  setClientFilter]  = useState('')
 
-  // Derived filter options from loaded data
-  const agents = useMemo(() => [...new Set(runs.map((r) => r.agent_id))].sort(), [runs])
-  const models = useMemo(() => [...new Set(runs.map((r) => r.model_id))].sort(), [runs])
+  // Derived filter options
+  const agents  = useMemo(() => [...new Set(runs.map((r) => r.agent_id))].sort(), [runs])
+  const models  = useMemo(() => [...new Set(runs.map((r) => r.model_id))].sort(), [runs])
+  const clients = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of runs) {
+      const c = getRunMeta(r, 'client_name')
+      if (c) s.add(c)
+    }
+    return Array.from(s).sort()
+  }, [runs])
 
   // Apply filters
   const filtered = useMemo(() => {
@@ -180,9 +229,10 @@ export function RunsView() {
       if (agentFilter   && r.agent_id   !== agentFilter)   return false
       if (modelFilter   && r.model_id   !== modelFilter)   return false
       if (outcomeFilter !== 'all' && r.outcome !== outcomeFilter) return false
+      if (clientFilter  && getRunMeta(r, 'client_name') !== clientFilter) return false
       return true
     })
-  }, [runs, agentFilter, modelFilter, outcomeFilter])
+  }, [runs, agentFilter, modelFilter, outcomeFilter, clientFilter])
 
   // Toolbar totals
   const totalCost      = filtered.reduce((s, r) => s + (r.cost_usd ?? 0), 0)
@@ -236,12 +286,15 @@ export function RunsView() {
           <FilterBar
             agents={agents}
             models={models}
+            clients={clients}
             agentFilter={agentFilter}
             modelFilter={modelFilter}
             outcomeFilter={outcomeFilter}
+            clientFilter={clientFilter}
             onAgent={setAgentFilter}
             onModel={setModelFilter}
             onOutcome={setOutcomeFilter}
+            onClient={setClientFilter}
           />
         }
         noPad
@@ -256,7 +309,7 @@ export function RunsView() {
               <thead className="sticky top-0 bg-[#07101F] z-10">
                 <tr className="text-[10px] uppercase tracking-wider text-slate-600 border-b border-white/[0.06]">
                   <th className="py-2.5 px-4 text-left font-medium">Timestamp</th>
-                  <th className="py-2.5 px-4 text-left font-medium">Agent</th>
+                  <th className="py-2.5 px-4 text-left font-medium">Agent / Client</th>
                   <th className="py-2.5 px-4 text-left font-medium">Model</th>
                   <th className="py-2.5 px-4 text-left font-medium">Outcome</th>
                   <th className="py-2.5 px-4 text-right font-medium">Tokens In</th>

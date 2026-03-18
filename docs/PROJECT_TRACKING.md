@@ -84,6 +84,14 @@
 | T046 | Invoice prompt: SaaS + Marketing chain completion | ✅ Done | Claude | 1 | `dev_saas`, `content_creator`, `social_manager` ora includono `/invoice client/project` quando il progetto va in `review` |
 | T047 | Natural Language CEO Interface | ✅ Done | Claude | 1 | Testo libero su Telegram → CEO analizza intento, chiede info mancanti, esegue azioni autonome |
 | T048 | Revenue View nel Dashboard | ✅ Done | Claude | 2 | View "Revenue" con tabella progetti invoiced, stats totale/media, filtro per tipo, real-time |
+| T049 | CEO Intake multi-action + workspace file generation | ✅ Done | Claude | 1 | CEO Intake esegue sequenze multi-step autonome; dev_general scrive file reali in workspace/output/ senza repo git; streaming LLM abilitato |
+| T050 | LLM streaming + timeout fix + model fallback | ✅ Done | Claude | 1 | callLLM usa stream:true per evitare timeout proxy; fallback gpt-5.4 su errore modello primario; timeoutMs override per call |
+| T051 | Auto-git-init nel Architect | ✅ Done | Claude | 1 | Architect crea repo git in workspace/{client}/{project}/repo/ quando progetto non ha repo_local_path; aggiorna Supabase; dev_general usa executeRepoImplementation() |
+| T052 | Dashboard deliverables + output/ files | ✅ Done | Claude | 2 | API /api/deliverables ora include anche output/ (HTML/CSS/JS/py); dashboard mostra 2 sezioni separate: Agent Deliverables + Output Files |
+| T053 | File modification support in workspace file creation | ✅ Done | Claude | 1 | executeWorkspaceFileCreation legge file esistenti in output/ e passa al LLM in modify mode; il LLM estende/modifica invece di ricreare |
+| T054 | Notifiche errore più ricche su Telegram | ✅ Done | Claude | 2 | catch block in architect/dev_general/qa include task ID, agent, error reale (400 chars), retry hint con /task |
+| T056 | TaskBoard improvements: client/project context + filter bar | ✅ Done | Claude | 2 | TaskCard mostra client chip + project chip da metadata; routing agent chain; expand on click; FilterBar con search/client/project/agent; Done capped a 12 task |
+| T057 | Dashboard UX: per-client dynamic colors + Runs/Activity/Overview context | ✅ Done | Claude | 2 | Palette deterministica 8 colori per cliente; RunsView mostra client+project chip + filtro cliente; EventTimeline mostra client chip; Overview ActiveTaskCard mostra cliente |
 
 ---
 
@@ -100,6 +108,58 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-18 — Sessione 24e: T057 — Dashboard UX per-client colors + context propagation ✅
+
+- **NEW** `dashboard/src/lib/clientColors.ts` — utility `getClientColor(clientName)`: palette di 8 colori (violet/sky/emerald/amber/rose/orange/pink/teal) con hash deterministico; stesso cliente → stesso colore sempre, cyan escluso (riservato ai chip progetto)
+- **T057** `dashboard/src/components/TaskBoard.tsx` — chip cliente usa `getClientColor()` invece di violet fisso; colore dinamico e coerente su tutte le card
+- **T057** `dashboard/src/hooks/useSupabaseRealtime.ts` — aggiunto `useRecentRunsWithContext(limit)`: join `runs ⟶ tasks(metadata, project_id)` via Supabase; aggiunto `useEventsWithContext(limit)`: join `events ⟶ tasks(metadata, project_id)`
+- **T057** `dashboard/src/types/index.ts` — aggiunto `AgentRunWithContext` e `SystemEventWithContext` con campo `task?: { metadata, project_id } | null`
+- **T057** `dashboard/src/components/RunsView.tsx` — usa `useRecentRunsWithContext`; `RunRow` mostra chip cliente colorato + nome progetto sotto l'agent ID; `FilterBar` include nuovo dropdown "All clients"; intestazione colonna rinominata "Agent / Client"
+- **T057** `dashboard/src/components/EventTimeline.tsx` — usa `useEventsWithContext`; `EventRow` mostra chip cliente colorato (con "Cliente · Progetto" se entrambi disponibili) accanto all'agent ID e al task ID breve
+- **T057** `dashboard/src/components/Overview.tsx` — `ActiveTaskCard` mostra chip cliente + nome progetto sopra il titolo task (dati da `task.metadata`, nessun hook aggiuntivo)
+- **VERIFY** `pnpm tsc --noEmit` verde su dashboard
+
+### 2026-03-18 — Sessione 24d: T056 — TaskBoard improvements ✅
+
+- **T056** `dashboard/src/components/TaskBoard.tsx` — riscritta completamente: `TaskCard` ora mostra chip cliente (viola, da `task.metadata.client_name`) + chip progetto con tipo (cyan, da `task.metadata.project_name`); badge "sub" per task figlio (`parent_task_id`); preview descrizione quando non c'è contesto cliente; errore blocked da metadata; click-to-expand con descrizione completa, ID short (8 char), ID parent, hint comandi Telegram (`/approve`/`/reject`); footer con routing chain `delegator → assignee` e badge priorità + timestamp
+- **T056** `dashboard/src/components/TaskBoard.tsx` — aggiunto `FilterBar` con: search testo (titolo/cliente/progetto), dropdown client, dropdown project (filtrato per client selezionato), dropdown agent, pulsante clear; contatore "N active (filtered from M)" nella status bar; `useClients()` + `useProjects()` integrati per i dropdown
+- **T056** `dashboard/src/components/TaskBoard.tsx` — colonna "Done" cappata a 12 task (`DONE_LIMIT`) con indicatore "+N older tasks hidden"
+- **VERIFY** `pnpm tsc --noEmit` verde su dashboard
+
+### 2026-03-18 — Sessione 24c: Fix pipeline landing page (4 root cause) ✅
+
+- **FIX-A** `backend/src/agents/software_delivery_utils.ts` — `repoNeedsBootstrap()` riscritta: ora esclude i file scaffold WAI (`README.md`, `.gitignore`) dal check "file significativi"; rileva bootstrap necessario se il repo non ha `package.json`, `requirements.txt`, `index.html`, `src/`, `app/`, ecc.; aggiornate costanti `BOOTSTRAP_INDICATOR_FILES` e `BOOTSTRAP_INDICATOR_DIRS`
+- **FIX-B** `backend/src/agents/architect.ts` — quando il repo è stato appena auto-inizializzato (`!repoLocalPath && effectiveRepoLocalPath`), `bootstrapRepo` è forzato a `true` indipendentemente dal risultato di `repoNeedsBootstrap`; questo garantisce che `dev_general_2` attenda sempre `dev_general_1` su repo nuove
+- **FIX-C** `backend/src/agents/software_repo_runtime.ts` — `executeRepoImplementation` rileva automaticamente `isBootstrapRepo` (≤3 file tracciati, nessun package.json/src/); in BOOTSTRAP MODE il system prompt include istruzioni esplicite: usare `create_file` per TUTTI i file di progetto, non tentare `replace_in_file` su README/gitignore; il `userMessage` ora include "Bootstrap mode: YES/NO" nella sezione repo inspection
+- **FIX-D** `backend/src/agents/ceo_intake.ts` — aggiunta regola 8 al system prompt: "CRITICAL — ONE TASK PER PROJECT": il CEO Intake non deve creare più di un `create_task` per progetto in un singolo piano; previene 2+ Architect paralleli che collidono sulla stessa repo
+- **ROOT CAUSE** del test fallito: CEO aveva creato 3 task → 2 Architect paralleli → collisione su `architecture_plan.md`; `repoNeedsBootstrap` restituiva `false` (README+.gitignore presenti) → dev_general_1 e dev_general_2 partivano in parallelo → blockers a cascata
+- **VERIFY** `pnpm tsc --noEmit` verde su backend
+
+### 2026-03-18 — Sessione 24b: Projects UI/UX fix ✅
+
+- **FIX** `dashboard/src/components/ProjectsView.tsx` — il pannello dettaglio progetto è ora inline nella `<tbody>` usando `<Fragment>` + `<tr colSpan={7}>`: appare esattamente sotto la riga cliccata invece che in fondo a tutta la lista
+- **FIX** `dashboard/src/components/ProjectsView.tsx` — `DeliverablesPanel` completamente ridisegnato con tab navigation elegante: "Agent Deliverables" (viola) / "Output Files" (verde) / "Project Info" (cyan); tab attivo con indicatore `border-b-2`; badge contatore per ogni tab; auto-switch al tab con contenuto al caricamento; path workspace come chip in alto a destra
+- **VERIFY** `pnpm tsc --noEmit` verde su backend e dashboard
+
+### 2026-03-18 — Sessione 24: T051-T054 — Auto-git-init + Dashboard output + File modify + Rich errors ✅
+
+- **T051** `backend/src/agents/software_repo_runtime.ts` — aggiunta `initWorkspaceRepo()`: crea `workspace/{client}/{project}/repo/` con `git init -b main`, scrive `.gitignore` ottimizzato per tipo progetto (website/app/saas/automation/ai), scrive `README.md`, esegue primo commit; `GITIGNORE_BY_TYPE` map per type-aware scaffold
+- **T051** `backend/src/agents/architect.ts` — se `repoLocalPath` è null e il workspace esiste, l'Architect chiama `initWorkspaceRepo()` prima di generare il piano; aggiorna `projects.repo_local_path` su Supabase via `updateProjectRepo`; propaga `effectiveRepoLocalPath` nel `baseMetadata` di tutti i task dev_general; i worker usano ora `executeRepoImplementation()` invece di `executeWorkspaceFileCreation()`; notifica Telegram mostra il path del repo auto-inizializzato
+- **T052** `backend/src/index.ts` — `/api/deliverables` esteso: scansiona sia `deliverables/` che `output/`; ogni file ha campo `dir: 'deliverable' | 'output'`; supporto esteso a `.html`, `.css`, `.js`, `.ts`, `.py`, `.json`, `.yaml` oltre ai `.md`/`.pdf`/`.txt`
+- **T052** `dashboard/src/components/ProjectsView.tsx` — `DeliverableFile` interface aggiornata con campo `dir`; `fileIcon` estesa per HTML/CSS/JS/py/JSON; `DeliverablesPanel` mostra due sezioni separate: "Agent Deliverables" (viola) e "Output Files — workspace/output/" (verde); `FileTable` come componente interno riusabile
+- **T053** `backend/src/agents/software_repo_runtime.ts` — aggiunta `loadExistingOutputFiles()`: carica tutti i file leggibili da `output/` entro limiti di dimensione; `executeWorkspaceFileCreation` rileva automaticamente se `output/` ha già file (`isModifyMode`); in modify mode usa system prompt "modifica/estendi" + inietta contenuto dei file esistenti nel user message; `MAX_FILES` portato a 20 in modify mode; `summary` suffisso con `[modify mode — N existing file(s) updated]`
+- **T054** `backend/src/agents/architect.ts`, `dev_general.ts`, `qa.ts` — catch block ora include: task ID breve (`task.id.slice(0,8)`), agent ID, project info, error troncato a 400 chars, retry hint con `/task client/project titolo` se slug disponibili
+- **VERIFY** `pnpm tsc --noEmit` verde su backend e dashboard
+
+### 2026-03-18 — Sessione 23: T049+T050 — Multi-action CEO + File generation + LLM streaming ✅
+
+- **T049** `backend/src/agents/ceo_intake.ts` — riscritta la logica da single-action a **multi-action sequenziale**: il LLM ora pianifica TUTTI gli step in un colpo solo (`commands: []` array), li esegue in sequenza e risponde con un unico messaggio riassuntivo; rimossi i testi "Prossimo step: dimmi..." dall'output; ogni `executeAction` ritorna una stringa di summary (non più `ExecResult` con `clarificationNeeded`); gestione errori blocca la sequenza e segnala il punto di failure
+- **T049** `backend/src/agents/software_repo_runtime.ts` — aggiunto `executeWorkspaceFileCreation()`: quando un progetto non ha `repo_local_path`, i dev_general scrivono file reali (HTML, CSS, Python, ecc.) in `workspace/{client}/{project}/output/`; formato output **marker-based** (`=== FILE: index.html ===`) per evitare JSON escaping su file grandi; l'agente decide autonomamente quanti file creare e di che tipo in base al progetto e all'architecture plan
+- **T049** `backend/src/agents/dev_general.ts` — aggiunto percorso workspace file creation: se `repoLocalPath` è null, chiama `executeWorkspaceFileCreation` invece di fermarsi; notifica Neb con path della cartella output e numero file scritti
+- **T050** `backend/src/services/llm.ts` — `callLLM` usa ora **streaming** (`stream: true` + `stream_options: { include_usage: true }`): i token arrivano man mano, la connessione resta viva durante generazioni lunghe (HTML/CSS 500+ righe), eliminando i timeout del proxy LiteLLM/Azure; aggiunto `timeoutMs` override in `RunOptions` per configurare il timeout per singola call; `DEFAULT_RUN_TIMEOUT_MS` portato a 300s; file generation usa 360s espliciti
+- **T050** modelli `dev_general_2` e `qa` spostati da `gemini-2.5-flash` a `gpt-5.4` (gemini causava timeout ~50s); errori LLM ora visibili nel dashboard RunsView (riga espandibile con `error_message`)
+- **VERIFY** `pnpm tsc --noEmit` verde su backend e dashboard
 
 ### 2026-03-18 — Sessione 22: Agent workspace memory + CEO routing fix ✅
 

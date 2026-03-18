@@ -110,6 +110,7 @@ ${clientContext}
 5. Only include write_brief if Neb explicitly provides project description/goal text.
 6. A task description should be detailed enough for the CEO routing agent to understand the deliverable.
 7. Only ask (action: "ask") when you genuinely cannot determine a required field from context.
+8. **CRITICAL — ONE TASK PER PROJECT**: When creating work for a project, create EXACTLY ONE create_task command that covers the FULL deliverable. NEVER create 2 or 3 separate tasks for the same project in the same plan — this causes multiple Architect agents to run in parallel and collide on the same repository. One comprehensive task (e.g., "Crea landing page completa per [Client]") is always better than several partial tasks. If Neb asks to "launch tasks" or "start work" on a project, create ONE task that covers everything.
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {

@@ -143,6 +143,15 @@ export interface ProjectState {
   metadata: Record<string, unknown>
 }
 
+// Enriched variants used when hooks join runs/events with task metadata
+export interface AgentRunWithContext extends AgentRun {
+  task?: { metadata: Record<string, unknown>; project_id: string | null } | null
+}
+
+export interface SystemEventWithContext extends SystemEvent {
+  task?: { metadata: Record<string, unknown>; project_id: string | null } | null
+}
+
 export interface ModelConfig {
   id: string
   provider: string

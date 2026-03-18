@@ -8,7 +8,7 @@ import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 
 import { runAgent } from '../services/llm.js'
-import { createTask, updateProjectStatus, updateTaskStatus } from '../services/supabase.js'
+import { createTask, updateProjectRepo, updateProjectStatus, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
 import { appendProjectProgress } from '../services/workspace.js'
 import { runDevGeneralAgent } from './dev_general.js'
@@ -19,6 +19,7 @@ import {
   repoNeedsBootstrap,
   resolveSoftwareWorkspacePath,
 } from './software_delivery_utils.js'
+import { initWorkspaceRepo } from './software_repo_runtime.js'
 import type { Task } from '../types/index.js'
 
 interface ArchitectureImplementationTask {
@@ -204,6 +205,31 @@ export async function runArchitectAgent(
   const repoDefaultBranch = (task.metadata['repo_default_branch'] as string | undefined) ?? undefined
   const workspaceAbsPath = await resolveSoftwareWorkspacePath(task, projectId)
 
+  // Auto-init git repo when workspace exists but no repo is linked yet
+  let effectiveRepoLocalPath = repoLocalPath
+  const repoInitWarnings: string[] = []
+  if (!repoLocalPath && workspaceAbsPath && projectId) {
+    try {
+      const initResult = await initWorkspaceRepo({
+        workspaceAbsPath,
+        projectName,
+        projectType,
+      })
+      effectiveRepoLocalPath = initResult.repoPath
+      repoInitWarnings.push(...initResult.warnings)
+
+      if (!initResult.alreadyExisted) {
+        await updateProjectRepo(projectId, { repo_local_path: initResult.repoPath })
+        log.info(
+          { taskId: task.id, repoPath: initResult.repoPath, committed: initResult.committed },
+          'Architect: auto-initialized workspace repo'
+        )
+      }
+    } catch (err) {
+      log.warn({ err, taskId: task.id }, 'Architect: auto-repo-init failed — falling back to workspace file creation')
+    }
+  }
+
   const briefContent = workspaceAbsPath
     ? await readOptionalFile(join(workspaceAbsPath, 'brief.md'))
     : ''
@@ -211,8 +237,10 @@ export async function runArchitectAgent(
   const fullWorkspaceContext = workspaceAbsPath
     ? await loadAllWorkspaceContext(workspaceAbsPath)
     : ''
-  const repoContext = await loadRepoContext(repoLocalPath)
-  const bootstrapRepo = await repoNeedsBootstrap(repoLocalPath)
+  const repoContext = await loadRepoContext(effectiveRepoLocalPath)
+  // Force bootstrap when the repo was JUST auto-initialized (no real project files yet)
+  const repoWasAutoInit = !repoLocalPath && Boolean(effectiveRepoLocalPath)
+  const bootstrapRepo = repoWasAutoInit || await repoNeedsBootstrap(effectiveRepoLocalPath)
 
   const systemPrompt = `You are the Architect Agent of WAI (Wawen Autonomous Industries).
 Your role: translate a request into an execution-ready plan and split work between exactly two implementation workers.
@@ -262,10 +290,11 @@ Constraints:
     `Project type: ${projectType}`,
     `Task title: ${task.title}`,
     `Task description: ${task.description}`,
-    repoLocalPath ? `Repo local path: ${repoLocalPath}` : '',
+    effectiveRepoLocalPath ? `Repo local path: ${effectiveRepoLocalPath}` : '',
     repoDefaultBranch ? `Repo default branch: ${repoDefaultBranch}` : '',
     repoUrl ? `Repo URL: ${repoUrl}` : '',
     bootstrapRepo ? `Repo state: bootstrap needed (empty or near-empty repo)` : '',
+    !repoLocalPath && effectiveRepoLocalPath ? `Repo note: fresh repo auto-initialized by Architect — workers must populate the scaffold files` : '',
     fullWorkspaceContext ? `\nWorkspace Context (brief + existing deliverables — BUILD ON THESE):\n${fullWorkspaceContext}` : briefContent ? `\nProject Brief:\n${briefContent}` : '',
     repoContext ? `\nRepository Context:\n${repoContext}` : '',
     ``,
@@ -326,6 +355,8 @@ Constraints:
       implementation_phases: architecturePlan.implementationPhases,
       quality_gates: architecturePlan.qualityGates,
       architecture_risks: architecturePlan.risks,
+      // Propagate effective repo path (may be auto-initialized)
+      ...(effectiveRepoLocalPath ? { repo_local_path: effectiveRepoLocalPath } : {}),
     }
 
     const orderedImplementationTasks = [...architecturePlan.implementationTasks].sort((a, b) =>
@@ -439,6 +470,12 @@ Constraints:
       `📦 *${architecturePlan.title}*`,
       `👤 Client: ${clientName} | Project: ${projectName}`,
       `📝 ${architecturePlan.executiveSummary}`,
+      !repoLocalPath && effectiveRepoLocalPath
+        ? `\n🗂️ Git repo auto-inizializzato: \`${effectiveRepoLocalPath}\``
+        : '',
+      repoInitWarnings.length > 0
+        ? `⚠️ Repo init warnings: ${repoInitWarnings.join(', ')}`
+        : '',
       architecturePlanPath ? `\n💾 Saved: \`${architecturePlanPath}\`` : '',
       ``,
       `🚀 *Implementation tasks created:*`,
@@ -464,7 +501,23 @@ Constraints:
 
     await updateTaskStatus(task.id, 'blocked').catch(() => {})
 
-    await notify(`❌ *Architect Error*\n\nTask: ${task.title}\nError: ${errorMessage}`)
+    const clientSlug = (task.metadata['client_slug'] as string | undefined) ?? ''
+    const projectSlug = (task.metadata['project_slug'] as string | undefined) ?? ''
+    const retryHint = clientSlug && projectSlug
+      ? `Riprova: \`/task ${clientSlug}/${projectSlug} ${task.title}\``
+      : 'Riprova inviando il task al CEO.'
+
+    await notify(
+      [
+        `❌ *Architect Error*`,
+        ``,
+        `🆔 Task: \`${task.id.slice(0, 8)}\` — ${task.title}`,
+        `🤖 Agent: architect`,
+        `💥 Error: ${errorMessage.slice(0, 400)}`,
+        ``,
+        `💡 ${retryHint}`,
+      ].join('\n')
+    )
 
     throw err
   }

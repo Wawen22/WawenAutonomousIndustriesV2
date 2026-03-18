@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase.js'
-import type { Agent, AgentRun, Client, Project, ProjectState, SystemEvent, Task } from '../types/index.js'
+import type { Agent, AgentRun, AgentRunWithContext, Client, Project, ProjectState, SystemEvent, SystemEventWithContext, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Generic realtime hook
@@ -136,6 +136,36 @@ export function useProjects(clientId?: string) {
   }, [clientId])
 
   return useRealtimeTable<Project>('projects', fetchProjects)
+}
+
+/** Runs joined with task metadata — provides client_name / project_name context. */
+export function useRecentRunsWithContext(limit = 200) {
+  const fetchRuns = useCallback(async (): Promise<AgentRunWithContext[]> => {
+    const { data, error } = await supabase
+      .from('runs')
+      .select('*, task:tasks(metadata, project_id)')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (error) throw new Error(error.message)
+    return (data ?? []) as AgentRunWithContext[]
+  }, [limit])
+
+  return useRealtimeTable<AgentRunWithContext>('runs', fetchRuns)
+}
+
+/** Events joined with task metadata — provides client_name / project_name context. */
+export function useEventsWithContext(limit = 50) {
+  const fetchEvents = useCallback(async (): Promise<SystemEventWithContext[]> => {
+    const { data, error } = await supabase
+      .from('events')
+      .select('*, task:tasks(metadata, project_id)')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (error) throw new Error(error.message)
+    return (data ?? []) as SystemEventWithContext[]
+  }, [limit])
+
+  return useRealtimeTable<SystemEventWithContext>('events', fetchEvents)
 }
 
 export function useInvoicedProjects() {

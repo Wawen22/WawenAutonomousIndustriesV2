@@ -58,31 +58,47 @@ async function main(): Promise<void> {
         return
       }
 
-      const deliverableDir = join(getWorkspaceRoot(), ...parts, 'deliverables')
+      const projectDir = join(getWorkspaceRoot(), ...parts)
+      const deliverableDir = join(projectDir, 'deliverables')
+      const outputDir = join(projectDir, 'output')
 
       void (async () => {
         try {
-          if (!existsSync(deliverableDir)) {
-            res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ files: [] }))
-            return
+          // Helper: scan a directory and annotate files with their source dir
+          const DELIVERABLE_EXTS = new Set(['.md', '.pdf', '.txt', '.html', '.css', '.js', '.ts', '.py', '.json', '.yaml', '.yml'])
+          async function scanDir(dir: string, dirType: 'deliverable' | 'output') {
+            if (!existsSync(dir)) return []
+            const entries = await readdir(dir, { withFileTypes: true })
+            const fileEntries = entries.filter((e) => {
+              if (!e.isFile()) return false
+              const ext = e.name.lastIndexOf('.') >= 0 ? e.name.slice(e.name.lastIndexOf('.')) : ''
+              return DELIVERABLE_EXTS.has(ext) || ext === ''
+            })
+            return Promise.all(
+              fileEntries.map(async (e) => {
+                const fileStat = await stat(join(dir, e.name))
+                return {
+                  name: e.name,
+                  modified_at: fileStat.mtime.toISOString(),
+                  size_bytes: fileStat.size,
+                  dir: dirType,
+                }
+              })
+            )
           }
 
-          const entries = await readdir(deliverableDir)
-          const files = await Promise.all(
-            entries
-              .filter((e) => e.endsWith('.md') || e.endsWith('.pdf') || e.endsWith('.txt'))
-              .map(async (name) => {
-                const fileStat = await stat(join(deliverableDir, name))
-                return { name, modified_at: fileStat.mtime.toISOString(), size_bytes: fileStat.size }
-              })
-          )
-          files.sort((a, b) => b.modified_at.localeCompare(a.modified_at))
+          const [deliverableFiles, outputFiles] = await Promise.all([
+            scanDir(deliverableDir, 'deliverable'),
+            scanDir(outputDir, 'output'),
+          ])
+
+          const allFiles = [...deliverableFiles, ...outputFiles]
+          allFiles.sort((a, b) => b.modified_at.localeCompare(a.modified_at))
 
           res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ files }))
+          res.end(JSON.stringify({ files: allFiles }))
         } catch (err) {
-          log.error({ err, deliverableDir }, 'Deliverables API error')
+          log.error({ err, projectDir }, 'Deliverables API error')
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: 'Internal server error' }))
         }

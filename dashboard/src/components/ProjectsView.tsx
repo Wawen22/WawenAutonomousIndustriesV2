@@ -3,7 +3,7 @@
 // Lista progetti filtrabili per client / status / tipo.
 // ============================================================
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
 import { Panel } from './ui/Panel.js'
@@ -20,6 +20,7 @@ interface DeliverableFile {
   name: string
   modified_at: string
   size_bytes: number
+  dir: 'deliverable' | 'output'
 }
 
 function useDeliverables(workspacePath: string | null) {
@@ -70,8 +71,67 @@ function fileIcon(name: string): string {
   if (name.startsWith('social-calendar')) return '📣'
   if (name.startsWith('dev-saas')) return '💻'
   if (name.startsWith('dev-general')) return '🛠️'
+  if (name.endsWith('.html')) return '🌐'
+  if (name.endsWith('.css')) return '🎨'
+  if (name.endsWith('.js') || name.endsWith('.ts')) return '📜'
+  if (name.endsWith('.py')) return '🐍'
+  if (name.endsWith('.json') || name.endsWith('.yaml') || name.endsWith('.yml')) return '⚙️'
+  if (name === 'README.md') return '📖'
+  if (name === '.gitignore') return '🚫'
   return '📝'
 }
+
+// ---------------------------------------------------------------------------
+// File table (shared between tabs)
+// ---------------------------------------------------------------------------
+
+type FileTab = 'deliverables' | 'output' | 'info'
+
+function FileTable({ items }: { items: DeliverableFile[] }) {
+  if (items.length === 0) {
+    return (
+      <p className="text-[11px] text-slate-600 font-mono py-4">
+        No files in this category yet.
+      </p>
+    )
+  }
+  return (
+    <table className="w-full text-xs">
+      <thead>
+        <tr className="border-b border-white/[0.05] text-left">
+          <th className="pb-2.5 pt-1 text-[10px] uppercase tracking-wider font-semibold text-slate-500">File</th>
+          <th className="pb-2.5 pt-1 text-[10px] uppercase tracking-wider font-semibold text-slate-500 text-right">Size</th>
+          <th className="pb-2.5 pt-1 text-[10px] uppercase tracking-wider font-semibold text-slate-500 text-right">Modified</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((f) => (
+          <tr
+            key={`${f.dir}-${f.name}`}
+            className="border-b border-white/[0.025] hover:bg-white/[0.025] transition-colors"
+          >
+            <td className="py-2 text-slate-300 font-mono text-[11px]">
+              {fileIcon(f.name)}{' '}
+              <span className="hover:text-white transition-colors">{f.name}</span>
+            </td>
+            <td className="py-2 text-right text-slate-600 font-mono text-[10px]">
+              {f.size_bytes < 1024
+                ? `${f.size_bytes}B`
+                : `${(f.size_bytes / 1024).toFixed(1)}KB`}
+            </td>
+            <td className="py-2 text-right text-slate-600 font-mono text-[10px]">
+              {format(new Date(f.modified_at), 'MMM d, HH:mm')}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// DeliverablesPanel — inline expansion with tabs
+// ---------------------------------------------------------------------------
 
 interface DeliverablesPanelProps {
   project: Project
@@ -81,89 +141,149 @@ function DeliverablesPanel({ project }: DeliverablesPanelProps) {
   const { files, loading, error } = useDeliverables(project.workspace_path)
   const hasRepoContext = Boolean(project.repo_local_path || project.repo_url)
 
+  const deliverableFiles = files.filter((f) => f.dir === 'deliverable')
+  const outputFiles = files.filter((f) => f.dir === 'output')
+
+  // Default to whichever tab has content, or 'info'
+  const defaultTab: FileTab =
+    deliverableFiles.length > 0 ? 'deliverables' : outputFiles.length > 0 ? 'output' : 'info'
+  const [activeTab, setActiveTab] = useState<FileTab>(defaultTab)
+
+  // Switch to a tab with content when files load
+  useEffect(() => {
+    if (deliverableFiles.length > 0 && activeTab === 'info') setActiveTab('deliverables')
+    else if (outputFiles.length > 0 && activeTab === 'info') setActiveTab('output')
+  }, [deliverableFiles.length, outputFiles.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const tabs: Array<{ id: FileTab; label: string; count?: number; accent: string }> = [
+    {
+      id: 'deliverables',
+      label: 'Agent Deliverables',
+      count: deliverableFiles.length,
+      accent: 'violet',
+    },
+    {
+      id: 'output',
+      label: 'Output Files',
+      count: outputFiles.length,
+      accent: 'emerald',
+    },
+    {
+      id: 'info',
+      label: 'Project Info',
+      accent: 'cyan',
+    },
+  ]
+
+  const accentColors: Record<string, string> = {
+    violet:  'border-violet-500 text-violet-300',
+    emerald: 'border-emerald-500 text-emerald-300',
+    cyan:    'border-cyan-500 text-cyan-300',
+  }
+  const inactiveTabClass =
+    'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-500'
+
   return (
-    <div className="mt-3 border border-white/[0.06] rounded-lg bg-white/[0.02] p-4">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-[11px] uppercase tracking-wider font-semibold text-violet-400">
-          Deliverables — {project.name}
+    <div className="border border-white/[0.06] rounded-xl bg-[#0c0c14] shadow-xl overflow-hidden">
+      {/* Header bar */}
+      <div className="flex items-center justify-between px-4 pt-3 pb-0 border-b border-white/[0.06]">
+        {/* Tab list */}
+        <div className="flex items-end gap-0">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id
+            const colorClass = isActive ? accentColors[tab.accent] : inactiveTabClass
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={clsx(
+                  'flex items-center gap-1.5 px-4 py-2.5 text-[11px] font-medium tracking-wide',
+                  'border-b-2 transition-all duration-150 -mb-px focus:outline-none whitespace-nowrap',
+                  colorClass
+                )}
+              >
+                {tab.label}
+                {tab.count !== undefined && (
+                  <span
+                    className={clsx(
+                      'text-[9px] font-mono px-1.5 py-0.5 rounded-full',
+                      isActive
+                        ? 'bg-white/10 text-slate-300'
+                        : 'bg-white/[0.04] text-slate-600'
+                    )}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Project path chip */}
+        <span className="text-[10px] text-slate-600 font-mono truncate max-w-[200px] pb-2.5" title={project.workspace_path ?? ''}>
+          {project.workspace_path ?? '—'}
         </span>
-        <span className="text-[10px] text-slate-600 font-mono">{project.workspace_path ?? '—'}</span>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 mb-4">
-        <div className="rounded-lg border border-white/[0.06] bg-black/20 p-3">
-          <div className="text-[10px] uppercase tracking-wider font-semibold text-cyan-400 mb-2">
-            Repo Context
-          </div>
-          {hasRepoContext ? (
-            <div className="space-y-1 text-[11px] font-mono text-slate-300">
-              <div className="truncate" title={project.repo_local_path ?? ''}>
-                local: {project.repo_local_path ?? '—'}
-              </div>
-              <div>branch: {project.repo_default_branch ?? '—'}</div>
-              <div className="truncate" title={project.repo_url ?? ''}>
-                remote: {project.repo_url ?? '—'}
-              </div>
-              <div>provider: {project.repo_provider ?? '—'}</div>
-            </div>
-          ) : (
-            <p className="text-[11px] text-slate-500 font-mono">
-              No repo linked yet. Use `/link_repo` with an absolute path or repo URL, or `/init_repo`
-              to create `workspace/.../repo`.
-            </p>
-          )}
-        </div>
+      {/* Tab content */}
+      <div className="p-4">
+        {loading && (
+          <p className="text-[11px] text-slate-600 font-mono animate-pulse py-3">Loading…</p>
+        )}
+        {error && (
+          <p className="text-[11px] text-rose-400 font-mono py-3">Error: {error}</p>
+        )}
 
-        <div className="rounded-lg border border-white/[0.06] bg-black/20 p-3">
-          <div className="text-[10px] uppercase tracking-wider font-semibold text-amber-400 mb-2">
-            Founder Flow
-          </div>
-          <div className="space-y-1 text-[11px] font-mono text-slate-300">
-            <div>1. `/new_project client project type`</div>
-            <div>2. `/link_repo client/project ...` or `/init_repo client/project ...`</div>
-            <div>3. `/brief client/project ...`</div>
-            <div>4. `/task client/project ...`</div>
-          </div>
-        </div>
+        {!loading && !error && (
+          <>
+            {activeTab === 'deliverables' && (
+              <FileTable items={deliverableFiles} />
+            )}
+
+            {activeTab === 'output' && (
+              <FileTable items={outputFiles} />
+            )}
+
+            {activeTab === 'info' && (
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg border border-white/[0.06] bg-black/20 p-3">
+                  <div className="text-[10px] uppercase tracking-wider font-semibold text-cyan-400 mb-2">
+                    Repo Context
+                  </div>
+                  {hasRepoContext ? (
+                    <div className="space-y-1 text-[11px] font-mono text-slate-300">
+                      <div className="truncate" title={project.repo_local_path ?? ''}>
+                        local: {project.repo_local_path ?? '—'}
+                      </div>
+                      <div>branch: {project.repo_default_branch ?? '—'}</div>
+                      <div className="truncate" title={project.repo_url ?? ''}>
+                        remote: {project.repo_url ?? '—'}
+                      </div>
+                      <div>provider: {project.repo_provider ?? '—'}</div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 font-mono">
+                      No repo linked. Use `/link_repo` or the Architect auto-inits one.
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-white/[0.06] bg-black/20 p-3">
+                  <div className="text-[10px] uppercase tracking-wider font-semibold text-amber-400 mb-2">
+                    Founder Flow
+                  </div>
+                  <div className="space-y-1 text-[11px] font-mono text-slate-400">
+                    <div>1. `/new_project client project type`</div>
+                    <div>2. `/brief client/project ...`</div>
+                    <div>3. `/task client/project ...`</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
-
-      {loading && (
-        <p className="text-[11px] text-slate-600 font-mono animate-pulse">Loading…</p>
-      )}
-      {error && (
-        <p className="text-[11px] text-rose-400 font-mono">Error: {error}</p>
-      )}
-      {!loading && !error && files.length === 0 && (
-        <p className="text-[11px] text-slate-600 font-mono">
-          No deliverables yet — complete the onboarding flow and run an agent task on this project to generate files and repo execution reports.
-        </p>
-      )}
-      {!loading && files.length > 0 && (
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-white/[0.04] text-left">
-              <th className="pb-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600">File</th>
-              <th className="pb-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600 text-right">Size</th>
-              <th className="pb-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600 text-right">Modified</th>
-            </tr>
-          </thead>
-          <tbody>
-            {files.map((f) => (
-              <tr key={f.name} className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors">
-                <td className="py-2 text-slate-300 font-mono">
-                  {fileIcon(f.name)} {f.name}
-                </td>
-                <td className="py-2 text-right text-slate-600 font-mono text-[10px]">
-                  {f.size_bytes < 1024 ? `${f.size_bytes}B` : `${(f.size_bytes / 1024).toFixed(1)}KB`}
-                </td>
-                <td className="py-2 text-right text-slate-600 font-mono text-[10px]">
-                  {format(new Date(f.modified_at), 'MMM d, HH:mm')}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
     </div>
   )
 }
@@ -449,21 +569,25 @@ export function ProjectsView() {
                 </thead>
                 <tbody>
                   {filtered.map((project) => (
-                    <ProjectRow
-                      key={project.id}
-                      project={project}
-                      clientName={clientMap.get(project.client_id) ?? '—'}
-                      selected={selectedProject?.id === project.id}
-                      onSelect={handleSelectProject}
-                    />
+                    <Fragment key={project.id}>
+                      <ProjectRow
+                        project={project}
+                        clientName={clientMap.get(project.client_id) ?? '—'}
+                        selected={selectedProject?.id === project.id}
+                        onSelect={handleSelectProject}
+                      />
+                      {selectedProject?.id === project.id && (
+                        <tr>
+                          <td colSpan={7} className="px-2 pt-0 pb-3">
+                            <DeliverablesPanel project={project} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
-          )}
-
-          {selectedProject && (
-            <DeliverablesPanel project={selectedProject} />
           )}
         </div>
       </Panel>
