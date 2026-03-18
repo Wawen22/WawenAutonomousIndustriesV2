@@ -1,36 +1,50 @@
+// ============================================================
+// WAI Dashboard – Tactical Ops Task Board (T069)
+// High-depth Kanban with Agent Presence and Live Logs
+// ============================================================
+
 import { useState, useMemo } from 'react'
 import { clsx } from 'clsx'
-import { formatDistanceToNow } from 'date-fns'
+import { format, formatDistanceToNow } from 'date-fns'
 import { Panel } from './ui/Panel.js'
 import { Badge } from './ui/Badge.js'
-import { useTasks, useClients, useProjects } from '../hooks/useSupabaseRealtime.js'
+import { 
+  useTasks, 
+  useClients, 
+  useProjects, 
+  useAgents, 
+  useAgentStats, 
+  useEventsWithContext 
+} from '../hooks/useSupabaseRealtime.js'
 import { getClientColor } from '../lib/clientColors.js'
-import type { Task, TaskStatus } from '../types/index.js'
+import { getAgentColor } from '../lib/agentColors.js'
+import { AgentDetailSidebar } from './AgentDetailSidebar.js'
+import { DetailSidebar } from './ui/DetailSidebar.js'
+import type { Task, TaskStatus, Agent, AgentRun } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
-// Column config
+// Constants
 // ---------------------------------------------------------------------------
 
-interface ColConfig {
-  status: TaskStatus
-  label: string
-  accent: string
-  border: string
-  borderT: string
-}
-
-const COLUMNS: ColConfig[] = [
-  { status: 'todo',        label: 'Todo',        accent: 'text-slate-400',   border: 'border-l-slate-600',  borderT: 'border-t-slate-600'  },
-  { status: 'in_progress', label: 'In Progress', accent: 'text-sky-400',     border: 'border-l-sky-500',    borderT: 'border-t-sky-500'    },
-  { status: 'blocked',     label: 'Blocked',     accent: 'text-orange-400',  border: 'border-l-orange-500', borderT: 'border-t-orange-500' },
-  { status: 'done',        label: 'Done',        accent: 'text-emerald-400', border: 'border-l-emerald-600', borderT: 'border-t-emerald-600' },
+const COLUMNS: Array<{ status: TaskStatus; label: string; accent: string }> = [
+  { status: 'todo',        label: 'Backlog',     accent: 'text-slate-500' },
+  { status: 'in_progress', label: 'Active Ops',  accent: 'text-[#00D4FF]' },
+  { status: 'blocked',     label: 'Impediments', accent: 'text-rose-500'  },
+  { status: 'done',        label: 'Success',     accent: 'text-emerald-500' },
 ]
 
-const DONE_LIMIT = 12   // cap "Done" column to avoid clutter
+const PRIORITY_STYLE: Record<number, string> = {
+  1: 'border-rose-500/40 neon-border-p1',
+  2: 'border-orange-500/40 neon-border-p2',
+  3: 'border-[#00D4FF]/40 neon-border-p3',
+  4: 'border-slate-500/30',
+  5: 'border-slate-700/20',
+}
+
 const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? 'http://localhost:3001'
 
 // ---------------------------------------------------------------------------
-// Helpers to extract metadata fields
+// Helpers
 // ---------------------------------------------------------------------------
 
 function getMeta(task: Task, key: string): string {
@@ -38,354 +52,126 @@ function getMeta(task: Task, key: string): string {
   return typeof v === 'string' && v.trim() ? v.trim() : ''
 }
 
-async function runFounderTaskAction(
-  taskId: string,
-  action: 'retry' | 'reject',
-  reason?: string
-): Promise<{ message: string }> {
-  const response = await fetch(`${BACKEND_URL}/api/founder/task-action`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ taskId, action, reason }),
-  })
-
-  const payload = await response.json() as { error?: string; message?: string }
-  if (!response.ok) {
-    throw new Error(payload.error ?? 'Task action failed')
-  }
-
-  return { message: payload.message ?? 'Action completed.' }
-}
-
 // ---------------------------------------------------------------------------
-// Filter bar
+// TaskCard (Tactical Version)
 // ---------------------------------------------------------------------------
 
-interface FilterState {
-  search: string
-  clientId: string
-  projectId: string
-  agent: string
-}
-
-interface FilterBarProps {
-  filter: FilterState
-  onChange: (f: FilterState) => void
-  clients: Array<{ id: string; name: string }>
-  projects: Array<{ id: string; name: string; client_id: string }>
-  agents: string[]
-}
-
-function FilterBar({ filter, onChange, clients, projects, agents }: FilterBarProps) {
-  const sel = clsx(
-    'text-[11px] font-mono bg-white/[0.04] border border-white/[0.08] rounded-md px-2 py-1.5',
-    'text-slate-300 focus:outline-none focus:border-sky-500/40 transition-colors'
-  )
-  const inp = clsx(sel, 'placeholder-slate-600 w-36')
-
-  const visibleProjects = filter.clientId
-    ? projects.filter((p) => p.client_id === filter.clientId)
-    : projects
-
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-[10px] text-slate-600 uppercase tracking-wider font-medium">Filter:</span>
-
-      <input
-        value={filter.search}
-        onChange={(e) => onChange({ ...filter, search: e.target.value })}
-        placeholder="Search title…"
-        className={inp}
-      />
-
-      <select
-        value={filter.clientId}
-        onChange={(e) => onChange({ ...filter, clientId: e.target.value, projectId: '' })}
-        className={sel}
-      >
-        <option value="">All clients</option>
-        {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-      </select>
-
-      <select
-        value={filter.projectId}
-        onChange={(e) => onChange({ ...filter, projectId: e.target.value })}
-        className={sel}
-        disabled={visibleProjects.length === 0}
-      >
-        <option value="">All projects</option>
-        {visibleProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-      </select>
-
-      <select
-        value={filter.agent}
-        onChange={(e) => onChange({ ...filter, agent: e.target.value })}
-        className={sel}
-      >
-        <option value="">All agents</option>
-        {agents.map((a) => <option key={a} value={a}>{a}</option>)}
-      </select>
-
-      {(filter.search || filter.clientId || filter.projectId || filter.agent) && (
-        <button
-          onClick={() => onChange({ search: '', clientId: '', projectId: '', agent: '' })}
-          className="text-[10px] text-slate-500 hover:text-slate-300 font-mono transition-colors px-1.5 py-1 rounded border border-white/[0.06] hover:border-white/[0.12]"
-        >
-          ✕ clear
-        </button>
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// TaskCard
-// ---------------------------------------------------------------------------
-
-function TaskCard({ task }: { task: Task }) {
-  const [expanded, setExpanded] = useState(false)
-  const [actionState, setActionState] = useState<{
-    action: 'retry' | 'reject' | null
-    message: string | null
-    error: string | null
-  }>({ action: null, message: null, error: null })
-
-  const col = COLUMNS.find((c) => c.status === task.status)
-
+function TaskCard({ 
+  task, 
+  agent, 
+  lastRun,
+  onSelect,
+  onAgentClick 
+}: { 
+  task: Task; 
+  agent?: Agent; 
+  lastRun?: AgentRun;
+  onSelect: (t: Task) => void;
+  onAgentClick: (a: Agent) => void;
+}) {
   const clientName  = getMeta(task, 'client_name')
-  const projectName = getMeta(task, 'project_name')
-  const projectType = getMeta(task, 'project_type')
   const clientColor = clientName ? getClientColor(clientName) : null
-  const errorMsg    = getMeta(task, 'error')
-  const isChild     = Boolean(task.parent_task_id)
-
-  const assignee  = task.assignee_agent_id ?? ''
-  const delegator = task.delegator_agent_id ?? ''
-  // Show routing chain: delegator → assignee, or just one of them
-  const agentLine =
-    delegator && assignee && delegator !== assignee
-      ? `${delegator} → ${assignee}`
-      : assignee || delegator || '—'
-
-  const shortId = task.id.slice(0, 8)
-  const dependencyReason = getMeta(task, 'dependency_reason')
-  const blockedReason = getMeta(task, 'blocked_reason') || errorMsg
-
-  const descPreview = !clientName && task.description
-    ? task.description.replace(/\[WORKSPACE CONTEXT.*$/s, '').trim().slice(0, 100)
-    : ''
-
-  async function handleTaskAction(action: 'retry' | 'reject') {
-    const reason = action === 'reject'
-      ? window.prompt('Reason for cancelling this task?', 'Founder cancelled blocked task')
-      : window.prompt('Optional retry note for the agent?', '')
-
-    if (reason === null) return
-
-    try {
-      setActionState({ action, message: null, error: null })
-      const result = await runFounderTaskAction(task.id, action, reason || undefined)
-      setActionState({ action: null, message: result.message, error: null })
-    } catch (err) {
-      setActionState({
-        action: null,
-        message: null,
-        error: err instanceof Error ? err.message : 'Unknown error',
-      })
-    }
-  }
+  const isImportant = task.priority <= 2
+  const isBusy = agent?.status === 'busy'
+  const agentColor = agent ? getAgentColor(agent.id) : null
 
   return (
     <div
+      onClick={() => onSelect(task)}
       className={clsx(
-        'border-l-2 rounded-r-xl transition-all',
-        'px-3 pt-3 pb-2.5 space-y-2',
-        col?.border ?? 'border-l-slate-700',
-        task.status === 'blocked'
-          ? 'bg-orange-950/20 hover:bg-orange-950/30'
-          : task.status === 'in_progress'
-            ? 'bg-sky-950/20 hover:bg-sky-950/30'
-            : 'bg-white/[0.03] hover:bg-white/[0.05]',
-        'cursor-pointer select-none'
+        'relative group rounded-xl border bg-[#070C1A]/60 backdrop-blur-sm transition-all duration-300',
+        'p-4 cursor-pointer hover:-translate-y-1 hover:bg-[#0F2040]/80',
+        PRIORITY_STYLE[task.priority] || 'border-white/5',
+        task.status === 'blocked' && 'border-rose-500/20 bg-rose-500/[0.02]',
+        task.status === 'in_progress' && 'bg-[#00D4FF]/[0.02]'
       )}
-      onClick={() => setExpanded((v) => !v)}
     >
-      {/* Client / Project chip */}
-      {(clientName || projectName) && (
-        <div className="flex items-center gap-1.5 flex-wrap">
+      {/* Priority Glow */}
+      {isImportant && (
+        <div className={clsx(
+          "absolute -top-1 -left-1 w-2 h-2 rounded-full",
+          task.priority === 1 ? "bg-rose-500 shadow-[0_0_8px_#f43f5e]" : "bg-orange-500 shadow-[0_0_8px_#f97316]"
+        )} />
+      )}
+
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex-1 min-w-0">
           {clientName && clientColor && (
-            <span
-              className={clsx(
-                'text-[10px] font-mono px-1.5 py-0.5 rounded border',
-                clientColor.bg, clientColor.border, clientColor.text
-              )}
-            >
+            <span className={clsx('text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-[0.2em] border mb-2 inline-block', clientColor.bg, clientColor.text, clientColor.border)}>
               {clientName}
             </span>
           )}
-          {projectName && (
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/40 text-cyan-300">
-              {projectType ? `${projectName} · ${projectType}` : projectName}
-            </span>
-          )}
-          {isChild && (
-            <span className="text-[9px] font-mono text-slate-600 border border-slate-700/50 rounded px-1 py-0.5">sub</span>
-          )}
+          <h4 className={clsx(
+            "text-[13px] font-bold leading-snug transition-colors",
+            isImportant ? "text-white" : "text-slate-300 group-hover:text-white"
+          )}>
+            {task.title}
+          </h4>
         </div>
-      )}
 
-      {/* Title */}
-      <p className={clsx(
-        'text-sm font-medium text-slate-200 leading-snug',
-        expanded ? '' : 'line-clamp-2'
-      )}>
-        {task.title}
-      </p>
-
-      {/* Description preview — collapsed only, no-client tasks */}
-      {!clientName && !expanded && descPreview && (
-        <p className="text-[11px] text-slate-500 font-mono leading-relaxed line-clamp-2">
-          {descPreview}{descPreview.length >= 100 ? '…' : ''}
-        </p>
-      )}
-
-      {/* Blocked error */}
-      {task.status === 'blocked' && blockedReason && (
-        <p className={clsx(
-          'text-[10px] text-orange-400 font-mono leading-relaxed',
-          expanded ? 'whitespace-pre-wrap break-words' : 'line-clamp-2'
-        )}>
-          ⚠ {blockedReason}
-        </p>
-      )}
-
-      {/* Expanded details */}
-      {expanded && (
-        <div className="pt-1 space-y-1.5 border-t border-white/[0.06]">
-          {task.description && (
-            <p className="text-[10px] text-slate-500 font-mono leading-relaxed whitespace-pre-wrap break-words">
-              {task.description.replace(/\[WORKSPACE CONTEXT.*$/s, '').trim()}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-1.5">
-            <span className="text-[9px] font-mono text-slate-600 bg-white/[0.03] border border-white/[0.06] rounded px-1.5 py-0.5">
-              id: {shortId}
-            </span>
-            {task.parent_task_id && (
-              <span className="text-[9px] font-mono text-slate-600 bg-white/[0.03] border border-white/[0.06] rounded px-1.5 py-0.5">
-                parent: {task.parent_task_id.slice(0, 8)}
-              </span>
-            )}
+        {/* Agent Presence Avatar */}
+        {agent && agentColor && (
+          <div className="group/avatar relative">
+            <button
+              onClick={(e) => { e.stopPropagation(); onAgentClick(agent); }}
+              className={clsx(
+                "relative shrink-0 transition-all duration-300 hover:scale-110 flex items-center justify-center w-10 h-10 rounded-lg border overflow-hidden font-black text-[10px]",
+                agentColor.bg, agentColor.border, agentColor.text, agentColor.glow,
+                isBusy && "ring-2 ring-amber-400/50"
+              )}
+            >
+              {agent.name.split(' ').map(n => n[0]).join('')}
+              {isBusy && (
+                <div className="absolute inset-0 bg-amber-400/5 animate-pulse" />
+              )}
+            </button>
+            {/* Hover Tooltip for Agent Name */}
+            <div className="absolute bottom-full right-0 mb-2 whitespace-nowrap px-2 py-1 rounded bg-[#0A1628] border border-white/10 text-[9px] font-black text-white uppercase tracking-widest opacity-0 invisible group-hover/avatar:opacity-100 group-hover/avatar:visible transition-all z-50 pointer-events-none shadow-2xl">
+              {agent.name}
+            </div>
+            {/* Status Indicator */}
+            <div className={clsx(
+              "absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#070C1A] z-10",
+              isBusy ? "bg-amber-400 animate-pulse" : agent.status === 'online' ? "bg-emerald-400" : "bg-slate-600"
+            )} />
           </div>
-          {task.status === 'blocked' && (
-            <>
-              {dependencyReason && (
-                <p className="text-[9px] font-mono text-orange-300">
-                  Dependency: {dependencyReason}
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    void handleTaskAction('retry')
-                  }}
-                  disabled={actionState.action !== null}
-                  className="text-[10px] font-mono px-2 py-1 rounded border border-sky-500/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 disabled:opacity-50"
-                >
-                  {actionState.action === 'retry' ? 'Retrying…' : 'Retry'}
-                </button>
-                <button
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    void handleTaskAction('reject')
-                  }}
-                  disabled={actionState.action !== null}
-                  className="text-[10px] font-mono px-2 py-1 rounded border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
-                >
-                  {actionState.action === 'reject' ? 'Cancelling…' : 'Cancel'}
-                </button>
-              </div>
-              <p className="text-[9px] font-mono text-slate-600">
-                💡 Telegram: /retry {task.id} · /reject {task.id}
-              </p>
-              {actionState.message && (
-                <p className="text-[9px] font-mono text-emerald-300">{actionState.message}</p>
-              )}
-              {actionState.error && (
-                <p className="text-[9px] font-mono text-rose-300">{actionState.error}</p>
-              )}
-            </>
-          )}
-          {task.status === 'in_progress' && (
-            <p className="text-[9px] font-mono text-slate-600">
-              💡 /approve {task.id} · /reject {task.id}
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="flex items-center justify-between pt-1 border-t border-white/[0.04]">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <Badge variant={task.type} className="flex-shrink-0">{task.type.replace(/_/g, ' ')}</Badge>
-          <span className="text-[10px] font-mono text-slate-600 truncate" title={agentLine}>
-            {agentLine}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0 ml-1">
-          <Badge variant={`p${task.priority}`} className="flex-shrink-0">P{task.priority}</Badge>
-          <span className="text-[10px] text-slate-700 font-mono">
-            {formatDistanceToNow(new Date(task.created_at), { addSuffix: true })}
-          </span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Column
-// ---------------------------------------------------------------------------
-
-function Column({ config, tasks, isDone }: { config: ColConfig; tasks: Task[]; isDone?: boolean }) {
-  const displayTasks = isDone ? tasks.slice(0, DONE_LIMIT) : tasks
-  const hidden = isDone ? tasks.length - DONE_LIMIT : 0
-
-  return (
-    <div className="flex flex-col min-w-0">
-      {/* Column header */}
-      <div className={clsx('flex items-center justify-between px-1 py-3 border-t-2', config.borderT)}>
-        <span className={clsx('text-xs font-bold uppercase tracking-wider', config.accent)}>
-          {config.label}
-        </span>
-        <span className={clsx(
-          'text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md',
-          tasks.length > 0
-            ? `${config.accent} bg-white/[0.05]`
-            : 'text-slate-700 bg-white/[0.02]'
-        )}>
-          {tasks.length}
-        </span>
+        )}
       </div>
 
-      {/* Cards */}
-      <div className="space-y-2 mt-1 flex-1 overflow-y-auto max-h-[calc(100vh-300px)] pr-0.5">
-        {displayTasks.length === 0 ? (
-          <div className="flex items-center justify-center h-20 border border-dashed border-white/[0.06] rounded-xl">
-            <span className="text-xs text-slate-700">Empty</span>
+      {/* Live Node Log (Micro-string) */}
+      {task.status === 'in_progress' && lastRun && (
+        <div className="mb-3 px-2 py-1.5 rounded bg-black/40 border border-white/5 font-mono text-[9px] text-emerald-400/80 overflow-hidden italic">
+          <span className="text-slate-600 mr-1.5">[{new Date(lastRun.created_at).toLocaleTimeString('it-IT', { hour12: false })}]</span>
+          {lastRun.output_summary ? lastRun.output_summary.slice(0, 60) + '...' : 'Processing stream...'}
+        </div>
+      )}
+
+      {/* Footer Info */}
+      <div className="flex flex-col gap-2 pt-3 border-t border-white/5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-mono text-slate-600 uppercase tracking-widest">{task.type}</span>
+            <span className="w-1 h-1 rounded-full bg-slate-800" />
+            <span className="text-[9px] font-mono text-slate-500 font-bold uppercase tracking-tighter italic">
+              {format(new Date(task.created_at), 'dd MMM HH:mm')}
+            </span>
           </div>
-        ) : (
-          <>
-            {displayTasks.map((t) => <TaskCard key={t.id} task={t} />)}
-            {hidden > 0 && (
-              <div className="text-center py-2">
-                <span className="text-[10px] font-mono text-slate-600">
-                  +{hidden} older task{hidden > 1 ? 's' : ''} hidden
-                </span>
-              </div>
-            )}
-          </>
+          <div className={clsx(
+            "text-[9px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded",
+            task.priority === 1 ? "text-rose-400 bg-rose-400/10" : "text-slate-500 bg-white/5"
+          )}>
+            P{task.priority}
+          </div>
+        </div>
+        
+        {/* Agent Name Label in Footer */}
+        {agent && (
+          <div className="flex items-center gap-1.5">
+            <div className="w-1 h-3 rounded-full bg-[#00D4FF]/20" />
+            <span className="text-[10px] font-black text-[#00D4FF]/70 uppercase tracking-[0.1em]">
+              Node: <span className="text-[#00D4FF]">{agent.name}</span>
+            </span>
+          </div>
         )}
       </div>
     </div>
@@ -393,129 +179,115 @@ function Column({ config, tasks, isDone }: { config: ColConfig; tasks: Task[]; i
 }
 
 // ---------------------------------------------------------------------------
-// Main
+// Main Board
 // ---------------------------------------------------------------------------
 
 export function TaskBoard() {
   const { data: tasks, loading, error } = useTasks()
+  const { data: agents } = useAgents()
   const { data: clients } = useClients()
   const { data: projects } = useProjects()
+  const { runCounts, lastRuns } = useAgentStats()
+  const { data: events } = useEventsWithContext(50)
 
-  const [filter, setFilter] = useState<FilterState>({
-    search: '', clientId: '', projectId: '', agent: '',
-  })
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
 
-  // Unique agents present in tasks (assignee or delegator)
-  const agentOptions = useMemo(() => {
-    const s = new Set<string>()
-    for (const t of tasks) {
-      if (t.assignee_agent_id) s.add(t.assignee_agent_id)
-      if (t.delegator_agent_id) s.add(t.delegator_agent_id)
-    }
-    return Array.from(s).sort()
-  }, [tasks])
-
-  const filtered = useMemo(() => {
-    return tasks.filter((t) => {
-      if (t.status === 'cancelled') return false
-
-      if (filter.search) {
-        const q = filter.search.toLowerCase()
-        const clientName  = getMeta(t, 'client_name').toLowerCase()
-        const projectName = getMeta(t, 'project_name').toLowerCase()
-        if (
-          !t.title.toLowerCase().includes(q) &&
-          !clientName.includes(q) &&
-          !projectName.includes(q)
-        ) return false
-      }
-
-      if (filter.clientId) {
-        const clientName = clients.find((c) => c.id === filter.clientId)?.name ?? ''
-        if (getMeta(t, 'client_name').toLowerCase() !== clientName.toLowerCase()) return false
-      }
-
-      if (filter.projectId) {
-        const project = projects.find((p) => p.id === filter.projectId)
-        if (!project) return false
-        if (t.project_id !== project.id && getMeta(t, 'project_name').toLowerCase() !== project.name.toLowerCase()) return false
-      }
-
-      if (filter.agent) {
-        if (t.assignee_agent_id !== filter.agent && t.delegator_agent_id !== filter.agent) return false
-      }
-
-      return true
+  const grouped = useMemo(() => {
+    const map = tasks.reduce<Record<TaskStatus, Task[]>>(
+      (acc, t) => {
+        acc[t.status] = [...(acc[t.status] ?? []), t]
+        return acc
+      },
+      { todo: [], in_progress: [], done: [], blocked: [], cancelled: [] }
+    )
+    // Sort columns by priority
+    Object.keys(map).forEach((k) => {
+      map[k as TaskStatus].sort((a, b) => a.priority - b.priority)
     })
-  }, [tasks, filter, clients, projects])
+    return map
+  }, [tasks])
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-40">
-        <div className="w-5 h-5 border-2 border-[#00D4FF]/30 border-t-[#00D4FF] rounded-full animate-spin" />
+      <div className="flex items-center justify-center h-64">
+        <div className="w-10 h-10 border-4 border-[#00D4FF]/20 border-t-[#00D4FF] rounded-full animate-spin" />
       </div>
     )
   }
 
-  if (error) {
-    return (
-      <Panel className="border-rose-500/20">
-        <p className="text-rose-400 text-sm">Error: {error}</p>
-      </Panel>
-    )
-  }
-
-  const grouped = filtered.reduce<Record<TaskStatus, Task[]>>(
-    (acc, t) => {
-      acc[t.status] = [...(acc[t.status] ?? []), t]
-      return acc
-    },
-    { todo: [], in_progress: [], done: [], blocked: [], cancelled: [] }
-  )
-
-  const totalActive = filtered.filter((t) => t.status !== 'done').length
-  const isFiltering = Boolean(filter.search || filter.clientId || filter.projectId || filter.agent)
+  if (error) return <div className="p-8 text-rose-400 font-bold">Board Sync Failure: {error}</div>
 
   return (
-    <div className="animate-fade-in space-y-4">
-      {/* Summary bar */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-4">
-          {COLUMNS.map((col) => {
-            const count = grouped[col.status].length
-            return (
-              <div key={col.status} className="flex items-center gap-1.5">
-                <span className={clsx('text-xl font-bold font-tabular', col.accent)}>{count}</span>
-                <span className="text-xs text-slate-600 capitalize">{col.label}</span>
-              </div>
-            )
-          })}
+    <div className="animate-fade-in space-y-8">
+      {/* Board Summary */}
+      <div className="flex items-center justify-between px-2">
+        <div className="flex items-center gap-8">
+          {COLUMNS.map(col => (
+            <div key={col.status} className="flex flex-col">
+              <span className={clsx("text-lg font-black font-mono", col.accent)}>{grouped[col.status].length}</span>
+              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{col.label}</span>
+            </div>
+          ))}
         </div>
-        <span className="text-xs text-slate-500 font-mono">
-          {totalActive} active{isFiltering ? ` (filtered from ${tasks.filter((t) => t.status !== 'cancelled').length})` : ''}
-        </span>
+        <p className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest italic">Tactical Map Active</p>
       </div>
 
-      {/* Filter bar */}
-      <FilterBar
-        filter={filter}
-        onChange={setFilter}
-        clients={clients.map((c) => ({ id: c.id, name: c.name }))}
-        projects={projects.map((p) => ({ id: p.id, name: p.name, client_id: p.client_id }))}
-        agents={agentOptions}
-      />
-
-      {/* Board */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        {COLUMNS.map((col) => (
-          <Column
-            key={col.status}
-            config={col}
-            tasks={grouped[col.status] ?? []}
-            isDone={col.status === 'done'}
-          />
+      {/* Kanban Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-start">
+        {COLUMNS.map(col => (
+          <div key={col.status} className="flex flex-col gap-4">
+            <div className={clsx("flex items-center justify-between pb-2 border-b-2", col.accent.replace('text-', 'border-'))}>
+              <h3 className={clsx("text-[11px] font-black uppercase tracking-[0.25em]", col.accent)}>{col.label}</h3>
+              <span className="text-[10px] font-mono text-slate-700">{grouped[col.status].length}</span>
+            </div>
+            
+            <div className="flex flex-col gap-3 min-h-[500px]">
+              {grouped[col.status].map(task => {
+                const assignee = agents.find(a => a.id === task.assignee_agent_id)
+                const run = task.assignee_agent_id ? lastRuns[task.assignee_agent_id]?.[0] : undefined
+                return (
+                  <TaskCard 
+                    key={task.id} 
+                    task={task} 
+                    agent={assignee}
+                    lastRun={run}
+                    onSelect={setSelectedTask}
+                    onAgentClick={setSelectedAgent}
+                  />
+                )
+              })}
+              {grouped[col.status].length === 0 && (
+                <div className="py-12 border border-dashed border-white/5 rounded-xl flex items-center justify-center">
+                  <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest italic">No Intel</span>
+                </div>
+              )}
+            </div>
+          </div>
         ))}
       </div>
+
+      {/* Detail Sidebar (Task) */}
+      {selectedTask && (
+        <DetailSidebar
+          title="Task Operational Detail"
+          subtitle={`Priority P${selectedTask.priority} • ${selectedTask.status}`}
+          data={selectedTask}
+          onClose={() => setSelectedTask(null)}
+        />
+      )}
+
+      {/* Agent Sidebar */}
+      {selectedAgent && (
+        <AgentDetailSidebar
+          agent={selectedAgent}
+          lastRuns={lastRuns[selectedAgent.id] ?? []}
+          runCount={runCounts[selectedAgent.id] ?? 0}
+          activeTasks={tasks.filter(t => t.status === 'in_progress')}
+          recentEvents={events || []}
+          onClose={() => setSelectedAgent(null)}
+        />
+      )}
     </div>
   )
 }
