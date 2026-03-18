@@ -6,6 +6,7 @@
 import { runAgent } from '../services/llm.js'
 import { createTask, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
+import { loadAllWorkspaceContext, resolveSoftwareWorkspacePath } from './software_delivery_utils.js'
 import { runPmSaasAgent } from './pm_saas.js'
 import { runDevLeadSaasAgent } from './dev_lead_saas.js'
 import { runDevSaasAgent } from './dev_saas.js'
@@ -128,6 +129,20 @@ export async function runCeoAgent(
 ${clientSlug ? `- Client slug: ${clientSlug}` : ''}`
   }
 
+  // Read workspace context (brief + existing deliverables) to inform routing decision
+  let workspaceContext = ''
+  try {
+    const workspaceAbsPath = await resolveSoftwareWorkspacePath(task, projectId)
+    if (workspaceAbsPath) {
+      const ctx = await loadAllWorkspaceContext(workspaceAbsPath)
+      if (ctx) {
+        workspaceContext = `\n\nWorkspace context (use this to route correctly — check existing deliverables before deciding):\n${ctx}`
+      }
+    }
+  } catch {
+    // workspace read is best-effort — never block routing
+  }
+
   const systemPrompt = `You are the CEO Agent of WAI (Wawen Autonomous Industries), a Zero Human Company.
 Your role: analyze tasks from Founder Neb and delegate them to the right agent.
 
@@ -140,6 +155,9 @@ Routing hints:
 - If the task is for saas delivery, prefer pm_saas or dev_lead_saas unless it is clearly a single worker task.
 - If the task is for a client website, app, automation, portal, dashboard, internal tool, integration, or custom software project, prefer architect unless it is explicitly QA-only or a direct follow-up for a specific dev_general worker.
 - If the task is for marketing, content, copywriting, design, launches, funnels, or audience growth, prefer marketing_strategist for coordinated delivery. Use content_creator or social_manager directly only for clearly standalone execution.
+- CRITICAL OVERRIDE: If the task involves CREATING A FILE or WRITING CODE (HTML, CSS, JS, script, page, report file, PDF generator, dashboard, etc.) — regardless of project type — always prefer architect or dev_general_1. The type of work (implementation) overrides the project domain.
+- CRITICAL OVERRIDE: If the task says "usa i contenuti esistenti", "usa i deliverable", "prendi quello che hai fatto", "crea una pagina da", "generate from existing" — the workspace context below may list those files. Read it and route to architect who can read and use them.
+- If workspace context lists existing deliverables (marketing plans, analysis, proposals, etc.) and the task is to CREATE SOMETHING FROM them, always prefer architect.
 
 Respond with ONLY a JSON object — no markdown, no text outside JSON:
 {
@@ -152,7 +170,7 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
 
   const userMessage = `New task from Founder Neb:
 Title: ${task.title}
-Description: ${task.description}${projectContext}
+Description: ${task.description}${projectContext}${workspaceContext}
 
 Analyze and delegate to the most appropriate agent.`
 

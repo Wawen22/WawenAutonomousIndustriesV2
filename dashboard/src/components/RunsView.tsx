@@ -68,65 +68,94 @@ function FilterBar({
 // ---------------------------------------------------------------------------
 
 function RunRow({ run }: { run: AgentRun }) {
+  const [expanded, setExpanded] = useState(false)
   const isGpt = run.model_id.includes('gpt')
+  const isFailed = run.outcome === 'failure'
+  const hasError = isFailed && !!run.error_message
 
   return (
-    <tr className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors text-xs">
-      {/* Timestamp */}
-      <td className="py-2.5 px-4 font-mono text-slate-500 whitespace-nowrap">
-        {format(new Date(run.created_at), 'MM-dd HH:mm:ss')}
-      </td>
+    <>
+      <tr
+        className={clsx(
+          'border-b border-white/[0.04] transition-colors text-xs',
+          hasError ? 'cursor-pointer hover:bg-red-500/[0.04]' : 'hover:bg-white/[0.02]'
+        )}
+        onClick={hasError ? () => setExpanded((v) => !v) : undefined}
+      >
+        {/* Timestamp */}
+        <td className="py-2.5 px-4 font-mono text-slate-500 whitespace-nowrap">
+          {format(new Date(run.created_at), 'MM-dd HH:mm:ss')}
+        </td>
 
-      {/* Agent */}
-      <td className="py-2.5 px-4 font-mono text-slate-300 whitespace-nowrap">
-        {run.agent_id}
-      </td>
+        {/* Agent */}
+        <td className="py-2.5 px-4 font-mono text-slate-300 whitespace-nowrap">
+          {run.agent_id}
+        </td>
 
-      {/* Model */}
-      <td className="py-2.5 px-4 whitespace-nowrap">
-        <span className={clsx(
-          'font-mono font-semibold px-1.5 py-0.5 rounded text-[10px]',
-          isGpt
-            ? 'text-[#00D4FF] bg-[#00D4FF]/[0.07]'
-            : 'text-violet-400 bg-violet-400/[0.07]'
-        )}>
-          {run.model_id}
-        </span>
-      </td>
+        {/* Model */}
+        <td className="py-2.5 px-4 whitespace-nowrap">
+          <span className={clsx(
+            'font-mono font-semibold px-1.5 py-0.5 rounded text-[10px]',
+            isGpt
+              ? 'text-[#00D4FF] bg-[#00D4FF]/[0.07]'
+              : 'text-violet-400 bg-violet-400/[0.07]'
+          )}>
+            {run.model_id}
+          </span>
+        </td>
 
-      {/* Outcome */}
-      <td className="py-2.5 px-4">
-        <Badge variant={
-          run.outcome === 'success' ? 'done'
-          : run.outcome === 'partial' ? 'warning'
-          : 'error'
-        }>
-          {run.outcome}
-        </Badge>
-      </td>
+        {/* Outcome */}
+        <td className="py-2.5 px-4">
+          <div className="flex items-center gap-1.5">
+            <Badge variant={
+              run.outcome === 'success' ? 'done'
+              : run.outcome === 'partial' ? 'warning'
+              : 'error'
+            }>
+              {run.outcome}
+            </Badge>
+            {hasError && (
+              <span className="text-red-400/70 text-[10px]">
+                {expanded ? '▲' : '▼'}
+              </span>
+            )}
+          </div>
+        </td>
 
-      {/* Tokens in */}
-      <td className="py-2.5 px-4 font-mono font-tabular text-slate-400 text-right whitespace-nowrap">
-        {run.tokens_input.toLocaleString()}
-      </td>
+        {/* Tokens in */}
+        <td className="py-2.5 px-4 font-mono font-tabular text-slate-400 text-right whitespace-nowrap">
+          {run.tokens_input.toLocaleString()}
+        </td>
 
-      {/* Tokens out */}
-      <td className="py-2.5 px-4 font-mono font-tabular text-slate-400 text-right whitespace-nowrap">
-        {run.tokens_output.toLocaleString()}
-      </td>
+        {/* Tokens out */}
+        <td className="py-2.5 px-4 font-mono font-tabular text-slate-400 text-right whitespace-nowrap">
+          {run.tokens_output.toLocaleString()}
+        </td>
 
-      {/* Cost */}
-      <td className="py-2.5 px-4 font-mono font-tabular text-white font-semibold text-right whitespace-nowrap">
-        ${run.cost_usd.toFixed(4)}
-      </td>
+        {/* Cost */}
+        <td className="py-2.5 px-4 font-mono font-tabular text-white font-semibold text-right whitespace-nowrap">
+          ${run.cost_usd.toFixed(4)}
+        </td>
 
-      {/* Duration */}
-      <td className="py-2.5 px-4 font-mono font-tabular text-slate-500 text-right whitespace-nowrap">
-        {run.duration_ms < 1000
-          ? `${run.duration_ms}ms`
-          : `${(run.duration_ms / 1000).toFixed(1)}s`}
-      </td>
-    </tr>
+        {/* Duration */}
+        <td className="py-2.5 px-4 font-mono font-tabular text-slate-500 text-right whitespace-nowrap">
+          {run.duration_ms < 1000
+            ? `${run.duration_ms}ms`
+            : `${(run.duration_ms / 1000).toFixed(1)}s`}
+        </td>
+      </tr>
+
+      {/* Error detail row */}
+      {hasError && expanded && (
+        <tr className="border-b border-red-500/10 bg-red-500/[0.03]">
+          <td colSpan={8} className="px-4 py-2.5">
+            <p className="text-[11px] font-mono text-red-400/90 whitespace-pre-wrap break-all">
+              {run.error_message}
+            </p>
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 

@@ -136,3 +136,46 @@ export async function loadRelevantDeliverables(workspaceAbsPath: string): Promis
 export function sanitizeFilePart(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
+
+// ---------------------------------------------------------------------------
+// loadAllWorkspaceContext
+// Reads brief.md + ALL deliverables and returns a formatted string suitable
+// for injection into any agent's prompt. Used by CEO, Architect, etc.
+// ---------------------------------------------------------------------------
+
+const PLACEHOLDER_BRIEF = '_Describe the project goal here._'
+const MAX_BRIEF_CHARS = 1500
+const MAX_DELIVERABLE_CHARS = 4000
+
+export async function loadAllWorkspaceContext(workspaceAbsPath: string): Promise<string> {
+  const parts: string[] = []
+
+  // brief.md
+  const briefPath = join(workspaceAbsPath, 'brief.md')
+  const brief = await readOptionalFile(briefPath)
+  if (brief && !brief.includes(PLACEHOLDER_BRIEF)) {
+    parts.push(`### Project Brief\n${brief.slice(0, MAX_BRIEF_CHARS)}`)
+  }
+
+  // All deliverables
+  const deliverableDir = join(workspaceAbsPath, 'deliverables')
+  if (!existsSync(deliverableDir)) return parts.join('\n\n')
+
+  try {
+    const entries = await readdir(deliverableDir, { withFileTypes: true })
+    const files = entries.filter((e) => e.isFile()).sort((a, b) => a.name.localeCompare(b.name))
+
+    if (files.length === 0) return parts.join('\n\n')
+
+    parts.push(`### Existing Deliverables (${files.length} file${files.length > 1 ? 's' : ''})`)
+    for (const file of files) {
+      const content = await readOptionalFile(join(deliverableDir, file.name))
+      if (!content) continue
+      parts.push(`#### ${file.name}\n${content.slice(0, MAX_DELIVERABLE_CHARS)}`)
+    }
+  } catch {
+    // ignore readdir failures
+  }
+
+  return parts.join('\n\n')
+}

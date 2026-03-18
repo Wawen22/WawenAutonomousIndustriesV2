@@ -71,8 +71,8 @@ const AGENT_MODEL_DEFAULTS: Record<string, string> = {
   // Team Dev
   architect: 'gpt-5.4',
   dev_general_1: 'gpt-5.4',
-  dev_general_2: 'gemini-2.5-flash',
-  qa: 'gemini-2.5-flash',
+  dev_general_2: 'gpt-5.4',
+  qa: 'gpt-5.4',
 
   // Team Consulting
   consulting_lead: 'gpt-5.4',

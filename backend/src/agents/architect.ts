@@ -13,6 +13,7 @@ import { log, recordEvent } from '../services/logger.js'
 import { appendProjectProgress } from '../services/workspace.js'
 import { runDevGeneralAgent } from './dev_general.js'
 import {
+  loadAllWorkspaceContext,
   loadRepoContext,
   readOptionalFile,
   repoNeedsBootstrap,
@@ -206,11 +207,17 @@ export async function runArchitectAgent(
   const briefContent = workspaceAbsPath
     ? await readOptionalFile(join(workspaceAbsPath, 'brief.md'))
     : ''
+  // Load full workspace context: brief + ALL existing deliverables (including cross-chain artifacts)
+  const fullWorkspaceContext = workspaceAbsPath
+    ? await loadAllWorkspaceContext(workspaceAbsPath)
+    : ''
   const repoContext = await loadRepoContext(repoLocalPath)
   const bootstrapRepo = await repoNeedsBootstrap(repoLocalPath)
 
   const systemPrompt = `You are the Architect Agent of WAI (Wawen Autonomous Industries).
-Your role: translate a custom software request into an execution-ready architecture plan and split work between exactly two implementation workers.
+Your role: translate a request into an execution-ready plan and split work between exactly two implementation workers.
+
+IMPORTANT: If workspace context includes existing deliverables (marketing plans, analysis, content packages, etc.), your workers MUST read and use them. Do not recreate content that already exists — build ON TOP of it. Reference specific file names from the workspace context in the worker task descriptions.
 
 Respond with ONLY a JSON object — no markdown, no text outside JSON:
 {
@@ -259,10 +266,10 @@ Constraints:
     repoDefaultBranch ? `Repo default branch: ${repoDefaultBranch}` : '',
     repoUrl ? `Repo URL: ${repoUrl}` : '',
     bootstrapRepo ? `Repo state: bootstrap needed (empty or near-empty repo)` : '',
-    briefContent ? `\nProject Brief:\n${briefContent}` : '',
+    fullWorkspaceContext ? `\nWorkspace Context (brief + existing deliverables — BUILD ON THESE):\n${fullWorkspaceContext}` : briefContent ? `\nProject Brief:\n${briefContent}` : '',
     repoContext ? `\nRepository Context:\n${repoContext}` : '',
     ``,
-    `Produce an architecture plan, worker split, and QA gates.`,
+    `Produce an architecture plan and worker split. If workspace context exists, workers must use the existing deliverables as inputs, not recreate them.`,
   ].filter(Boolean).join('\n')
 
   await updateTaskStatus(task.id, 'in_progress')

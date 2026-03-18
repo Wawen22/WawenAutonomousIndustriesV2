@@ -5,8 +5,8 @@
 // ============================================================
 
 import OpenAI from 'openai'
-import { getModelForAgent, estimateCost } from '../config/models.js'
-import { recordRun } from './logger.js'
+import { getModelForAgent, getModelById, estimateCost } from '../config/models.js'
+import { log, recordRun } from './logger.js'
 import type { ModelRoutingContext, RunOutcome, TaskType } from '../types/index.js'
 
 const DEFAULT_RUN_TIMEOUT_MS = 180_000
@@ -71,6 +71,27 @@ export interface RunResult {
 // Funzione principale: esegui una chiamata LLM e logga il run
 // ---------------------------------------------------------------------------
 
+const FALLBACK_MODEL_ID = 'gpt-5.4'
+
+async function callLLM(
+  client: OpenAI,
+  modelId: string,
+  messages: ChatMessage[],
+  signal: AbortSignal
+): Promise<{ content: string; tokensInput: number; tokensOutput: number }> {
+  const completion = await client.chat.completions.create({
+    model: modelId,
+    messages,
+    store: false,
+  }, { signal })
+
+  return {
+    content: completion.choices[0]?.message?.content ?? '',
+    tokensInput: completion.usage?.prompt_tokens ?? 0,
+    tokensOutput: completion.usage?.completion_tokens ?? 0,
+  }
+}
+
 export async function runAgent(
   messages: ChatMessage[],
   opts: RunOptions
@@ -92,23 +113,51 @@ export async function runAgent(
   let content = ''
   let tokensInput = 0
   let tokensOutput = 0
+  let usedModelId = model.id
   const abortController = new AbortController()
   const timeoutHandle = setTimeout(() => {
     abortController.abort(`LLM run exceeded ${String(timeoutMs)}ms`)
   }, timeoutMs)
 
   try {
-    const completion = await client.chat.completions.create({
-      model: model.id,
-      messages,
-      store: false,
-    }, {
-      signal: abortController.signal,
-    })
+    try {
+      const result = await callLLM(client, model.id, messages, abortController.signal)
+      content = result.content
+      tokensInput = result.tokensInput
+      tokensOutput = result.tokensOutput
+    } catch (primaryErr) {
+      // If the primary model is not gpt-5.4, attempt a fallback
+      if (model.id !== FALLBACK_MODEL_ID && !abortController.signal.aborted) {
+        const primaryErrMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
+        log.warn(
+          { agentId: opts.agentId, primaryModel: model.id, error: primaryErrMsg },
+          `LLM primary model failed, retrying with ${FALLBACK_MODEL_ID}`
+        )
 
-    content = completion.choices[0]?.message?.content ?? ''
-    tokensInput = completion.usage?.prompt_tokens ?? 0
-    tokensOutput = completion.usage?.completion_tokens ?? 0
+        // Log the failed primary attempt
+        void recordRun({
+          agent_id: opts.agentId,
+          ...(opts.taskId !== undefined && { task_id: opts.taskId }),
+          model_id: model.id,
+          input_summary: messages[messages.length - 1]?.content?.substring(0, 500) ?? '',
+          output_summary: '',
+          tokens_input: 0,
+          tokens_output: 0,
+          tools_used: opts.tools ?? [],
+          outcome: 'failure',
+          error_message: `Primary model failed, fell back to ${FALLBACK_MODEL_ID}: ${primaryErrMsg}`,
+          duration_ms: Date.now() - startMs,
+        })
+
+        const fallbackResult = await callLLM(client, FALLBACK_MODEL_ID, messages, abortController.signal)
+        content = fallbackResult.content
+        tokensInput = fallbackResult.tokensInput
+        tokensOutput = fallbackResult.tokensOutput
+        usedModelId = FALLBACK_MODEL_ID
+      } else {
+        throw primaryErr
+      }
+    }
   } catch (err) {
     outcome = 'failure'
     const rawMessage = err instanceof Error ? err.message : String(err)
@@ -133,7 +182,7 @@ export async function runAgent(
     void recordRun({
       agent_id: opts.agentId,
       ...(opts.taskId !== undefined && { task_id: opts.taskId }),
-      model_id: model.id,
+      model_id: usedModelId,
       input_summary: messages[messages.length - 1]?.content?.substring(0, 500) ?? '',
       output_summary: content.substring(0, 500),
       tokens_input: tokensInput,
@@ -146,7 +195,8 @@ export async function runAgent(
   }
 
   const durationMs = Date.now() - startMs
-  return { content, modelId: model.id, tokensInput, tokensOutput, costUsd: estimateCost(model, tokensInput, tokensOutput), durationMs }
+  const usedModel = usedModelId === model.id ? model : getModelById(usedModelId)
+  return { content, modelId: usedModelId, tokensInput, tokensOutput, costUsd: estimateCost(usedModel, tokensInput, tokensOutput), durationMs }
 }
 
 // ---------------------------------------------------------------------------

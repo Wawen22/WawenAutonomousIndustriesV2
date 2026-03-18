@@ -101,6 +101,14 @@
 
 ## CHANGELOG
 
+### 2026-03-18 — Sessione 22: Agent workspace memory + CEO routing fix ✅
+
+- **FIX** `backend/src/agents/software_delivery_utils.ts` — aggiunto `loadAllWorkspaceContext(workspaceAbsPath)`: legge brief.md + TUTTI i deliverables (marketing, consulting, software, QA) e restituisce un blocco di testo formattato per injection nei prompt; estende il pattern esistente `loadRelevantDeliverables` a tutti i tipi di artifact cross-chain
+- **FIX** `backend/src/agents/ceo.ts` — il CEO ora legge il workspace context (brief + deliverables esistenti) prima di ogni decisione di routing; aggiunto import `loadAllWorkspaceContext` + `resolveSoftwareWorkspacePath`; aggiunti routing hint critici: task di tipo "crea file/HTML/codice" → architect indipendentemente dal tipo progetto; task che dice "usa i contenuti esistenti / usa quello che hai fatto" → workspace context consultato e routing verso architect
+- **FIX** `backend/src/agents/architect.ts` — l'Architect ora legge TUTTI i deliverables del workspace (non solo architecture_plan.md/qa_report.md/dev-general-*); system prompt aggiornato: "se esistono deliverables, i worker DEVONO usarli come input, non ricrearli"; user message passa `fullWorkspaceContext` al posto del solo briefContent
+- **FIX** `backend/src/agents/ceo_intake.ts` — `create_task` ora arricchisce la descrizione del task con il workspace context (brief + deliverables) prima di consegnarlo al CEO; import `loadAllWorkspaceContext`
+- **VERIFY** `pnpm typecheck && pnpm build` verdi backend
+
 ### 2026-03-18 — Sessione 21: T047 + T048 — Natural Language CEO + Revenue View ✅
 
 - **T047** `backend/src/agents/ceo_intake.ts` — nuovo modulo `runCeoNaturalLanguageHandler(chatId, text, reply, notify)`: gestisce conversazioni multi-turn con stato in-memory (Map<chatId, IntakeContext>, TTL 10 min); usa GPT-5.4 per analizzare l'intento e rispondere con JSON strutturato (`ask` / `execute` / `reply` / `unclear`); esegue direttamente: `create_client`, `create_project`, `write_brief`, `create_task` (+ fire-and-forget CEO agent), `list_clients`, `list_projects`, `status_report`; logga eventi `founder_command` su Supabase

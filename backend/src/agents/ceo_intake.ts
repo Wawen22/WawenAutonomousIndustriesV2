@@ -28,6 +28,7 @@ import {
   getProjectWorkspacePath,
 } from '../services/workspace.js'
 import { log, recordEvent } from '../services/logger.js'
+import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import { runCeoAgent } from './ceo.js'
 import type { Client, ProjectType } from '../types/index.js'
 
@@ -469,9 +470,29 @@ async function executeAction(
         }
       }
 
+      // Enrich description with workspace context (brief + existing deliverables)
+      // so the CEO agent can see what already exists and route correctly
+      let enrichedDescription = description
+      if (projectId && taskMetadata['workspace_path']) {
+        try {
+          const { getProjectWorkspacePath: getWsPath } = await import('../services/workspace.js')
+          const clientSlugForWs = getString(params, 'client_slug')
+          const projectSlugForWs = getString(params, 'project_slug')
+          if (clientSlugForWs && projectSlugForWs) {
+            const wsAbsPath = getWsPath(clientSlugForWs, projectSlugForWs)
+            const ctx = await loadAllWorkspaceContext(wsAbsPath)
+            if (ctx) {
+              enrichedDescription = `${description}\n\n[WORKSPACE CONTEXT — existing deliverables and brief]\n${ctx}`
+            }
+          }
+        } catch {
+          // best-effort — never block task creation
+        }
+      }
+
       const task = await createTask({
         title,
-        description,
+        description: enrichedDescription,
         type: 'routing',
         priority: 2,
         assignee_agent_id: 'ceo',
