@@ -1,7 +1,7 @@
 # WAI Knowledge Base
 
 > This is the canonical entry point for WAI documentation.
-> If a document is not linked from here, it is either specialized reference material or archive.
+> If a document is not linked from here, it is specialized reference material or simply not part of the canonical docs path.
 
 ---
 
@@ -10,7 +10,7 @@
 | Goal | Read This First | Then |
 |------|------------------|------|
 | Understand what WAI is | [VISION.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/VISION.md) | [PROJECT_TRACKING.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/PROJECT_TRACKING.md) |
-| See where the project stands now | [PROJECT_TRACKING.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/PROJECT_TRACKING.md) | [archive/PROJECT_TRACKING_ARCHIVE_2026-03-19.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/archive/PROJECT_TRACKING_ARCHIVE_2026-03-19.md) |
+| See where the project stands now | [PROJECT_TRACKING.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/PROJECT_TRACKING.md) | `Recent Changes` section in the same file |
 | Use WAI as founder | [FOUNDER_OPERATIONS_PLAYBOOK.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/FOUNDER_OPERATIONS_PLAYBOOK.md) | [MCP_SETUP.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/MCP_SETUP.md) |
 | Understand the system architecture | [ARCHITECTURE.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/ARCHITECTURE.md) | [AGENTS_AND_TEAMS.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/AGENTS_AND_TEAMS.md) |
 | Operate or debug the stack | [OPERATIONS_AND_MONITORING.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/OPERATIONS_AND_MONITORING.md) | [SECURITY.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/SECURITY.md) |
@@ -56,33 +56,26 @@ These are useful, but not the first files to open unless you already know the ar
 
 ---
 
-## Archive
-
-Historical material should move here instead of bloating the live docs.
-
-- [archive/PROJECT_TRACKING_ARCHIVE_2026-03-19.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/archive/PROJECT_TRACKING_ARCHIVE_2026-03-19.md)
-- [archive/FOUNDER_PLAYBOOK_ARCHIVE_2026-03-19.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/archive/FOUNDER_PLAYBOOK_ARCHIVE_2026-03-19.md)
-
----
-
 ## Documentation Rules
 
 1. `PROJECT_TRACKING.md` is the live status file, not the full historical log.
-2. Big chronological logs should be moved into `docs/archive/`.
+2. Keep canonical docs short enough to stay usable, but complete enough that separate shadow docs are not needed.
 3. Each topic should have one primary document only.
 4. README should stay short and point here instead of duplicating half the docs tree.
 5. Future `/wiki` or `/docs` in the dashboard should render this structure, not a second parallel structure.
 
 ---
 
-## Planned Next Step
+## Dashboard Viewer
 
-After this cleanup, the next documentation step should be a dashboard docs viewer:
+The dashboard docs viewer is now live in Company mode as `Docs`.
 
-- route like `/docs` or `/wiki`
-- left navigation from this index
-- markdown rendering
-- search
-- founder vs technical badges
+It is intentionally grounded in the real repository structure:
 
-But the content model had to be cleaned first. This file is the foundation for that.
+- default document is [INDEX.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/INDEX.md)
+- navigation reflects canonical and reference docs, and can also surface archive material if historical files exist later
+- markdown is rendered directly from the markdown files already present in `docs/`
+- simple search/filter works on file titles
+- badges distinguish status, founder, technical, reference, and archive material when applicable
+
+This means the dashboard is a surface over the real knowledge base, not a second documentation system.

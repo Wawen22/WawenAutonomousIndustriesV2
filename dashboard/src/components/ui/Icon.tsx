@@ -5,7 +5,7 @@ export type IconName =
   | 'team' | 'office' | 'memory'
   | 'chevron-left' | 'chevron-right'
   | 'check' | 'x' | 'clock' | 'zap' | 'arrow-right' | 'info' | 'alert'
-  | 'cpu' | 'dollar' | 'trending-up' | 'refresh' | 'folder' | 'building'
+  | 'cpu' | 'dollar' | 'trending-up' | 'refresh' | 'folder' | 'building' | 'book'
 
 interface IconProps {
   name: IconName
@@ -180,6 +180,14 @@ export function Icon({ name, size = 16, className }: IconProps) {
       return (
         <svg {...p}>
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        </svg>
+      )
+    case 'book':
+      return (
+        <svg {...p}>
+          <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v17H6.5A2.5 2.5 0 0 0 4 22.5z" />
+          <path d="M20 20H6.5A2.5 2.5 0 0 0 4 22.5" />
+          <path d="M8 7h8M8 11h8" />
         </svg>
       )
     case 'revenue':

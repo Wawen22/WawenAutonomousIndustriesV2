@@ -263,6 +263,37 @@ export interface PersonalContext {
   mcpRuntime: GoogleWorkspaceMcpRuntimeStatus
 }
 
+export type KnowledgeBaseBadge =
+  | 'product'
+  | 'status'
+  | 'founder'
+  | 'technical'
+  | 'reference'
+  | 'archive'
+
+export interface KnowledgeBaseDocument {
+  title: string
+  fileName: string
+  relativePath: string
+  description?: string
+  badges: KnowledgeBaseBadge[]
+  lastModified: string
+  isEntry: boolean
+}
+
+export interface KnowledgeBaseSection {
+  id: 'home' | 'canonical' | 'reference' | 'archive' | 'unindexed'
+  title: string
+  description: string
+  items: KnowledgeBaseDocument[]
+}
+
+export interface KnowledgeBaseManifest {
+  generatedAt: string
+  rootDocumentPath: string
+  sections: KnowledgeBaseSection[]
+}
+
 // Enriched variants used when hooks join runs/events with task metadata
 export interface AgentRunWithContext extends AgentRun {
   task?: { metadata: Record<string, unknown>; project_id: string | null } | null

@@ -67,14 +67,11 @@ Start here:
 Most important docs:
 
 - [docs/PROJECT_TRACKING.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/PROJECT_TRACKING.md) — live status
-- [docs/FOUNDER_OPERATIONS_PLAYBOOK.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/FOUNDER_OPERATIONS_PLAYBOOK.md) — founder manual
+- [docs/FOUNDER_OPERATIONS_PLAYBOOK.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/FOUNDER_OPERATIONS_PLAYBOOK.md) — founder manual, commands, and examples
 - [docs/ARCHITECTURE.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/ARCHITECTURE.md) — technical architecture
 - [docs/MCP_SETUP.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/MCP_SETUP.md) — Google Workspace MCP setup
 
-Archive:
-
-- [docs/archive/PROJECT_TRACKING_ARCHIVE_2026-03-19.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/archive/PROJECT_TRACKING_ARCHIVE_2026-03-19.md)
-- [docs/archive/FOUNDER_PLAYBOOK_ARCHIVE_2026-03-19.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/archive/FOUNDER_PLAYBOOK_ARCHIVE_2026-03-19.md)
+In the dashboard, Company mode now exposes the same knowledge base through the `Docs` view.
 
 ---
 

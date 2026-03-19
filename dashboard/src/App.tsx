@@ -16,6 +16,7 @@ import { TeamOrgView } from './components/TeamOrgView.js'
 import { MemoryView } from './components/MemoryView.js'
 import { PersonalHQView } from './components/PersonalHQView.js'
 import { PersonalDocumentsView } from './components/PersonalDocumentsView.js'
+import { DocsView } from './components/DocsView.js'
 
 const VirtualOffice3DView = lazy(() =>
   import('./components/VirtualOffice3DView.js').then((m) => ({ default: m.VirtualOffice3DView }))
@@ -76,6 +77,7 @@ const VIEW_META: Record<ViewId, { title: string; description: string }> = {
   team:     { title: 'Team Org',       description: 'WAI org chart — Neb → CEO → teams → agents'           },
   office:   { title: 'Virtual Office', description: 'Digital office — agent desks, activity, realtime'     },
   memory:   { title: 'Memory',         description: 'Agent memory documents — search & browse'              },
+  docs:     { title: 'Docs',           description: 'Live knowledge base — canonical docs and archive'      },
   assistant:{ title: 'Assistant HQ',   description: 'Personal execution layer for Neb'                      },
   documents:{ title: 'Documents',      description: 'Personal files, notes, and generated reports'          },
 }
@@ -176,6 +178,7 @@ function ViewContent({ view }: { view: ViewId }) {
       </Suspense>
     )
     case 'memory':    return <MemoryView />
+    case 'docs':      return null
     case 'assistant': return <PersonalHQView />
     case 'documents': return <PersonalDocumentsView />
   }
@@ -197,6 +200,17 @@ export function App() {
   const [personalView, setPersonalView] = useState<PersonalViewId>(() => {
     const stored = window.localStorage.getItem('wai-dashboard-personal-view')
     return (stored as PersonalViewId) || 'assistant'
+  })
+  const [lastCompanyMainView, setLastCompanyMainView] = useState<Exclude<CompanyViewId, 'docs'>>(() => {
+    const stored = window.localStorage.getItem('wai-dashboard-company-view')
+    return stored && stored !== 'docs' ? stored as Exclude<CompanyViewId, 'docs'> : 'overview'
+  })
+  const [lastPersonalMainView, setLastPersonalMainView] = useState<Exclude<PersonalViewId, 'docs'>>(() => {
+    const stored = window.localStorage.getItem('wai-dashboard-personal-view')
+    return stored && stored !== 'docs' ? stored as Exclude<PersonalViewId, 'docs'> : 'assistant'
+  })
+  const [docsSelectedPath, setDocsSelectedPath] = useState<string | null>(() => {
+    return window.localStorage.getItem('wai-dashboard-docs-path')
   })
   const [collapsed, setCollapsed] = useState(false)
   const [isScanning, setIsScanning] = useState(false)
@@ -223,17 +237,51 @@ export function App() {
     window.localStorage.setItem('wai-dashboard-personal-view', personalView)
   }, [personalView])
 
+  useEffect(() => {
+    if (!docsSelectedPath) return
+    window.localStorage.setItem('wai-dashboard-docs-path', docsSelectedPath)
+  }, [docsSelectedPath])
+
   function handleNavigate(nextView: ViewId) {
     if (mode === 'company') {
       setCompanyView(nextView as CompanyViewId)
+      if (nextView !== 'docs') {
+        setLastCompanyMainView(nextView as Exclude<CompanyViewId, 'docs'>)
+      }
     } else {
       setPersonalView(nextView as PersonalViewId)
+      if (nextView !== 'docs') {
+        setLastPersonalMainView(nextView as Exclude<PersonalViewId, 'docs'>)
+      }
+    }
+  }
+
+  function handleOpenDocs() {
+    if (mode === 'company') {
+      setCompanyView('docs')
+    } else {
+      setPersonalView('docs')
+    }
+  }
+
+  function handleExitDocs() {
+    if (mode === 'company') {
+      setCompanyView(lastCompanyMainView)
+    } else {
+      setPersonalView(lastPersonalMainView)
     }
   }
 
   function handleModeChange(nextMode: DashboardMode) {
     if (nextMode === mode) return
     setIsModeShifting(true)
+    if (view === 'docs') {
+      if (nextMode === 'company') {
+        setCompanyView('docs')
+      } else {
+        setPersonalView('docs')
+      }
+    }
     setMode(nextMode)
     window.setTimeout(() => setIsModeShifting(false), 900)
   }
@@ -266,6 +314,10 @@ export function App() {
         mode={mode}
         current={view}
         onNavigate={handleNavigate}
+        onOpenDocs={handleOpenDocs}
+        onExitDocs={handleExitDocs}
+        docsSelectedPath={docsSelectedPath}
+        onDocsSelect={setDocsSelectedPath}
         collapsed={collapsed}
         onToggle={() => setCollapsed((c) => !c)}
       />
@@ -291,7 +343,9 @@ export function App() {
           }}
         >
           <ErrorBoundary key={view}>
-            <ViewContent view={view} />
+            {view === 'docs'
+              ? <DocsView selectedPath={docsSelectedPath} onSelectPath={setDocsSelectedPath} />
+              : <ViewContent view={view} />}
           </ErrorBoundary>
         </main>
 

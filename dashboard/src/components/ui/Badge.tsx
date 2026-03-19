@@ -39,6 +39,12 @@ const VARIANT_STYLES: Record<string, string> = {
   strategy:    'bg-yellow-500/10 text-yellow-400 ring-1 ring-yellow-500/25',
   routing:     'bg-violet-500/10 text-violet-400 ring-1 ring-violet-500/25',
   support:     'bg-sky-500/10    text-sky-400    ring-1 ring-sky-500/25',
+  founder:     'bg-[#7CF6E6]/10  text-[#7CF6E6]  ring-1 ring-[#7CF6E6]/25',
+  technical:   'bg-[#00D4FF]/10  text-[#00D4FF]  ring-1 ring-[#00D4FF]/25',
+  archive:     'bg-amber-500/10  text-amber-400  ring-1 ring-amber-500/25',
+  status:      'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/25',
+  product:     'bg-violet-500/10 text-violet-400 ring-1 ring-violet-500/25',
+  reference:   'bg-slate-500/10  text-slate-300  ring-1 ring-slate-500/25',
   // Fallback
   default:     'bg-white/5       text-slate-400  ring-1 ring-white/10',
 }

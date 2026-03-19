@@ -20,6 +20,7 @@ import {
 } from '../hooks/useSupabaseRealtime.js'
 import { getClientColor } from '../lib/clientColors.js'
 import { getAgentColor } from '../lib/agentColors.js'
+import { renderMarkdown } from '../lib/renderMarkdown.js'
 import type { Project, ProjectStatus, ProjectType, Agent } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -95,24 +96,6 @@ function fileIcon(name: string): string {
   if (name.endsWith('.css')) return '🎨'
   if (name.endsWith('.js') || name.endsWith('.ts')) return '📜'
   return '📝'
-}
-
-function renderMarkdown(md: string): string {
-  let html = md
-    .replace(/```[\w]*\n([\s\S]*?)```/g, (_m, code: string) => `<pre><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`)
-    .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/^---+$/gm, '<hr />')
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
-    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
-    .replace(/\n{2,}/g, '</p><p>')
-  return `<p>${html}</p>`
 }
 
 function useTextContent(fetchUrl: string | null) {

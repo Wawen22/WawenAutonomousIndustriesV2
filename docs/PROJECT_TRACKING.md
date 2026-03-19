@@ -1,7 +1,6 @@
 # WAI Project Tracking
 
 > Live status only.
-> The previous full tracking log was archived to [archive/PROJECT_TRACKING_ARCHIVE_2026-03-19.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/archive/PROJECT_TRACKING_ARCHIVE_2026-03-19.md).
 
 ---
 
@@ -81,6 +80,7 @@
 | T089 | Personal dashboard shell + transition | ✅ Done | `Assistant HQ` and personal documents shell live |
 | T090 | Personal workspace + identity context | ✅ Done | Profile, workspace, recent docs and personal context are live |
 | T091 | Documentation cleanup + knowledge base IA | ✅ Done | New docs home, shorter live tracking, archive split, founder guide cleanup |
+| T092 | Dashboard docs viewer MVP | ✅ Done | Company mode now exposes the real markdown knowledge base with index, sidebar, archive split, and search |
 
 ---
 
@@ -89,11 +89,26 @@
 1. Make the founder automation schedule editable from `Assistant HQ`.
 2. Add an `important emails today` founder flow so WAI prioritizes what matters instead of only returning the latest email.
 3. Build a `pre-meeting brief` flow combining calendar, email and Drive context.
-4. Decide whether to expose the new knowledge base inside the dashboard as `/docs` or `/wiki`.
+4. Refactor `Assistant HQ` information architecture so execution, automation, setup, and profile stop competing in one long page.
 
 ---
 
 ## Recent Changes
+
+### 2026-03-19 — Sessione 49: Dashboard docs viewer MVP
+
+- Added a dedicated `Knowledge Base` launcher, separate from the main navigation and available in both Company and Personal mode
+- Viewer now starts from [INDEX.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/INDEX.md) and reads the real markdown files under `docs/`
+- Added knowledge base navigation with canonical/reference/archive separation
+- Reworked the docs navigator into a more compact indexed layout with section filters instead of a long scrolling card list
+- Added markdown rendering plus simple document search/filter inside the dashboard
+- Finalized the UX so the launcher is a small bottom-left icon and entering `Knowledge Base` replaces the normal sidebar with docs navigation until exit
+
+### 2026-03-19 — Sessione 50: Founder guide consolidation + archive removal
+
+- Integrated the practical founder command reference and concrete examples into [FOUNDER_OPERATIONS_PLAYBOOK.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/FOUNDER_OPERATIONS_PLAYBOOK.md)
+- Removed the dependency on archived founder docs for day-to-day operations
+- Removed live references to archive files from the canonical docs index and README
 
 ### 2026-03-19 — Sessione 48: Documentation cleanup + knowledge base structure
 
@@ -124,11 +139,3 @@
 - Google Workspace OAuth callback and runtime are live
 - Gmail, Calendar and Drive founder actions are usable
 - `Daily Founder Brief` became a real output, not a placeholder
-
----
-
-## Archive
-
-For full history, old tasks, and the complete previous changelog, use:
-
-- [archive/PROJECT_TRACKING_ARCHIVE_2026-03-19.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/archive/PROJECT_TRACKING_ARCHIVE_2026-03-19.md)

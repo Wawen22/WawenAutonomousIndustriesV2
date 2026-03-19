@@ -44,6 +44,10 @@ import {
   startFounderAutomationRuntime,
   updateDailyFounderBriefAutomation,
 } from './services/personal-automation.js'
+import {
+  getKnowledgeBaseManifest,
+  readKnowledgeBaseDocument,
+} from './services/docs-knowledge-base.js'
 
 function isLocalRequest(req: IncomingMessage): boolean {
   const remote = req.socket.remoteAddress ?? ''
@@ -111,6 +115,50 @@ async function main(): Promise<void> {
     if (url.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ status: 'ok', version: '0.1.0' }))
+      return
+    }
+
+    if (url.pathname === '/api/docs/manifest' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const manifest = await getKnowledgeBaseManifest()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(manifest))
+        } catch (err) {
+          log.error({ err }, 'Knowledge base manifest API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/docs/content' && req.method === 'GET') {
+      const relativePath = url.searchParams.get('path')
+
+      if (!relativePath) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Missing path query param' }))
+        return
+      }
+
+      void (async () => {
+        try {
+          const content = await readKnowledgeBaseDocument(relativePath)
+          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
+          res.end(content)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Knowledge base read failed'
+          const statusCode = message.toLowerCase().includes('not found') || message.toLowerCase().includes('invalid')
+            ? 404
+            : 500
+          if (statusCode === 500) {
+            log.error({ err, relativePath }, 'Knowledge base content API error')
+          }
+          res.writeHead(statusCode, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
       return
     }
 
