@@ -29,6 +29,7 @@ import {
 import { log, recordEvent } from '../services/logger.js'
 import { buildSystemStatusReport } from '../services/status_report.js'
 import { executeTool } from '../services/tool-executor.js'
+import { ensurePersonalProfile, formatPersonalContextForPrompt } from '../services/personal-context.js'
 import {
   executeFounderTaskAction,
   formatFounderTaskActionMessage,
@@ -111,6 +112,7 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - approve_task       → params: task_ref, reason?
 - reject_task        → params: task_ref, reason?
 - create_document    → params: title, content, filename?, format?, client_slug?, project_slug?, mode?
+- send_report        → params: subject, body, to?, html?
 - invoice_project    → params: client_slug, project_slug, amount_usd?
 - mark_project_paid  → params: client_slug, project_slug, amount_usd
 
@@ -641,6 +643,38 @@ async function executeAction(
       return `📝 ${result.summary}`
     }
 
+    // ── send_report ────────────────────────────────────────────────────────
+    case 'send_report': {
+      const subject = getString(params, 'subject')
+      const body = getString(params, 'body') ?? getString(params, 'content')
+      const to = getString(params, 'to')
+      const html = getString(params, 'html')
+
+      if (!subject) throw new Error('subject mancante per send_report')
+      if (!body && !html) throw new Error('body/html mancante per send_report')
+
+      const profile = await ensurePersonalProfile()
+      const result = await executeTool('email', {
+        subject,
+        ...(body ? { body } : {}),
+        ...(html ? { html } : {}),
+        ...(to ? { to } : profile.primaryEmail ? { to: profile.primaryEmail } : {}),
+      }, {
+        agentId: 'ceo',
+      })
+
+      await recordEvent('founder_command', {
+        payload: {
+          command: 'nl_send_report',
+          source: 'natural_language',
+          subject,
+          recipient: to ?? profile.primaryEmail ?? 'missing',
+        },
+      })
+
+      return `📨 ${result.summary}`
+    }
+
     // ── invoice_project ───────────────────────────────────────────────────
     case 'invoice_project': {
       const clientSlug = getString(params, 'client_slug')
@@ -704,9 +738,10 @@ async function executeAction(
 
 async function buildClientContext(): Promise<string> {
   try {
-    const [clients, blockedTasks] = await Promise.all([
+    const [clients, blockedTasks, personalContext] = await Promise.all([
       getClients(),
       getTasksByStatus('blocked'),
+      formatPersonalContextForPrompt(),
     ])
 
     if (clients.length === 0) return 'No clients yet in WAI.'
@@ -738,6 +773,9 @@ async function buildClientContext(): Promise<string> {
         lines.push(`- ...and ${blockedTasks.length - 8} more blocked tasks`)
       }
     }
+
+    lines.push('')
+    lines.push(personalContext)
 
     return lines.join('\n')
   } catch {

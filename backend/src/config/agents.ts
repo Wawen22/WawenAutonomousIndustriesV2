@@ -47,11 +47,12 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'executive',
     model_id: 'gpt-5.4',
     config: makeConfig({
-      tools: ['supabase_read', 'supabase_write_tasks', 'supabase_write_events', 'telegram_notify', 'file_export'],
+      tools: ['supabase_read', 'supabase_write_tasks', 'supabase_write_events', 'telegram_notify', 'file_export', 'email'],
       maxCostPerTaskUsd: 20,
       thinkingLevel: 'high',
       canReadAllTasks: true,
       canWriteTasks: true,
+      canSendEmail: true,
       canSendTelegram: true,
     }),
   },

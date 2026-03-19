@@ -9,6 +9,7 @@ import { basename, extname, join } from 'path'
 import { getAgent } from '../config/agents.js'
 import { getModelForAgent } from '../config/models.js'
 import { log, recordEvent, recordRun } from './logger.js'
+import { sendEmail } from './email.js'
 import {
   createPersonalWorkspace,
   getPersonalOutputPath,
@@ -18,8 +19,9 @@ import {
 } from './workspace.js'
 import { getClientBySlug, getProjectBySlug } from './supabase.js'
 import { getToolsForAgent, validateToolEnvVars } from '../tools/index.js'
+import { ensurePersonalProfile } from './personal-context.js'
 
-export type ExecutableToolId = 'file_export'
+export type ExecutableToolId = 'file_export' | 'email'
 
 export interface ToolExecutionContext {
   agentId: string
@@ -38,11 +40,19 @@ export interface FileExportInput {
   ownerSlug?: string
 }
 
+export interface EmailToolInput {
+  to?: string | string[]
+  subject: string
+  body?: string
+  html?: string
+  ownerSlug?: string
+}
+
 export interface ToolExecutionResult {
   toolId: ExecutableToolId
   summary: string
-  relativePath: string
-  absolutePath: string
+  relativePath?: string
+  absolutePath?: string
 }
 
 function sanitizeSegment(value: string): string {
@@ -144,19 +154,49 @@ async function executeFileExport(
   }
 }
 
+async function executeEmailTool(input: EmailToolInput): Promise<ToolExecutionResult> {
+  const subject = input.subject.trim()
+  if (!subject) {
+    throw new Error('email requires a non-empty subject')
+  }
+
+  const ownerSlug = sanitizeSegment(input.ownerSlug ?? 'neb') || 'neb'
+  const profile = await ensurePersonalProfile(ownerSlug)
+  const recipients = input.to ?? profile.primaryEmail ?? undefined
+  if (!recipients) {
+    throw new Error(`No recipient configured for owner ${ownerSlug}; set primaryEmail in personal profile or pass "to" explicitly`)
+  }
+
+  const result = await sendEmail({
+    to: recipients,
+    subject,
+    ...(input.body?.trim() ? { text: input.body.trim() } : {}),
+    ...(input.html?.trim() ? { html: input.html.trim() } : {}),
+  })
+
+  return {
+    toolId: 'email',
+    summary: `Email inviata a ${result.to.join(', ')} con subject "${result.subject}"`,
+  }
+}
+
 export async function executeTool(
   toolId: ExecutableToolId,
-  input: FileExportInput,
+  input: FileExportInput | EmailToolInput,
   context: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
   await assertToolAccess(context.agentId, toolId)
 
   const startedAt = Date.now()
   const model = getModelForAgent({ agentId: context.agentId })
-  const inputSummary = `${toolId} ${input.filename ?? input.title ?? 'document'}`
+  const inputSummary = toolId === 'file_export'
+    ? `${toolId} ${(input as FileExportInput).filename ?? (input as FileExportInput).title ?? 'document'}`
+    : `${toolId} ${(input as EmailToolInput).subject ?? 'message'}`
 
   try {
-    const result = await executeFileExport(input)
+    const result = toolId === 'file_export'
+      ? await executeFileExport(input as FileExportInput)
+      : await executeEmailTool(input as EmailToolInput)
 
     await recordRun({
       agent_id: context.agentId,

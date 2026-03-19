@@ -162,6 +162,35 @@ export interface ProjectState {
   metadata: Record<string, unknown>
 }
 
+export interface PersonalProfile {
+  ownerSlug: string
+  displayName: string
+  role: string
+  primaryEmail: string | null
+  timezone: string
+  preferredLanguage: string
+  assistantStyle: string
+  priorities: string[]
+}
+
+export interface PersonalDocumentSummary {
+  name: string
+  relativePath: string
+  modifiedAt: string
+  sizeBytes: number
+}
+
+export interface PersonalContext {
+  profile: PersonalProfile
+  workspacePath: string
+  outputPath: string
+  recentDocuments: PersonalDocumentSummary[]
+  connectors: {
+    email: boolean
+    telegram: boolean
+  }
+}
+
 // Enriched variants used when hooks join runs/events with task metadata
 export interface AgentRunWithContext extends AgentRun {
   task?: { metadata: Record<string, unknown>; project_id: string | null } | null

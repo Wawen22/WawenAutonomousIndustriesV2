@@ -1,7 +1,7 @@
 import { useState, useEffect, lazy, Suspense, Component } from 'react'
 import type { ReactNode, ErrorInfo } from 'react'
 import { clsx } from 'clsx'
-import { Sidebar, type ViewId } from './components/Sidebar.js'
+import { Sidebar, type CompanyViewId, type DashboardMode, type PersonalViewId, type ViewId } from './components/Sidebar.js'
 import { Overview } from './components/Overview.js'
 import { IntelligenceTicker } from './components/ui/IntelligenceTicker.js'
 import { TaskBoard } from './components/TaskBoard.js'
@@ -14,6 +14,8 @@ import { RevenueView } from './components/RevenueView.js'
 import { FounderOpsView } from './components/FounderOpsView.js'
 import { TeamOrgView } from './components/TeamOrgView.js'
 import { MemoryView } from './components/MemoryView.js'
+import { PersonalHQView } from './components/PersonalHQView.js'
+import { PersonalDocumentsView } from './components/PersonalDocumentsView.js'
 
 const VirtualOffice3DView = lazy(() =>
   import('./components/VirtualOffice3DView.js').then((m) => ({ default: m.VirtualOffice3DView }))
@@ -74,13 +76,15 @@ const VIEW_META: Record<ViewId, { title: string; description: string }> = {
   team:     { title: 'Team Org',       description: 'WAI org chart — Neb → CEO → teams → agents'           },
   office:   { title: 'Virtual Office', description: 'Digital office — agent desks, activity, realtime'     },
   memory:   { title: 'Memory',         description: 'Agent memory documents — search & browse'              },
+  assistant:{ title: 'Assistant HQ',   description: 'Personal execution layer for Neb'                      },
+  documents:{ title: 'Documents',      description: 'Personal files, notes, and generated reports'          },
 }
 
 // ---------------------------------------------------------------------------
 // Topbar
 // ---------------------------------------------------------------------------
 
-function Topbar({ view }: { view: ViewId }) {
+function Topbar({ view, mode, onModeChange }: { view: ViewId; mode: DashboardMode; onModeChange: (mode: DashboardMode) => void }) {
   const meta = VIEW_META[view]
   const [time, setTime] = useState(() => new Date())
 
@@ -101,9 +105,31 @@ function Topbar({ view }: { view: ViewId }) {
       <div className="flex items-center gap-3">
         {/* Milestone pill */}
         <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.06]">
-          <span className="w-1 h-1 rounded-full bg-[#00D4FF]" />
-          <span className="text-[10px] text-slate-500 font-mono">M7 In Progress</span>
+          <span className={clsx('w-1 h-1 rounded-full', mode === 'company' ? 'bg-[#00D4FF]' : 'bg-[#7CF6E6]')} />
+          <span className="text-[10px] text-slate-500 font-mono">M9 In Progress</span>
         </span>
+
+        <div className="flex items-center rounded-full border border-white/[0.07] bg-black/30 p-1">
+          {([
+            ['company', 'Company'],
+            ['personal', 'Personal'],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => onModeChange(value)}
+              className={clsx(
+                'rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] transition-all',
+                mode === value
+                  ? value === 'company'
+                    ? 'bg-[#00D4FF] text-black'
+                    : 'bg-[#7CF6E6] text-black'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         <div className="w-px h-3.5 bg-white/[0.08]" />
 
@@ -150,6 +176,8 @@ function ViewContent({ view }: { view: ViewId }) {
       </Suspense>
     )
     case 'memory':    return <MemoryView />
+    case 'assistant': return <PersonalHQView />
+    case 'documents': return <PersonalDocumentsView />
   }
 }
 
@@ -158,9 +186,23 @@ function ViewContent({ view }: { view: ViewId }) {
 // ---------------------------------------------------------------------------
 
 export function App() {
-  const [view, setView]           = useState<ViewId>('overview')
+  const [mode, setMode] = useState<DashboardMode>(() => {
+    const stored = window.localStorage.getItem('wai-dashboard-mode')
+    return stored === 'personal' ? 'personal' : 'company'
+  })
+  const [companyView, setCompanyView] = useState<CompanyViewId>(() => {
+    const stored = window.localStorage.getItem('wai-dashboard-company-view')
+    return (stored as CompanyViewId) || 'overview'
+  })
+  const [personalView, setPersonalView] = useState<PersonalViewId>(() => {
+    const stored = window.localStorage.getItem('wai-dashboard-personal-view')
+    return (stored as PersonalViewId) || 'assistant'
+  })
   const [collapsed, setCollapsed] = useState(false)
   const [isScanning, setIsScanning] = useState(false)
+  const [isModeShifting, setIsModeShifting] = useState(false)
+
+  const view = mode === 'company' ? companyView : personalView
 
   // Trigger Neural Scan effect on view change
   useEffect(() => {
@@ -169,8 +211,48 @@ export function App() {
     return () => clearTimeout(timer)
   }, [view])
 
+  useEffect(() => {
+    window.localStorage.setItem('wai-dashboard-mode', mode)
+  }, [mode])
+
+  useEffect(() => {
+    window.localStorage.setItem('wai-dashboard-company-view', companyView)
+  }, [companyView])
+
+  useEffect(() => {
+    window.localStorage.setItem('wai-dashboard-personal-view', personalView)
+  }, [personalView])
+
+  function handleNavigate(nextView: ViewId) {
+    if (mode === 'company') {
+      setCompanyView(nextView as CompanyViewId)
+    } else {
+      setPersonalView(nextView as PersonalViewId)
+    }
+  }
+
+  function handleModeChange(nextMode: DashboardMode) {
+    if (nextMode === mode) return
+    setIsModeShifting(true)
+    setMode(nextMode)
+    window.setTimeout(() => setIsModeShifting(false), 900)
+  }
+
   return (
     <div className="flex h-full bg-[#05080F] overflow-hidden">
+      {isModeShifting && (
+        <div className={clsx(
+          'mode-shift-overlay',
+          mode === 'company' ? 'mode-shift-overlay--company' : 'mode-shift-overlay--personal'
+        )}>
+          <div className="mode-shift-ring" />
+          <div className="mode-shift-ring mode-shift-ring--delay" />
+          <p className="mode-shift-label">
+            {mode === 'company' ? 'ENTERING COMPANY MODE' : 'ENTERING PERSONAL MODE'}
+          </p>
+        </div>
+      )}
+
       {/* Neural Scan Line Animation */}
       {isScanning && (
         <div 
@@ -181,8 +263,9 @@ export function App() {
 
       {/* Sidebar */}
       <Sidebar
+        mode={mode}
         current={view}
-        onNavigate={setView}
+        onNavigate={handleNavigate}
         collapsed={collapsed}
         onToggle={() => setCollapsed((c) => !c)}
       />
@@ -190,7 +273,7 @@ export function App() {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         {/* Topbar */}
-        <Topbar view={view} />
+        <Topbar view={view} mode={mode} onModeChange={handleModeChange} />
 
         {/* Page */}
         <main
@@ -213,7 +296,7 @@ export function App() {
         </main>
 
         {/* Global Intelligence Ticker */}
-        <IntelligenceTicker />
+        {mode === 'company' && <IntelligenceTicker />}
       </div>
     </div>
   )

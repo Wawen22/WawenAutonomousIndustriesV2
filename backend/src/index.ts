@@ -22,6 +22,7 @@ import { updateAgentStatus, getProjectState } from './services/supabase.js'
 import { getAllAgentIds } from './config/agents.js'
 import { pingLiteLLM } from './services/llm.js'
 import { getWorkspaceRoot } from './services/workspace.js'
+import { getPersonalContext, updatePersonalProfile } from './services/personal-context.js'
 import { startOpsMonitor } from './agents/ops.js'
 import { startFinanceRuntime } from './agents/finance.js'
 import { startHrRuntime } from './agents/hr.js'
@@ -432,6 +433,64 @@ async function main(): Promise<void> {
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error'
           log.error({ err }, 'Founder revenue action API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/personal/context' && req.method === 'GET') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const context = await getPersonalContext()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(context))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Personal context API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/personal/context' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null
+            ? body as Record<string, unknown>
+            : {}
+
+          const profile = await updatePersonalProfile({
+            ...(typeof payload['displayName'] === 'string' ? { displayName: payload['displayName'] } : {}),
+            ...(typeof payload['role'] === 'string' ? { role: payload['role'] } : {}),
+            ...(typeof payload['primaryEmail'] === 'string' || payload['primaryEmail'] === null ? { primaryEmail: payload['primaryEmail'] as string | null } : {}),
+            ...(typeof payload['timezone'] === 'string' ? { timezone: payload['timezone'] } : {}),
+            ...(typeof payload['preferredLanguage'] === 'string' ? { preferredLanguage: payload['preferredLanguage'] } : {}),
+            ...(typeof payload['assistantStyle'] === 'string' ? { assistantStyle: payload['assistantStyle'] } : {}),
+            ...(Array.isArray(payload['priorities']) ? { priorities: payload['priorities'] as string[] } : {}),
+          })
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, profile }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Personal context update API error')
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: message }))
         }

@@ -6,7 +6,10 @@
 import { clsx } from 'clsx'
 import { Icon, type IconName } from './ui/Icon.js'
 
-export type ViewId = 'overview' | 'tasks' | 'activity' | 'costs' | 'runs' | 'clients' | 'projects' | 'revenue' | 'founder' | 'team' | 'office' | 'memory'
+export type CompanyViewId = 'overview' | 'tasks' | 'activity' | 'costs' | 'runs' | 'clients' | 'projects' | 'revenue' | 'founder' | 'team' | 'office' | 'memory'
+export type PersonalViewId = 'assistant' | 'documents' | 'activity'
+export type ViewId = CompanyViewId | PersonalViewId
+export type DashboardMode = 'company' | 'personal'
 
 interface NavItem {
   id: ViewId
@@ -19,7 +22,7 @@ interface NavSection {
   items: NavItem[]
 }
 
-const NAV_SECTIONS: NavSection[] = [
+const COMPANY_NAV_SECTIONS: NavSection[] = [
   {
     title: 'COMMAND',
     items: [
@@ -54,7 +57,19 @@ const NAV_SECTIONS: NavSection[] = [
   }
 ]
 
+const PERSONAL_NAV_SECTIONS: NavSection[] = [
+  {
+    title: 'PERSONAL',
+    items: [
+      { id: 'assistant', label: 'Assistant HQ', icon: 'overview' },
+      { id: 'documents', label: 'Documents', icon: 'folder' },
+      { id: 'activity', label: 'Activity Log', icon: 'activity' },
+    ],
+  },
+]
+
 interface SidebarProps {
+  mode: DashboardMode
   current: ViewId
   onNavigate: (view: ViewId) => void
   collapsed: boolean
@@ -78,7 +93,9 @@ function WaiLogo({ collapsed }: { collapsed: boolean }) {
   )
 }
 
-export function Sidebar({ current, onNavigate, collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ mode, current, onNavigate, collapsed, onToggle }: SidebarProps) {
+  const navSections = mode === 'company' ? COMPANY_NAV_SECTIONS : PERSONAL_NAV_SECTIONS
+
   return (
     <aside
       className={clsx(
@@ -102,9 +119,22 @@ export function Sidebar({ current, onNavigate, collapsed, onToggle }: SidebarPro
 
       <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mx-3" />
 
+      {!collapsed && (
+        <div className="px-4 pt-4">
+          <div className={clsx(
+            'rounded-2xl border px-3 py-2 text-[9px] font-black uppercase tracking-[0.25em]',
+            mode === 'company'
+              ? 'border-[#00D4FF]/15 bg-[#00D4FF]/5 text-[#00D4FF]'
+              : 'border-[#7CF6E6]/15 bg-[#7CF6E6]/6 text-[#7CF6E6]'
+          )}>
+            {mode === 'company' ? 'Company Mode' : 'Personal Mode'}
+          </div>
+        </div>
+      )}
+
       {/* Navigation Matrix */}
       <nav className="flex-1 px-2 pt-6 space-y-6 overflow-y-auto no-scrollbar relative z-10">
-        {NAV_SECTIONS.map((section) => (
+        {navSections.map((section) => (
           <div key={section.title} className="space-y-1">
             {!collapsed && (
               <h3 className="px-3 mb-2 text-[8px] font-black uppercase tracking-[0.4em] text-slate-700">

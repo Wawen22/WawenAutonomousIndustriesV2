@@ -128,7 +128,7 @@
 |----|-------|--------|-------|----------|-------|
 | T080 | Tool Registry per agente | ✅ Done | Codex | 1 | `backend/src/services/tool-executor.ts` live — validazione permessi/env, esecuzione tool e logging su `runs/events` |
 | T081 | Web Search tool | ⬜ Todo | Claude | 1 | Brave Search API (free tier) o Serper — `searchWeb()` disponibile ad Analyst, CEO, Consulting Lead |
-| T082 | Send Email tool | ⬜ Todo | Claude | 1 | Wrapper Resend da implementare — `sendEmail({to, subject, body})` disponibile a tutti gli agenti |
+| T082 | Send Email tool | ✅ Done | Codex | 1 | Wrapper Resend live con `backend/src/services/email.ts`; integrato nel ToolExecutor e nel CEO per `send_report` |
 | T083 | File Export tool | 🔄 In Progress | Codex | 2 | MVP live: export reale in `workspace/output/` / `workspace/personal/neb/output/` via ToolExecutor; deep-link Telegram/UI pending |
 
 ### Fase 2 — Skills System
@@ -141,7 +141,7 @@
 
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
-| T085 | CEO personal task routing | 🔄 In Progress | Codex | 1 | `create_document` già live nel CEO Intake; mancano `personal_research`, `weekly_digest`, `send_report` |
+| T085 | CEO personal task routing | 🔄 In Progress | Codex | 1 | `create_document` + `send_report` live nel CEO Intake; mancano `personal_research` e `weekly_digest` |
 
 ### Fase 4 — MCP Integration (M10)
 
@@ -154,9 +154,9 @@
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
 | T087 | WhatsApp via Baileys o Slack | ⬜ Todo | Claude | 3 | Canale secondario — solo dopo Fase 3 stabile |
-| T088 | Dual-mode shell: Company / Personal | ⬜ Todo | Codex | 1 | Switch globale dashboard + app state condiviso; modalità Company resta Mission Control, modalità Personal semplifica vista e routing |
-| T089 | Personal dashboard shell + JARVIS transition | ⬜ Todo | Codex | 2 | Navbar e layout dedicati: niente Revenue/Team/Founder Ops in Personal; transizione visuale intenzionale tra le due modalità |
-| T090 | Personal workspace + identity context | ⬜ Todo | Codex | 1 | `workspace/personal/neb/` come base persistente; profilo, preferenze, note e documenti personali disponibili al CEO Intake |
+| T088 | Dual-mode shell: Company / Personal | ✅ Done | Codex | 1 | Switch globale dashboard persistente, view state separato per mode e routing semplificato in Personal |
+| T089 | Personal dashboard shell + JARVIS transition | ✅ Done | Codex | 2 | Nuove view `Assistant HQ` + `Documents`; transizione mode-shift tra Company e Personal live nel dashboard |
+| T090 | Personal workspace + identity context | ✅ Done | Codex | 1 | `workspace/personal/neb/` + `profile.json` + API backend; profilo e documenti personali letti dal CEO Intake e dal dashboard |
 
 ---
 
@@ -173,6 +173,15 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-19 — Sessione 38: Personal mode foundation — Resend + personal context + dual-mode shell
+
+- **T082 DONE** nuovo `backend/src/services/email.ts` basato su Resend; `email` è ora un tool eseguibile nel ToolExecutor e il CEO può usarlo per `send_report`
+- **T085 PROGRESS** `backend/src/agents/ceo_intake.ts` ora supporta anche `send_report`; il prompt CEO legge sia contesto business sia contesto personale del founder
+- **T090 DONE** nuovo `backend/src/services/personal-context.ts`: crea/gestisce `workspace/personal/neb/profile.json`, espone documenti recenti e stato connector; nuove API `GET/POST /api/personal/context`
+- **T088 DONE** dashboard con operating mode persistente (`Company` / `Personal`), stato view separato per mode e ticker nascosto in Personal
+- **T089 DONE** nuove view `PersonalHQView` e `PersonalDocumentsView` con shell dedicata e transizione `mode-shift` stile JARVIS-lite
+- **VERIFY** `pnpm typecheck` verde su backend e dashboard; smoke test `getPersonalContext()` ok con `workspace/personal/neb/profile.json` creato automaticamente
 
 ### 2026-03-19 — Sessione 37: M9 foundation avviata — dashboard green + ToolExecutor + File Export MVP
 
