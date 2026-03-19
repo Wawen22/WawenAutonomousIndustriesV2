@@ -16,6 +16,51 @@ interface McpActionState {
   message?: string
 }
 
+type FounderQuickActionId =
+  | 'latest_email'
+  | 'calendar_today'
+  | 'drive_recent_files'
+  | 'daily_founder_brief'
+
+interface FounderQuickAction {
+  id: FounderQuickActionId
+  label: string
+  description: string
+}
+
+interface FounderQuickActionState {
+  status: 'idle' | 'working' | 'done' | 'error'
+  actionId?: FounderQuickActionId
+  message?: string
+  prompt?: string
+  result?: string
+  notifications: string[]
+  executedAt?: string
+}
+
+const FOUNDER_QUICK_ACTIONS: FounderQuickAction[] = [
+  {
+    id: 'latest_email',
+    label: 'Latest Email',
+    description: 'Read the newest inbox message without opening Gmail.',
+  },
+  {
+    id: 'calendar_today',
+    label: 'Today Agenda',
+    description: 'Pull the current day schedule from Google Calendar.',
+  },
+  {
+    id: 'drive_recent_files',
+    label: 'Recent Drive Files',
+    description: 'List the latest modified Google Drive files.',
+  },
+  {
+    id: 'daily_founder_brief',
+    label: 'Daily Founder Brief',
+    description: 'Generate and save the full inbox-calendar-drive briefing.',
+  },
+]
+
 export function PersonalHQView() {
   const { data, loading, error, refetch } = usePersonalContext()
   const [displayName, setDisplayName] = useState('')
@@ -24,6 +69,10 @@ export function PersonalHQView() {
   const [prioritiesText, setPrioritiesText] = useState('')
   const [saveState, setSaveState] = useState<SaveState>({ status: 'idle' })
   const [mcpActionState, setMcpActionState] = useState<McpActionState>({ status: 'idle' })
+  const [quickActionState, setQuickActionState] = useState<FounderQuickActionState>({
+    status: 'idle',
+    notifications: [],
+  })
 
   useEffect(() => {
     if (!data) return
@@ -88,6 +137,53 @@ export function PersonalHQView() {
     }
   }
 
+  async function handleFounderQuickAction(action: FounderQuickAction) {
+    try {
+      setQuickActionState({
+        status: 'working',
+        actionId: action.id,
+        message: `Running ${action.label}...`,
+        notifications: [],
+      })
+
+      const response = await fetch(`${BACKEND_URL}/api/personal/assistant/quick-action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actionId: action.id }),
+      })
+
+      const payload = await response.json() as {
+        reply?: string
+        prompt?: string
+        notifications?: string[]
+        error?: string
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? `HTTP ${response.status}`)
+      }
+
+      setQuickActionState({
+        status: 'done',
+        actionId: action.id,
+        message: `${action.label} completed`,
+        prompt: payload.prompt,
+        result: payload.reply,
+        notifications: Array.isArray(payload.notifications) ? payload.notifications : [],
+        executedAt: new Date().toISOString(),
+      })
+
+      await refetch()
+    } catch (err) {
+      setQuickActionState({
+        status: 'error',
+        actionId: action.id,
+        message: err instanceof Error ? err.message : 'Quick action failed',
+        notifications: [],
+      })
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[420px]">
@@ -107,6 +203,8 @@ export function PersonalHQView() {
       </div>
     )
   }
+
+  const googleWorkspaceReady = data.mcpRuntime.state === 'connected'
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
@@ -196,6 +294,91 @@ export function PersonalHQView() {
         </section>
 
         <div className="space-y-6">
+          <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">Founder Quick Actions</h2>
+                <p className="mt-1 text-xs text-slate-500">Direct execution layer for Gmail, Calendar, Drive and the daily founder brief.</p>
+              </div>
+              <Badge variant={googleWorkspaceReady ? 'done' : 'warning'}>
+                {googleWorkspaceReady ? 'LIVE' : 'LOCKED'}
+              </Badge>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {FOUNDER_QUICK_ACTIONS.map((action) => {
+                const active = quickActionState.actionId === action.id && quickActionState.status === 'working'
+
+                return (
+                  <button
+                    key={action.id}
+                    type="button"
+                    disabled={!googleWorkspaceReady || quickActionState.status === 'working'}
+                    onClick={() => void handleFounderQuickAction(action)}
+                    className={clsx(
+                      'rounded-2xl border px-4 py-4 text-left transition',
+                      !googleWorkspaceReady || quickActionState.status === 'working'
+                        ? 'cursor-not-allowed border-white/5 bg-black/20 opacity-50'
+                        : 'border-[#7CF6E6]/15 bg-[#7CF6E6]/[0.04] hover:border-[#7CF6E6]/35 hover:bg-[#7CF6E6]/[0.08]',
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-white">{action.label}</p>
+                      {active && <Badge variant="warning">RUNNING</Badge>}
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-400">{action.description}</p>
+                  </button>
+                )
+              })}
+            </div>
+
+            {!googleWorkspaceReady && (
+              <p className="mt-4 text-[11px] text-amber-300/80">
+                Connect Google Workspace MCP first. These actions depend on live Gmail, Calendar and Drive access.
+              </p>
+            )}
+
+            {quickActionState.message && (
+              <div className="mt-5 rounded-2xl border border-white/5 bg-black/25 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Execution Output</p>
+                  <Badge variant={quickActionState.status === 'done' ? 'done' : quickActionState.status === 'error' ? 'error' : 'warning'}>
+                    {quickActionState.status.toUpperCase()}
+                  </Badge>
+                </div>
+                <p className={clsx('mt-3 text-xs font-bold', quickActionState.status === 'error' ? 'text-rose-400' : 'text-[#7CF6E6]')}>
+                  {quickActionState.message}
+                </p>
+                {quickActionState.prompt && (
+                  <p className="mt-3 text-[11px] text-slate-500">
+                    Prompt: <span className="font-mono text-slate-400">{quickActionState.prompt}</span>
+                  </p>
+                )}
+                {quickActionState.result && (
+                  <div className="mt-3 rounded-2xl border border-white/5 bg-[#03060b] px-4 py-3">
+                    <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-200">
+                      {quickActionState.result}
+                    </p>
+                  </div>
+                )}
+                {quickActionState.notifications.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {quickActionState.notifications.map((notification) => (
+                      <p key={notification} className="text-[11px] text-slate-500">
+                        Notification: <span className="text-slate-400">{notification}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {quickActionState.executedAt && (
+                  <p className="mt-3 text-[11px] text-slate-600">
+                    Executed at {new Date(quickActionState.executedAt).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
+
           <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
             <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">Connector Status</h2>
             <div className="mt-5 space-y-3">

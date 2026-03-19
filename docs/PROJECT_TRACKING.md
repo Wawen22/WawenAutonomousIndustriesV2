@@ -147,7 +147,7 @@
 
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
-| T086 | MCP integration layer | 🔄 In Progress | Codex | 2 | Runtime OAuth live con `backend/src/services/google-workspace-mcp.ts`, callback backend, tool discovery e founder actions `gmail_inbox_summary`, `gmail_latest_message`, `calendar_today`, `drive_find_file`, `drive_read_file`, `drive_recent_files`, `daily_founder_brief`; advanced composed automations pending |
+| T086 | MCP integration layer | 🔄 In Progress | Codex | 2 | Runtime OAuth live con `backend/src/services/google-workspace-mcp.ts`, callback backend, tool discovery, founder actions `gmail_inbox_summary`, `gmail_latest_message`, `calendar_today`, `drive_find_file`, `drive_read_file`, `drive_recent_files`, `daily_founder_brief` e quick actions in `Assistant HQ`; scheduling e automazioni composte ricorrenti ancora pending |
 
 ### Fase 5 — Multi-channel (M11)
 
@@ -173,6 +173,18 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-19 — Sessione 46: Founder language lock for MCP summaries
+
+- **LANGUAGE FIX** i riepiloghi LLM founder per inbox e calendario ora usano `profile.preferredLanguage` del personal context invece della lingua “accidentale” dei dati MCP, evitando risposte in francese/altre lingue quando Neb interagisce in italiano
+- **CALENDAR UX** `Today Agenda` in `Assistant HQ` continua a usare la quick action dashboard, ma il sommario viene ora forzato nella lingua del founder
+
+### 2026-03-19 — Sessione 45: Assistant HQ quick actions wired to founder MCP flows
+
+- **PERSONAL HQ** nuova sezione `Founder Quick Actions` in `dashboard/src/components/PersonalHQView.tsx`: pulsanti rapidi per `Latest Email`, `Today Agenda`, `Recent Drive Files`, `Daily Founder Brief` con stato `LIVE/LOCKED`, esecuzione in pagina e pannello risultato
+- **BACKEND API** nuovo endpoint locale `POST /api/personal/assistant/quick-action`: il dashboard può lanciare azioni founder riusando direttamente `runCeoNaturalLanguageHandler()` senza duplicare la logica MCP
+- **WORKSPACE LOOP** dopo ogni quick action il dashboard ricarica il personal context, così i nuovi output come il `daily founder brief` compaiono subito in `Recent Personal Docs`
+- **VERIFY** backend e dashboard da validare con `pnpm --filter @wai/backend typecheck` e `pnpm --filter @wai/dashboard typecheck`; test manuale richiesto su ogni quick action in `Assistant HQ`
 
 ### 2026-03-19 — Sessione 44: Daily Founder Brief + recent Drive activity
 

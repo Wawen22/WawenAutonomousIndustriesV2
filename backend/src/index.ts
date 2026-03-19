@@ -33,6 +33,28 @@ import { getPersonalContext, updatePersonalProfile } from './services/personal-c
 import { startOpsMonitor } from './agents/ops.js'
 import { startFinanceRuntime } from './agents/finance.js'
 import { startHrRuntime } from './agents/hr.js'
+import { runCeoNaturalLanguageHandler } from './agents/ceo_intake.js'
+
+type PersonalAssistantQuickActionId =
+  | 'latest_email'
+  | 'calendar_today'
+  | 'drive_recent_files'
+  | 'daily_founder_brief'
+
+function getPersonalAssistantQuickActionPrompt(actionId: string): string | null {
+  switch (actionId as PersonalAssistantQuickActionId) {
+    case 'latest_email':
+      return "Leggi l'ultima email ricevuta"
+    case 'calendar_today':
+      return "Mostrami l'agenda di oggi"
+    case 'drive_recent_files':
+      return 'Mostrami i file recenti su Google Drive'
+    case 'daily_founder_brief':
+      return 'Genera il daily founder brief di oggi'
+    default:
+      return null
+  }
+}
 
 function isLocalRequest(req: IncomingMessage): boolean {
   const remote = req.socket.remoteAddress ?? ''
@@ -517,6 +539,62 @@ async function main(): Promise<void> {
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error'
           log.error({ err }, 'Personal context update API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/personal/assistant/quick-action' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null
+            ? body as Record<string, unknown>
+            : {}
+
+          const actionId = typeof payload['actionId'] === 'string' ? payload['actionId'].trim() : ''
+          const prompt = getPersonalAssistantQuickActionPrompt(actionId)
+
+          if (!prompt) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Invalid quick action' }))
+            return
+          }
+
+          const replies: string[] = []
+          const notifications: string[] = []
+
+          await runCeoNaturalLanguageHandler(
+            `dashboard:personal:${actionId}`,
+            prompt,
+            async (msg) => {
+              replies.push(msg)
+            },
+            async (msg) => {
+              notifications.push(msg)
+            }
+          )
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            ok: true,
+            actionId,
+            prompt,
+            reply: replies.join('\n\n').trim(),
+            replies,
+            notifications,
+          }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Personal assistant quick action API error')
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: message }))
         }

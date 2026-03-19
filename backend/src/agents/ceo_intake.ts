@@ -536,8 +536,18 @@ function getTodayWindowInLocalTimezone(now = new Date()): { start: string; end: 
   }
 }
 
-async function summarizeFounderInbox(rawInboxMetadata: string, query: string): Promise<string> {
+function resolveFounderOutputLanguage(preferredLanguage?: string): { code: 'it' | 'en'; label: string } {
+  const normalized = preferredLanguage?.trim().toLowerCase() ?? 'it'
+  if (normalized.startsWith('en')) {
+    return { code: 'en', label: 'English' }
+  }
+
+  return { code: 'it', label: 'Italian' }
+}
+
+async function summarizeFounderInbox(rawInboxMetadata: string, query: string, preferredLanguage?: string): Promise<string> {
   const fallback = rawInboxMetadata.trim()
+  const language = resolveFounderOutputLanguage(preferredLanguage)
 
   try {
     const result = await runAgent([
@@ -547,7 +557,8 @@ async function summarizeFounderInbox(rawInboxMetadata: string, query: string): P
 
 Rules:
 - Use only the provided email metadata.
-- Write in the same language as the query/context.
+- Write in ${language.label}.
+- Do not switch language even if the emails contain mixed-language content.
 - Prioritize urgent, revenue, meeting, and blocker signals.
 - Output concise markdown with sections: Executive Summary, Immediate Actions, Watchlist.
 - If the inbox looks empty or low-signal, say so clearly.`,
@@ -662,8 +673,9 @@ function buildFounderDailyBriefReport(input: {
   return sections.join('\n').trim()
 }
 
-async function summarizeFounderCalendar(rawEvents: string): Promise<string> {
+async function summarizeFounderCalendar(rawEvents: string, preferredLanguage?: string): Promise<string> {
   const fallback = rawEvents.trim()
+  const language = resolveFounderOutputLanguage(preferredLanguage)
 
   try {
     const result = await runAgent([
@@ -673,7 +685,8 @@ async function summarizeFounderCalendar(rawEvents: string): Promise<string> {
 
 Rules:
 - Use only the provided event list.
-- Write concise markdown in the same language as the input.
+- Write concise markdown in ${language.label}.
+- Do not switch language even if event titles or attendees use another language.
 - Highlight schedule shape, hard commitments, likely gaps, and collision risk.
 - If there are no events, say that the day is clear.`,
       },
@@ -1072,6 +1085,7 @@ async function executeAction(
     case 'calendar_today': {
       const calendarId = getString(params, 'calendar_id') ?? 'primary'
       const userGoogleEmail = await getGoogleWorkspaceUserEmail()
+      const personalContext = await getPersonalContext()
       const { start, end } = getTodayWindowInLocalTimezone()
 
       try {
@@ -1087,7 +1101,10 @@ async function executeAction(
           return `📅 Nessun evento oggi nel calendario \`${calendarId}\` per \`${userGoogleEmail}\`.`
         }
 
-        const summary = await summarizeFounderCalendar(eventsResult.text)
+        const summary = await summarizeFounderCalendar(
+          eventsResult.text,
+          personalContext.profile.preferredLanguage,
+        )
 
         await recordEvent('founder_command', {
           payload: {
@@ -1260,7 +1277,11 @@ async function executeAction(
             })
           : null
         const inboxSummary = inboxMetadata
-          ? await summarizeFounderInbox(inboxMetadata.text, inboxQuery)
+          ? await summarizeFounderInbox(
+              inboxMetadata.text,
+              inboxQuery,
+              personalContext.profile.preferredLanguage,
+            )
           : `No messages found for query: ${inboxQuery}`
 
         const calendarResult = await callGoogleWorkspaceMcpTool('get_events', {
@@ -1272,7 +1293,10 @@ async function executeAction(
         })
         const calendarSummary = /No events found/i.test(calendarResult.text)
           ? 'No events today.'
-          : await summarizeFounderCalendar(calendarResult.text)
+          : await summarizeFounderCalendar(
+              calendarResult.text,
+              personalContext.profile.preferredLanguage,
+            )
 
         const driveResult = await callGoogleWorkspaceMcpTool('search_drive_files', {
           query: buildRecentDriveQuery(driveDays),

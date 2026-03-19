@@ -116,9 +116,9 @@ After auth is completed:
 
 Once this is up:
 
-1. keep Gmail + Calendar founder actions active
-2. add Drive founder flows (`drive_search`, recent files, content fetch)
-3. decide whether to expose more MCP-native automations in Personal mode
+1. keep Gmail + Calendar + Drive founder actions active
+2. expose high-frequency founder actions directly in `Assistant HQ`
+3. add recurring/scheduled automations on top of the same MCP layer
 
 ## 9. Founder actions currently live
 
@@ -131,3 +131,14 @@ After Google Workspace MCP is connected, CEO Intake can already use:
 - `drive_read_file`
 - `drive_recent_files`
 - `daily_founder_brief`
+
+## 10. Assistant HQ quick actions
+
+Once the runtime is `connected`, the dashboard `Assistant HQ` can trigger these founder actions directly:
+
+- `Latest Email`
+- `Today Agenda`
+- `Recent Drive Files`
+- `Daily Founder Brief`
+
+These buttons call the local backend endpoint `POST /api/personal/assistant/quick-action`, which reuses the CEO Intake routing instead of maintaining a second MCP execution path in the dashboard.
