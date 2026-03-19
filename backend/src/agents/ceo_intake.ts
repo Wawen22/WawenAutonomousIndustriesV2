@@ -34,6 +34,7 @@ import { buildSystemStatusReport } from '../services/status_report.js'
 import { executeTool } from '../services/tool-executor.js'
 import { ensurePersonalProfile, formatPersonalContextForPrompt, getPersonalContext } from '../services/personal-context.js'
 import type { WebSearchResponse } from '../services/search.js'
+import { callGoogleWorkspaceMcpTool, getGoogleWorkspaceUserEmail } from '../services/google-workspace-mcp.js'
 import {
   executeFounderTaskAction,
   formatFounderTaskActionMessage,
@@ -114,6 +115,8 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - status_report      → no params
 - personal_research  → params: query, title?, filename?
 - weekly_digest      → no params
+- gmail_inbox_summary → params: query?, limit?
+- calendar_today     → params: calendar_id?
 - retry_task         → params: task_ref, reason?
 - approve_task       → params: task_ref, reason?
 - reject_task        → params: task_ref, reason?
@@ -142,6 +145,8 @@ ${clientContext}
 12. task_ref may be a full UUID or a unique short prefix such as the 8-char IDs shown in Telegram/dashboard.
 13. Use personal_research when Neb asks for a quick web research/report for himself. This should create a personal markdown report in the personal workspace, not a delegable delivery task.
 14. Use weekly_digest when Neb asks for a founder recap/summary of the last week. Generate the digest directly instead of creating a task.
+15. Use gmail_inbox_summary when Neb asks to check, summarize, or triage his inbox / emails.
+16. Use calendar_today when Neb asks for today's agenda, meetings, or calendar schedule.
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -381,6 +386,136 @@ ${buildSearchEvidence(search)}`,
       tools: ['web_search'],
       captureMemory: false,
       timeoutMs: 120_000,
+    })
+
+    return result.content.trim() || fallback
+  } catch {
+    return fallback
+  }
+}
+
+function extractMessageIdsFromGmailSearch(raw: string, limit: number): string[] {
+  const matches = [...raw.matchAll(/Message ID:\s*([A-Za-z0-9_-]+)/g)]
+  return matches
+    .map((match) => match[1])
+    .filter((id): id is string => Boolean(id) && id !== 'unknown')
+    .slice(0, limit)
+}
+
+function formatLocalRfc3339(date: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  const hours = pad(date.getHours())
+  const minutes = pad(date.getMinutes())
+  const seconds = pad(date.getSeconds())
+  const offsetMinutes = -date.getTimezoneOffset()
+  const sign = offsetMinutes >= 0 ? '+' : '-'
+  const offsetHours = pad(Math.floor(Math.abs(offsetMinutes) / 60))
+  const offsetMins = pad(Math.abs(offsetMinutes) % 60)
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetMins}`
+}
+
+function getTodayWindowInLocalTimezone(now = new Date()): { start: string; end: string } {
+  const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
+  const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
+  return {
+    start: formatLocalRfc3339(startDate),
+    end: formatLocalRfc3339(endDate),
+  }
+}
+
+async function summarizeFounderInbox(rawInboxMetadata: string, query: string): Promise<string> {
+  const fallback = rawInboxMetadata.trim()
+
+  try {
+    const result = await runAgent([
+      {
+        role: 'system',
+        content: `You summarize a founder's inbox for action.
+
+Rules:
+- Use only the provided email metadata.
+- Write in the same language as the query/context.
+- Prioritize urgent, revenue, meeting, and blocker signals.
+- Output concise markdown with sections: Executive Summary, Immediate Actions, Watchlist.
+- If the inbox looks empty or low-signal, say so clearly.`,
+      },
+      {
+        role: 'user',
+        content: `Inbox query: ${query}
+
+Email metadata:
+${rawInboxMetadata}`,
+      },
+    ], {
+      agentId: 'ceo',
+      taskType: 'analysis',
+      requiresComplex: false,
+      tools: [],
+      captureMemory: false,
+      timeoutMs: 60_000,
+    })
+
+    return result.content.trim() || fallback
+  } catch {
+    return fallback
+  }
+}
+
+function normalizeFounderGmailQuery(rawQuery: string): string {
+  let query = rawQuery.trim().replace(/newer_than:\s+/gi, 'newer_than:')
+
+  // Defensive fix: LLMs sometimes emit impossible windows like newer_than:1s for "today".
+  query = query.replace(/newer_than:(?:[1-9]|[1-5][0-9])s\b/gi, 'newer_than:1d')
+
+  if (!/(?:\bafter:|\bnewer_than:|\bolder_than:)/i.test(query) && /\b(today|oggi)\b/i.test(query)) {
+    query = `${query} newer_than:1d`.trim()
+  }
+
+  return query
+}
+
+function broadenFounderGmailQuery(query: string): string | null {
+  if (/newer_than:\d+s\b/i.test(query)) {
+    return query.replace(/newer_than:\d+s\b/gi, 'newer_than:1d')
+  }
+
+  if (/newer_than:\d+h\b/i.test(query)) {
+    return query.replace(/newer_than:\d+h\b/gi, 'newer_than:1d')
+  }
+
+  return null
+}
+
+async function summarizeFounderCalendar(rawEvents: string): Promise<string> {
+  const fallback = rawEvents.trim()
+
+  try {
+    const result = await runAgent([
+      {
+        role: 'system',
+        content: `You summarize a founder's daily calendar.
+
+Rules:
+- Use only the provided event list.
+- Write concise markdown in the same language as the input.
+- Highlight schedule shape, hard commitments, likely gaps, and collision risk.
+- If there are no events, say that the day is clear.`,
+      },
+      {
+        role: 'user',
+        content: `Calendar events:
+${rawEvents}`,
+      },
+    ], {
+      agentId: 'ceo',
+      taskType: 'analysis',
+      requiresComplex: false,
+      tools: [],
+      captureMemory: false,
+      timeoutMs: 60_000,
     })
 
     return result.content.trim() || fallback
@@ -649,6 +784,103 @@ async function executeAction(
       })
 
       return `🧾 Weekly digest generato e salvato in \`${exportResult.relativePath}\``
+    }
+
+    // ── gmail_inbox_summary ──────────────────────────────────────────────
+    case 'gmail_inbox_summary': {
+      const requestedQuery = getString(params, 'query') ?? 'in:inbox newer_than:7d -category:promotions -category:social'
+      let query = normalizeFounderGmailQuery(requestedQuery)
+      const limit = Math.max(1, Math.min(getNumber(params, 'limit') ?? 6, 10))
+      const userGoogleEmail = await getGoogleWorkspaceUserEmail()
+
+      try {
+        let searchResult = await callGoogleWorkspaceMcpTool('search_gmail_messages', {
+          query,
+          page_size: limit,
+        })
+
+        let messageIds = extractMessageIdsFromGmailSearch(searchResult.text, limit)
+        if (messageIds.length === 0) {
+          const broaderQuery = broadenFounderGmailQuery(query)
+          if (broaderQuery && broaderQuery !== query) {
+            query = broaderQuery
+            searchResult = await callGoogleWorkspaceMcpTool('search_gmail_messages', {
+              query,
+              page_size: limit,
+            })
+            messageIds = extractMessageIdsFromGmailSearch(searchResult.text, limit)
+          }
+        }
+
+        if (messageIds.length === 0) {
+          return `📭 Nessun messaggio utile trovato per \`${query}\`.`
+        }
+
+        const metadataResult = await callGoogleWorkspaceMcpTool('get_gmail_messages_content_batch', {
+          message_ids: messageIds,
+          format: 'metadata',
+        })
+
+        const summary = await summarizeFounderInbox(metadataResult.text, query)
+
+        await recordEvent('founder_command', {
+          payload: {
+            command: 'nl_gmail_inbox_summary',
+            source: 'natural_language',
+            query,
+            message_count: messageIds.length,
+          },
+        })
+
+        return `📬 Inbox summary pronta per \`${userGoogleEmail}\`\n\n${summary}`.trim()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (/authorization required/i.test(message)) {
+          return '🔐 Gmail MCP non ancora autorizzato. Completa prima il Google Workspace auth da Personal HQ, poi riprova.'
+        }
+        throw err
+      }
+    }
+
+    // ── calendar_today ───────────────────────────────────────────────────
+    case 'calendar_today': {
+      const calendarId = getString(params, 'calendar_id') ?? 'primary'
+      const userGoogleEmail = await getGoogleWorkspaceUserEmail()
+      const { start, end } = getTodayWindowInLocalTimezone()
+
+      try {
+        const eventsResult = await callGoogleWorkspaceMcpTool('get_events', {
+          calendar_id: calendarId,
+          time_min: start,
+          time_max: end,
+          max_results: 12,
+          detailed: false,
+        })
+
+        if (/No events found/i.test(eventsResult.text)) {
+          return `📅 Nessun evento oggi nel calendario \`${calendarId}\` per \`${userGoogleEmail}\`.`
+        }
+
+        const summary = await summarizeFounderCalendar(eventsResult.text)
+
+        await recordEvent('founder_command', {
+          payload: {
+            command: 'nl_calendar_today',
+            source: 'natural_language',
+            calendar_id: calendarId,
+            window_start: start,
+            window_end: end,
+          },
+        })
+
+        return `📅 Agenda di oggi per \`${userGoogleEmail}\`\n\n${summary}`.trim()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (/authorization required/i.test(message)) {
+          return '🔐 Google Calendar MCP non ancora autorizzato. Completa prima il Google Workspace auth da Personal HQ, poi riprova.'
+        }
+        throw err
+      }
     }
 
     // ── create_client ─────────────────────────────────────────────────────

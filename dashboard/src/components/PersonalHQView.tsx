@@ -11,6 +11,11 @@ interface SaveState {
   message?: string
 }
 
+interface McpActionState {
+  status: 'idle' | 'working' | 'done' | 'error'
+  message?: string
+}
+
 export function PersonalHQView() {
   const { data, loading, error, refetch } = usePersonalContext()
   const [displayName, setDisplayName] = useState('')
@@ -18,6 +23,7 @@ export function PersonalHQView() {
   const [assistantStyle, setAssistantStyle] = useState('')
   const [prioritiesText, setPrioritiesText] = useState('')
   const [saveState, setSaveState] = useState<SaveState>({ status: 'idle' })
+  const [mcpActionState, setMcpActionState] = useState<McpActionState>({ status: 'idle' })
 
   useEffect(() => {
     if (!data) return
@@ -55,6 +61,30 @@ export function PersonalHQView() {
       setSaveState({ status: 'done', message: 'Personal context updated' })
     } catch (err) {
       setSaveState({ status: 'error', message: err instanceof Error ? err.message : 'Save failed' })
+    }
+  }
+
+  async function handleGoogleMcpAuth() {
+    try {
+      setMcpActionState({ status: 'working', message: 'Starting Google Workspace auth...' })
+      const response = await fetch(`${BACKEND_URL}/api/mcp/google-workspace/auth/start`, {
+        method: 'POST',
+      })
+      const payload = await response.json() as { status?: { authorizationUrl?: string }; error?: string }
+      if (!response.ok) {
+        throw new Error(payload.error ?? `HTTP ${response.status}`)
+      }
+
+      const authorizationUrl = payload.status?.authorizationUrl
+      if (authorizationUrl) {
+        window.open(authorizationUrl, '_blank', 'noopener,noreferrer')
+        setMcpActionState({ status: 'done', message: 'Browser auth opened. Complete Google login, then refresh this panel.' })
+      } else {
+        setMcpActionState({ status: 'done', message: 'Google Workspace MCP already connected.' })
+      }
+      await refetch()
+    } catch (err) {
+      setMcpActionState({ status: 'error', message: err instanceof Error ? err.message : 'Auth start failed' })
     }
   }
 
@@ -178,6 +208,101 @@ export function PersonalHQView() {
                   <Badge variant={item.ready ? 'done' : 'warning'}>{item.ready ? 'READY' : 'SETUP'}</Badge>
                 </div>
               ))}
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">MCP Bridge</h2>
+                <p className="mt-1 text-xs text-slate-500">Control plane for Gmail, Calendar, Drive and MCP-native file access.</p>
+              </div>
+              <Badge variant={data.mcp.configPresent ? 'done' : 'warning'}>
+                {data.mcp.configPresent ? `${data.mcp.serversConfigured} SERVERS` : 'NO CONFIG'}
+              </Badge>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {data.mcp.connectors.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-white/5 bg-black/25 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-bold text-slate-300">{item.label}</span>
+                    <Badge variant={item.status === 'ready' ? 'done' : 'warning'}>{item.status === 'ready' ? 'READY' : 'SETUP'}</Badge>
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-500">{item.notes}</p>
+                  {item.serverName && (
+                    <p className="mt-1 text-[10px] font-mono text-slate-600">{item.serverName}{item.transport ? ` · ${item.transport}` : ''}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-[#7CF6E6]/10 bg-[#7CF6E6]/[0.03] p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#7CF6E6]/80">Google Workspace Runtime</p>
+                  <p className="mt-2 text-xs text-slate-300">
+                    Account: <span className="font-mono text-slate-400">{data.mcpRuntime.userGoogleEmail ?? 'not set'}</span>
+                  </p>
+                  <p className="mt-1 text-xs text-slate-300">
+                    Redirect: <span className="font-mono text-slate-500">{data.mcpRuntime.redirectUri}</span>
+                  </p>
+                </div>
+                <Badge variant={data.mcpRuntime.state === 'connected' ? 'done' : data.mcpRuntime.state === 'error' ? 'error' : 'warning'}>
+                  {data.mcpRuntime.state.toUpperCase()}
+                </Badge>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-white/5 bg-black/25 px-4 py-3">
+                  <p className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-500">Server</p>
+                  <p className="mt-2 text-xs font-black uppercase tracking-[0.18em] text-white">
+                    {data.mcpRuntime.serverReachable ? 'Reachable' : 'Offline'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/5 bg-black/25 px-4 py-3">
+                  <p className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-500">Tools</p>
+                  <p className="mt-2 text-2xl font-mono font-black text-white">{data.mcpRuntime.toolCount}</p>
+                </div>
+              </div>
+
+              {data.mcpRuntime.tools.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {data.mcpRuntime.tools.slice(0, 8).map((tool) => (
+                    <span key={tool.name} className="rounded-full border border-white/8 bg-black/25 px-3 py-1 text-[10px] font-mono text-slate-400">
+                      {tool.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {(data.mcpRuntime.lastConnectedAt || data.mcpRuntime.lastError) && (
+                <div className="mt-4 space-y-1">
+                  {data.mcpRuntime.lastConnectedAt && (
+                    <p className="text-[11px] text-slate-500">Last connected: {new Date(data.mcpRuntime.lastConnectedAt).toLocaleString()}</p>
+                  )}
+                  {data.mcpRuntime.lastError && (
+                    <p className="text-[11px] text-rose-400">{data.mcpRuntime.lastError}</p>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-4 flex items-center justify-between gap-4">
+                <p className="text-[11px] text-slate-500">
+                  WAI now has a real OAuth callback and MCP tool discovery path. Complete auth once, then founder actions can use Gmail and Calendar directly.
+                </p>
+                <button
+                  onClick={() => void handleGoogleMcpAuth()}
+                  className="rounded-2xl border border-[#7CF6E6]/30 bg-[#7CF6E6]/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] text-[#7CF6E6] transition hover:bg-[#7CF6E6]/18"
+                >
+                  {data.mcpRuntime.state === 'connected' ? 'Refresh MCP' : 'Start Google Auth'}
+                </button>
+              </div>
+              {mcpActionState.message && (
+                <p className={clsx('mt-3 text-xs', mcpActionState.status === 'error' ? 'text-rose-400' : 'text-slate-500')}>
+                  {mcpActionState.message}
+                </p>
+              )}
             </div>
           </section>
 

@@ -6,6 +6,11 @@
 import { mkdir, readFile, readdir, stat, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
+import { formatMcpConnectorsForPrompt, getMcpBridgeStatus, type McpBridgeStatus } from './mcp-bridge.js'
+import {
+  getGoogleWorkspaceMcpRuntimeStatus,
+  type GoogleWorkspaceMcpRuntimeStatus,
+} from './google-workspace-mcp.js'
 import {
   createPersonalWorkspace,
   getPersonalOutputPath,
@@ -39,6 +44,8 @@ export interface PersonalContext {
     email: boolean
     telegram: boolean
   }
+  mcp: McpBridgeStatus
+  mcpRuntime: GoogleWorkspaceMcpRuntimeStatus
 }
 
 const DEFAULT_OWNER_SLUG = 'neb'
@@ -137,7 +144,11 @@ export async function listPersonalDocuments(ownerSlug: string = DEFAULT_OWNER_SL
 export async function getPersonalContext(ownerSlug: string = DEFAULT_OWNER_SLUG): Promise<PersonalContext> {
   const slug = sanitizeOwnerSlug(ownerSlug)
   const profile = await ensurePersonalProfile(slug)
-  const recentDocuments = await listPersonalDocuments(slug)
+  const [recentDocuments, mcpStatus, mcpRuntime] = await Promise.all([
+    listPersonalDocuments(slug),
+    getMcpBridgeStatus(),
+    getGoogleWorkspaceMcpRuntimeStatus(slug),
+  ])
 
   return {
     profile,
@@ -148,6 +159,8 @@ export async function getPersonalContext(ownerSlug: string = DEFAULT_OWNER_SLUG)
       email: Boolean(process.env['RESEND_API_KEY'] && process.env['RESEND_FROM_EMAIL']),
       telegram: Boolean(process.env['TELEGRAM_BOT_TOKEN'] && process.env['TELEGRAM_FOUNDER_CHAT_ID']),
     },
+    mcp: mcpStatus,
+    mcpRuntime,
   }
 }
 
@@ -166,6 +179,9 @@ export async function formatPersonalContextForPrompt(ownerSlug: string = DEFAULT
     `- personal_workspace: ${context.workspacePath}`,
     `- personal_output: ${context.outputPath}`,
     `- connectors: email=${context.connectors.email ? 'ready' : 'missing'} telegram=${context.connectors.telegram ? 'ready' : 'missing'}`,
+    `- mcp_connectors: ${formatMcpConnectorsForPrompt(context.mcp)}`,
+    `- google_workspace_mcp_runtime: ${context.mcpRuntime.state}`,
+    `- google_workspace_mcp_tools: ${context.mcpRuntime.toolCount}`,
   ]
 
   if (context.recentDocuments.length > 0) {

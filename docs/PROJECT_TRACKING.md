@@ -31,7 +31,7 @@
 | M7 | First revenue-generating output | 2026-Q3 | ✅ Done — Wawen22 LandingPage $222 |
 | M8 | Migrate to personal mini PC | 2026-Q3 | ⬜ Todo (infra — after M9) |
 | M9 | Tool Foundation + Personal Assistant Mode | 2026-Q2 | 🔄 In Progress |
-| M10 | MCP Integration (Gmail, Calendar, Search) | 2026-Q2 | ⬜ Todo |
+| M10 | MCP Integration (Gmail, Calendar, Drive) | 2026-Q2 | ⬜ Todo |
 | M11 | Multi-channel (WhatsApp/Slack) | 2026-Q3 | ⬜ Todo |
 
 ---
@@ -147,7 +147,7 @@
 
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
-| T086 | MCP integration layer | ⬜ Todo | Claude | 2 | `backend/src/services/mcp-bridge.ts` — bridge MCP → tool calls agenti; priorità: Gmail, Google Calendar, Filesystem, OneDrive |
+| T086 | MCP integration layer | 🔄 In Progress | Codex | 2 | Runtime OAuth live con `backend/src/services/google-workspace-mcp.ts`, callback backend, tool discovery e prime founder actions (`gmail_inbox_summary`, `calendar_today`); Drive founder flows pending |
 
 ### Fase 5 — Multi-channel (M11)
 
@@ -173,6 +173,30 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-19 — Sessione 42: Google Workspace MCP runtime + founder actions
+
+- **T086 PROGRESS** nuovo `backend/src/services/google-workspace-mcp.ts`: client MCP reale via `@modelcontextprotocol/sdk`, OAuth persistente salvato in `workspace/personal/neb/integrations/`, discovery dei tool e execution concreta verso `workspace-mcp`
+- **BACKEND API** nuovi endpoint locali: `GET /api/mcp/google-workspace/runtime`, `POST /api/mcp/google-workspace/auth/start`, `GET /api/mcp/google-workspace/callback`, `POST /api/mcp/google-workspace/tool`
+- **VERIFY** smoke test reale ok: runtime vede `http://127.0.0.1:8000/mcp` come reachabile e `startGoogleWorkspaceMcpAuth()` genera correttamente un `authorizationUrl` con callback WAI su `http://127.0.0.1:3001/api/mcp/google-workspace/callback`
+- **PERSONAL HQ** dashboard aggiornata: distingue control plane MCP da runtime Google Workspace, mostra stato `auth_required/connected/offline`, tool count e pulsante `Start Google Auth`
+- **CEO INTAKE** prime action founder live su MCP reale: `gmail_inbox_summary` e `calendar_today`; se l’OAuth non è ancora completato il CEO risponde con blocco esplicito invece di fingere accesso
+- **FIX** i tool pubblici di `workspace-mcp` non accettano `user_google_email` negli args MCP; WAI ora passa solo gli argomenti validi e normalizza query Gmail troppo strette come `newer_than:1s`
+
+### 2026-03-19 — Sessione 40: MCP bridge foundation + Google Drive direction
+
+- **T086 STARTED** nuovo `backend/src/services/mcp-bridge.ts`: legge `.mcp.json`, mappa i server MCP configurati e restituisce stato reale dei connettori desiderati (`Supabase`, `Gmail`, `Google Calendar`, `Google Drive`, `Filesystem`)
+- **BACKEND API** nuovo endpoint locale `GET /api/mcp/status`; `GET /api/personal/context` ora include anche il blocco `mcp` così il founder shell ha visibilità diretta sulla readiness
+- **PERSONAL CONTEXT** il prompt founder del CEO ora include anche il sommario `mcp_connectors`, così le future action personali sapranno quali integrazioni sono davvero attive
+- **DASHBOARD** `PersonalHQView` ora mostra una sezione `MCP Bridge` con stato `ready/setup` per ciascun connettore e server MCP effettivamente rilevati
+- **DIRECTION** roadmap allineata: `Google Drive` sostituisce `OneDrive` come target storage esterno per la modalità personale
+
+### 2026-03-19 — Sessione 41: Google Workspace MCP local setup scaffold
+
+- **SETUP SCAFFOLD** aggiunti `.mcp.json` con server locale `google_workspace`, variabili `GOOGLE_OAUTH_*` / `WORKSPACE_MCP_*` in `.env.example` e guida operativa `docs/MCP_SETUP.md`
+- **START SCRIPT** nuovo `scripts/start-google-workspace-mcp.sh`: carica `.env`, valida le credenziali minime e avvia `uvx workspace-mcp --transport streamable-http --tools gmail drive calendar`
+- **MCP STATUS** `backend/src/services/mcp-bridge.ts` ora riconosce anche un server unificato `google_workspace` / `workspace-mcp` e segnala `missing env vars` se la config MCP esiste ma mancano le credenziali Google
+- **FIX** il bootstrap locale di `workspace-mcp` richiedeva `PORT=8000` separato e `WORKSPACE_MCP_BASE_URI` senza porta; script/env/docs riallineati, server verificato in avvio su `http://0.0.0.0:8000/mcp`
 
 ### 2026-03-19 — Sessione 39: Serper web search live + personal routing completed
 

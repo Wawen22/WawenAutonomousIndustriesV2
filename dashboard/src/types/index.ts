@@ -180,6 +180,52 @@ export interface PersonalDocumentSummary {
   sizeBytes: number
 }
 
+export interface McpConnectorStatus {
+  id: 'supabase' | 'gmail' | 'google_calendar' | 'google_drive' | 'filesystem'
+  label: string
+  status: 'ready' | 'missing'
+  configured: boolean
+  serverName?: string
+  transport?: string
+  notes: string
+}
+
+export interface McpBridgeStatus {
+  configPath: string
+  configPresent: boolean
+  serversConfigured: number
+  connectors: McpConnectorStatus[]
+}
+
+export type GoogleWorkspaceMcpRuntimeState =
+  | 'missing_config'
+  | 'offline'
+  | 'auth_required'
+  | 'connected'
+  | 'error'
+
+export interface GoogleWorkspaceToolSummary {
+  name: string
+  description?: string
+}
+
+export interface GoogleWorkspaceMcpRuntimeStatus {
+  state: GoogleWorkspaceMcpRuntimeState
+  serverName: string
+  serverUrl?: string
+  redirectUri: string
+  userGoogleEmail: string | null
+  serverReachable: boolean
+  hasTokens: boolean
+  hasClientRegistration: boolean
+  authorizationUrl?: string
+  lastAuthRequestedAt?: string
+  lastConnectedAt?: string
+  lastError?: string
+  toolCount: number
+  tools: GoogleWorkspaceToolSummary[]
+}
+
 export interface PersonalContext {
   profile: PersonalProfile
   workspacePath: string
@@ -189,6 +235,8 @@ export interface PersonalContext {
     email: boolean
     telegram: boolean
   }
+  mcp: McpBridgeStatus
+  mcpRuntime: GoogleWorkspaceMcpRuntimeStatus
 }
 
 // Enriched variants used when hooks join runs/events with task metadata

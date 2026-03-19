@@ -21,6 +21,13 @@ import { getTelegramBot, sendTelegramNotification } from './services/telegram.js
 import { updateAgentStatus, getProjectState } from './services/supabase.js'
 import { getAllAgentIds } from './config/agents.js'
 import { pingLiteLLM } from './services/llm.js'
+import { getMcpBridgeStatus } from './services/mcp-bridge.js'
+import {
+  callGoogleWorkspaceMcpTool,
+  finishGoogleWorkspaceMcpAuth,
+  getGoogleWorkspaceMcpRuntimeStatus,
+  startGoogleWorkspaceMcpAuth,
+} from './services/google-workspace-mcp.js'
 import { getWorkspaceRoot } from './services/workspace.js'
 import { getPersonalContext, updatePersonalProfile } from './services/personal-context.js'
 import { startOpsMonitor } from './agents/ops.js'
@@ -35,6 +42,25 @@ function isLocalRequest(req: IncomingMessage): boolean {
 function isAllowedDashboardOrigin(origin: string | undefined): boolean {
   if (!origin) return true
   return origin === 'http://localhost:3000' || origin === 'http://127.0.0.1:3000'
+}
+
+function getRequestBaseUrl(req: IncomingMessage): string {
+  const explicit = process.env['PUBLIC_BACKEND_URL']?.trim()
+  if (explicit) {
+    return explicit.replace(/\/$/, '')
+  }
+
+  const forwardedProto = req.headers['x-forwarded-proto']
+  const proto = typeof forwardedProto === 'string' && forwardedProto.trim()
+    ? (forwardedProto.split(',')[0] ?? 'http').trim()
+    : 'http'
+
+  const forwardedHost = req.headers['x-forwarded-host']
+  const hostHeader = typeof forwardedHost === 'string' && forwardedHost.trim()
+    ? (forwardedHost.split(',')[0] ?? '').trim()
+    : req.headers.host ?? `127.0.0.1:${process.env['BACKEND_PORT'] ?? process.env['PORT'] ?? '3001'}`
+
+  return `${proto}://${hostHeader}`.replace(/\/$/, '')
 }
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -492,6 +518,148 @@ async function main(): Promise<void> {
           const message = err instanceof Error ? err.message : 'Unknown error'
           log.error({ err }, 'Personal context update API error')
           res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/mcp/status' && req.method === 'GET') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const status = await getMcpBridgeStatus()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(status))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'MCP status API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/mcp/google-workspace/runtime' && req.method === 'GET') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const status = await getGoogleWorkspaceMcpRuntimeStatus()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(status))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Google Workspace MCP runtime API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/mcp/google-workspace/auth/start' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const status = await startGoogleWorkspaceMcpAuth(undefined, getRequestBaseUrl(req))
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, status }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Google Workspace MCP auth start API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/mcp/google-workspace/callback' && req.method === 'GET') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' })
+            res.end('Forbidden')
+            return
+          }
+
+          const code = url.searchParams.get('code')
+          const error = url.searchParams.get('error')
+
+          if (error) {
+            res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
+            res.end(`<!doctype html><html><body style="font-family: sans-serif; background:#08111d; color:#fff; padding:32px"><h1>Google Workspace MCP auth failed</h1><p>${error}</p></body></html>`)
+            return
+          }
+
+          if (!code) {
+            res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
+            res.end('<!doctype html><html><body style="font-family: sans-serif; background:#08111d; color:#fff; padding:32px"><h1>Missing authorization code</h1><p>Retry the Google Workspace MCP auth flow from WAI.</p></body></html>')
+            return
+          }
+
+          const status = await finishGoogleWorkspaceMcpAuth(code)
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+          res.end(`<!doctype html><html><body style="font-family: sans-serif; background:#08111d; color:#fff; padding:32px"><h1>Google Workspace MCP connected</h1><p>State: ${status.state}</p><p>Tools discovered: ${status.toolCount}</p><script>setTimeout(() => window.close(), 1800);</script></body></html>`)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Google Workspace MCP callback API error')
+          res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' })
+          res.end(`<!doctype html><html><body style="font-family: sans-serif; background:#08111d; color:#fff; padding:32px"><h1>Google Workspace MCP callback failed</h1><p>${message}</p></body></html>`)
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/mcp/google-workspace/tool' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null
+            ? body as Record<string, unknown>
+            : {}
+
+          const name = typeof payload['name'] === 'string' ? payload['name'].trim() : ''
+          const args = typeof payload['args'] === 'object' && payload['args'] !== null
+            ? payload['args'] as Record<string, unknown>
+            : {}
+
+          if (!name) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing tool name' }))
+            return
+          }
+
+          const result = await callGoogleWorkspaceMcpTool(name, args)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, result }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          const statusCode = /authorization required/i.test(message) ? 409 : 500
+          log.error({ err }, 'Google Workspace MCP tool call API error')
+          res.writeHead(statusCode, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: message }))
         }
       })()

@@ -144,7 +144,7 @@ All four chains send an `/invoice` shortcut notification to Neb at completion.
 | M7 | First revenue-generating output | ✅ Done — Wawen22 LandingPage $222 |
 | M8 | Migrate to personal mini PC | ⬜ Todo (infra — after M9) |
 | M9 | Tool Foundation + Personal Assistant Mode | 🔄 In Progress |
-| M10 | MCP Integration (Gmail, Calendar, Search) | ⬜ Todo |
+| M10 | MCP Integration (Gmail, Calendar, Drive) | 🔄 In Progress |
 | M11 | Multi-channel (WhatsApp/Slack) | ⬜ Todo |
 
 ---
