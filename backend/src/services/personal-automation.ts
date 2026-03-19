@@ -1,9 +1,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { DAILY_FOUNDER_BRIEF_AUTOMATION_CAPABILITY_ID } from '../config/capabilities.js'
 import { ensurePersonalProfile } from './personal-context.js'
 import { executePersonalAssistantQuickAction } from './personal-assistant-actions.js'
-import { log, recordEvent } from './logger.js'
+import { log, recordCapabilityEvent, recordEvent } from './logger.js'
 import { getPersonalWorkspacePath } from './workspace.js'
 
 const DEFAULT_OWNER_SLUG = 'neb'
@@ -230,8 +231,11 @@ export async function updateDailyFounderBriefAutomation(
     scheduleLocalTime?: string
   },
   ownerSlug: string = DEFAULT_OWNER_SLUG,
+  source = 'dashboard',
 ): Promise<PersonalAutomationStatus> {
   const state = await ensurePersistedState(ownerSlug)
+  const previousEnabled = state.dailyFounderBrief.enabled
+  const previousSchedule = state.dailyFounderBrief.scheduleLocalTime
 
   if (typeof input.enabled === 'boolean') {
     state.dailyFounderBrief.enabled = input.enabled
@@ -242,6 +246,41 @@ export async function updateDailyFounderBriefAutomation(
   }
 
   await writePersistedState(ownerSlug, state)
+
+  if (previousEnabled !== state.dailyFounderBrief.enabled) {
+    await recordCapabilityEvent({
+      capability_id: DAILY_FOUNDER_BRIEF_AUTOMATION_CAPABILITY_ID,
+      event_type: state.dailyFounderBrief.enabled ? 'enabled' : 'disabled',
+      actor_type: 'dashboard',
+      actor_id: ownerSlug,
+      source,
+      summary: state.dailyFounderBrief.enabled
+        ? 'Daily Founder Brief automation enabled.'
+        : 'Daily Founder Brief automation disabled.',
+      payload: {
+        enabled: state.dailyFounderBrief.enabled,
+        schedule_local_time: state.dailyFounderBrief.scheduleLocalTime,
+        timezone: state.dailyFounderBrief.timezone,
+      },
+    })
+  }
+
+  if (previousSchedule !== state.dailyFounderBrief.scheduleLocalTime) {
+    await recordCapabilityEvent({
+      capability_id: DAILY_FOUNDER_BRIEF_AUTOMATION_CAPABILITY_ID,
+      event_type: 'configured',
+      actor_type: 'dashboard',
+      actor_id: ownerSlug,
+      source,
+      summary: 'Daily Founder Brief automation schedule updated.',
+      payload: {
+        previous_schedule_local_time: previousSchedule,
+        schedule_local_time: state.dailyFounderBrief.scheduleLocalTime,
+        timezone: state.dailyFounderBrief.timezone,
+      },
+    })
+  }
+
   return toAutomationStatus(state)
 }
 
@@ -261,6 +300,19 @@ export async function runDailyFounderBriefAutomationNow(
   state.dailyFounderBrief.status = 'running'
   delete state.dailyFounderBrief.lastError
   await writePersistedState(ownerSlug, state)
+  await recordCapabilityEvent({
+    capability_id: DAILY_FOUNDER_BRIEF_AUTOMATION_CAPABILITY_ID,
+    event_type: 'used',
+    actor_type: source === 'manual' ? 'dashboard' : 'runtime',
+    actor_id: ownerSlug,
+    source: `personal-automation:${source}`,
+    summary: `Daily Founder Brief automation started (${source}).`,
+    payload: {
+      trigger: source,
+      schedule_local_time: state.dailyFounderBrief.scheduleLocalTime,
+      timezone: state.dailyFounderBrief.timezone,
+    },
+  })
 
   try {
     const result = await executePersonalAssistantQuickAction(
@@ -281,6 +333,18 @@ export async function runDailyFounderBriefAutomationNow(
       delete state.dailyFounderBrief.lastOutputPath
     }
     await writePersistedState(ownerSlug, state)
+    await recordCapabilityEvent({
+      capability_id: DAILY_FOUNDER_BRIEF_AUTOMATION_CAPABILITY_ID,
+      event_type: 'succeeded',
+      actor_type: source === 'manual' ? 'dashboard' : 'runtime',
+      actor_id: ownerSlug,
+      source: `personal-automation:${source}`,
+      summary: `Daily Founder Brief automation completed (${source}).`,
+      payload: {
+        trigger: source,
+        ...(outputPath ? { output_path: outputPath } : {}),
+      },
+    })
 
     await recordEvent('founder_command', {
       agentId: 'ceo',
@@ -303,6 +367,18 @@ export async function runDailyFounderBriefAutomationNow(
     state.dailyFounderBrief.lastAttemptLocalDate = currentDateKey
     state.dailyFounderBrief.lastError = message
     await writePersistedState(ownerSlug, state)
+    await recordCapabilityEvent({
+      capability_id: DAILY_FOUNDER_BRIEF_AUTOMATION_CAPABILITY_ID,
+      event_type: 'failed',
+      actor_type: source === 'manual' ? 'dashboard' : 'runtime',
+      actor_id: ownerSlug,
+      source: `personal-automation:${source}`,
+      summary: `Daily Founder Brief automation failed (${source}).`,
+      payload: {
+        trigger: source,
+        error: message,
+      },
+    })
 
     await recordEvent('founder_command', {
       agentId: 'ceo',

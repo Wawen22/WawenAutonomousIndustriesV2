@@ -1,4 +1,6 @@
 import { runCeoNaturalLanguageHandler } from '../agents/ceo_intake.js'
+import { getFounderQuickActionCapabilityId } from '../config/capabilities.js'
+import { recordCapabilityEvent } from './logger.js'
 
 export type PersonalAssistantQuickActionId =
   | 'latest_email'
@@ -42,17 +44,63 @@ export async function executePersonalAssistantQuickAction(
 
   const replies: string[] = []
   const notifications: string[] = []
+  const capabilityId = getFounderQuickActionCapabilityId(actionId)
 
-  await runCeoNaturalLanguageHandler(
-    chatId,
-    prompt,
-    async (msg) => {
-      replies.push(msg)
+  await recordCapabilityEvent({
+    capability_id: capabilityId,
+    event_type: 'used',
+    actor_type: chatId.startsWith('dashboard:') ? 'dashboard' : chatId.startsWith('automation:') ? 'runtime' : 'founder',
+    actor_id: 'neb',
+    source: chatId,
+    summary: `Founder quick action started: ${actionId}.`,
+    payload: {
+      action_id: actionId,
+      chat_id: chatId,
+      prompt,
     },
-    async (msg) => {
-      notifications.push(msg)
+  })
+
+  try {
+    await runCeoNaturalLanguageHandler(
+      chatId,
+      prompt,
+      async (msg) => {
+        replies.push(msg)
+      },
+      async (msg) => {
+        notifications.push(msg)
+      },
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    await recordCapabilityEvent({
+      capability_id: capabilityId,
+      event_type: 'failed',
+      actor_type: chatId.startsWith('dashboard:') ? 'dashboard' : chatId.startsWith('automation:') ? 'runtime' : 'founder',
+      actor_id: 'neb',
+      source: chatId,
+      summary: `Founder quick action failed: ${actionId}.`,
+      payload: {
+        action_id: actionId,
+        error: message,
+      },
+    })
+    throw err
+  }
+
+  await recordCapabilityEvent({
+    capability_id: capabilityId,
+    event_type: 'succeeded',
+    actor_type: chatId.startsWith('dashboard:') ? 'dashboard' : chatId.startsWith('automation:') ? 'runtime' : 'founder',
+    actor_id: 'neb',
+    source: chatId,
+    summary: `Founder quick action completed: ${actionId}.`,
+    payload: {
+      action_id: actionId,
+      reply_count: replies.length,
+      notification_count: notifications.length,
     },
-  )
+  })
 
   return {
     actionId,

@@ -8,11 +8,13 @@ import type {
   Agent,
   AgentRun,
   AgentStatus,
+  CapabilityEvent,
   Client,
   CreateClientInput,
   CreatePaymentInput,
   CreateProjectInput,
   CreateTaskInput,
+  LogCapabilityEventInput,
   LogEventInput,
   LogRunInput,
   ModelConfig,
@@ -43,6 +45,11 @@ function createSupabaseClient() {
   return createSupabaseSdkClient(url, key, {
     auth: { persistSession: false },
   })
+}
+
+function isMissingRelationError(error: { code?: string; message?: string } | null | undefined, relation: string): boolean {
+  if (!error) return false
+  return error.code === '42P01' || error.message?.toLowerCase().includes(relation) === true
 }
 
 let _client: ReturnType<typeof createSupabaseClient> | null = null
@@ -522,6 +529,61 @@ export async function logEvent(input: LogEventInput): Promise<SystemEvent> {
 
   if (error) throw new Error(`Failed to log event: ${error.message}`)
   return data as SystemEvent
+}
+
+// ---------------------------------------------------------------------------
+// Capability Event Logging
+// ---------------------------------------------------------------------------
+
+export async function logCapabilityEvent(
+  input: LogCapabilityEventInput,
+): Promise<CapabilityEvent | null> {
+  const { data, error } = await getSupabaseClient()
+    .from('capability_events')
+    .insert({
+      capability_id: input.capability_id,
+      event_type: input.event_type,
+      actor_type: input.actor_type,
+      actor_id: input.actor_id ?? null,
+      source: input.source,
+      summary: input.summary,
+      payload: input.payload ?? {},
+    })
+    .select()
+    .single()
+
+  if (isMissingRelationError(error, 'capability_events')) {
+    return null
+  }
+
+  if (error) throw new Error(`Failed to log capability event: ${error.message}`)
+  return data as CapabilityEvent
+}
+
+export async function getCapabilityEvents(options: {
+  capabilityId?: string
+  limit?: number
+} = {}): Promise<CapabilityEvent[]> {
+  const limit = options.limit ?? 100
+
+  let query = getSupabaseClient()
+    .from('capability_events')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (options.capabilityId) {
+    query = query.eq('capability_id', options.capabilityId)
+  }
+
+  const { data, error } = await query
+
+  if (isMissingRelationError(error, 'capability_events')) {
+    return []
+  }
+
+  if (error) throw new Error(`Failed to get capability events: ${error.message}`)
+  return (data ?? []) as CapabilityEvent[]
 }
 
 export async function getRecentEvents(limit = 50): Promise<SystemEvent[]> {

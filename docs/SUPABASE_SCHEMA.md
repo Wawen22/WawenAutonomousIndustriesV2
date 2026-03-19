@@ -210,6 +210,29 @@ High-level audit log of important system events.
 
 ---
 
+### `capability_events`
+
+Persisted audit trail for the shared capability platform.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `uuid` PK | Auto-generated |
+| `capability_id` | `text` | Logical capability ID (e.g. `plugin.google_workspace.mcp`) |
+| `event_type` | `text` | `used` \| `succeeded` \| `failed` \| `configured` \| `enabled` \| `disabled` \| `auth_started` \| `auth_completed` |
+| `actor_type` | `text` | `founder` \| `agent` \| `system` \| `dashboard` \| `runtime` |
+| `actor_id` | `text` | Optional actor identifier (`neb`, `ceo`, etc.) |
+| `source` | `text` | Runtime source string (`dashboard`, `google-workspace-mcp:tool:*`, etc.) |
+| `summary` | `text` | Human-readable event summary |
+| `payload` | `jsonb` | Structured context for the event |
+| `created_at` | `timestamptz` | Event creation time |
+
+Notes:
+- This table is the persisted audit layer for the current `Capabilities` dashboard MVP.
+- It is intentionally keyed by logical capability ID instead of a separate `capabilities` table, because the registry is still code-derived in this phase.
+- The backend degrades safely if this table has not been migrated yet, but full capability audit visibility requires migration `007_capability_events.sql`.
+
+---
+
 ### `project_state`
 
 Aggregate state of WAI as a whole.
@@ -244,6 +267,7 @@ tasks  ←────────── events (task_id)
 tasks  ←────────── tasks (parent_task_id) -- self-referential
 models ←────────── agents (model_id)
 models ←────────── runs (model_id)
+capabilities (logical registry) ←────────── capability_events (capability_id)
 ```
 
 ---
@@ -258,6 +282,7 @@ The following tables have Realtime enabled and are subscribed to by the Dashboar
 | `tasks` | INSERT, UPDATE | Task Board (Kanban) |
 | `events` | INSERT | Event Timeline |
 | `runs` | INSERT | Cost Panel, Agent Activity |
+| `capability_events` | INSERT | Capabilities audit timeline |
 | `payments` | INSERT, UPDATE | Revenue View |
 | `agent_memories` | INSERT, UPDATE | Memory View |
 | `project_state` | UPDATE | Header stats |

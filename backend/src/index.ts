@@ -7,6 +7,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { log, recordEvent } from './services/logger.js'
+import { recordCapabilityEvent } from './services/logger.js'
 import {
   executeFounderTaskAction,
   formatFounderTaskActionMessage,
@@ -48,6 +49,26 @@ import {
   getKnowledgeBaseManifest,
   readKnowledgeBaseDocument,
 } from './services/docs-knowledge-base.js'
+import {
+  getCapabilityById,
+  getCapabilityRegistrySnapshot,
+} from './services/capabilities.js'
+import {
+  updateCapabilityGovernance,
+  type CapabilityGovernanceUpdateInput,
+} from './services/capability-governance.js'
+import type {
+  CapabilityAssignmentState,
+  CapabilityAssignmentTargetType,
+} from './types/index.js'
+
+function isCapabilityAssignmentTargetType(value: unknown): value is CapabilityAssignmentTargetType {
+  return value === 'runtime' || value === 'team' || value === 'agent'
+}
+
+function isCapabilityAssignmentState(value: unknown): value is CapabilityAssignmentState {
+  return value === 'active' || value === 'disabled'
+}
 
 function isLocalRequest(req: IncomingMessage): boolean {
   const remote = req.socket.remoteAddress ?? ''
@@ -157,6 +178,199 @@ async function main(): Promise<void> {
           }
           res.writeHead(statusCode, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/capabilities' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const snapshot = await getCapabilityRegistrySnapshot()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(snapshot))
+        } catch (err) {
+          log.error({ err }, 'Capabilities registry API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    const capabilityGovernanceMatch = url.pathname.match(/^\/api\/capabilities\/(.+)\/governance$/)
+    if (capabilityGovernanceMatch && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const capabilityId = decodeURIComponent(capabilityGovernanceMatch[1] ?? '').trim()
+          if (!capabilityId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing capability id' }))
+            return
+          }
+
+          const beforeEntry = await getCapabilityById(capabilityId)
+          if (!beforeEntry) {
+            res.writeHead(404, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Capability not found' }))
+            return
+          }
+
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null
+            ? body as Record<string, unknown>
+            : {}
+
+          const allowedPolicyModes = new Set(['open', 'restricted', 'approval_required', 'read_only'])
+          const policyModeRaw = payload['policyMode']
+          const policyMode = typeof policyModeRaw === 'string' && allowedPolicyModes.has(policyModeRaw)
+            ? policyModeRaw as 'open' | 'restricted' | 'approval_required' | 'read_only'
+            : undefined
+
+          const policyNotes = typeof payload['policyNotes'] === 'string' || payload['policyNotes'] === null
+            ? payload['policyNotes'] as string | null
+            : undefined
+
+          const assignmentStateRaw = payload['assignments']
+          const validAssignments = new Set(
+            beforeEntry.assignments.map((assignment) => `${assignment.targetType}:${assignment.targetId}`)
+          )
+
+          const assignments = Array.isArray(assignmentStateRaw)
+            ? assignmentStateRaw.reduce<NonNullable<CapabilityGovernanceUpdateInput['assignments']>>((acc, item) => {
+              if (typeof item !== 'object' || item === null) return acc
+
+              const targetType = item['targetType']
+              const targetId = item['targetId']
+              const state = item['state']
+
+              if (
+                !isCapabilityAssignmentTargetType(targetType) ||
+                typeof targetId !== 'string' ||
+                !isCapabilityAssignmentState(state) ||
+                !validAssignments.has(`${targetType}:${targetId}`)
+              ) {
+                return acc
+              }
+
+              const notes = typeof item['notes'] === 'string' || item['notes'] === null
+                ? item['notes']
+                : undefined
+
+              acc.push({
+                targetType,
+                targetId,
+                state,
+                ...(notes !== undefined ? { notes } : {}),
+              })
+              return acc
+            }, [])
+            : undefined
+
+          await updateCapabilityGovernance(
+            capabilityId,
+            {
+              ...(policyMode !== undefined ? { policyMode } : {}),
+              ...(policyNotes !== undefined ? { policyNotes } : {}),
+              ...(assignments ? { assignments } : {}),
+            },
+            'neb',
+          )
+
+          const afterEntry = await getCapabilityById(capabilityId)
+          if (!afterEntry) {
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Capability governance update failed' }))
+            return
+          }
+
+          if (
+            beforeEntry.policy.mode !== afterEntry.policy.mode ||
+            (beforeEntry.policy.notes ?? '') !== (afterEntry.policy.notes ?? '')
+          ) {
+            await recordCapabilityEvent({
+              capability_id: capabilityId,
+              event_type: 'configured',
+              actor_type: 'dashboard',
+              actor_id: 'neb',
+              source: 'capabilities:governance-save',
+              summary: `Capability policy updated for ${afterEntry.capability.label}.`,
+              payload: {
+                previous_mode: beforeEntry.policy.mode,
+                mode: afterEntry.policy.mode,
+                previous_notes: beforeEntry.policy.notes ?? null,
+                notes: afterEntry.policy.notes ?? null,
+              },
+            })
+          }
+
+          const beforeAssignments = new Map(
+            beforeEntry.assignments.map((assignment) => [`${assignment.targetType}:${assignment.targetId}`, assignment])
+          )
+
+          for (const assignment of afterEntry.assignments) {
+            const key = `${assignment.targetType}:${assignment.targetId}`
+            const previous = beforeAssignments.get(key)
+            if (!previous || previous.state === assignment.state) continue
+
+            await recordCapabilityEvent({
+              capability_id: capabilityId,
+              event_type: assignment.state === 'disabled' ? 'disabled' : 'enabled',
+              actor_type: 'dashboard',
+              actor_id: 'neb',
+              source: 'capabilities:governance-save',
+              summary: `${afterEntry.capability.label}: ${assignment.label} set to ${assignment.state}.`,
+              payload: {
+                target_type: assignment.targetType,
+                target_id: assignment.targetId,
+                previous_state: previous.state,
+                state: assignment.state,
+              },
+            })
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, capability: afterEntry }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Capability governance API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname.startsWith('/api/capabilities/') && req.method === 'GET') {
+      const capabilityId = decodeURIComponent(url.pathname.slice('/api/capabilities/'.length)).trim()
+
+      if (!capabilityId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Missing capability id' }))
+        return
+      }
+
+      void (async () => {
+        try {
+          const entry = await getCapabilityById(capabilityId)
+          if (!entry) {
+            res.writeHead(404, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Capability not found' }))
+            return
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(entry))
+        } catch (err) {
+          log.error({ err, capabilityId }, 'Capability detail API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
         }
       })()
       return
@@ -664,7 +878,7 @@ async function main(): Promise<void> {
             ...(typeof payload['scheduleLocalTime'] === 'string'
               ? { scheduleLocalTime: payload['scheduleLocalTime'] }
               : {}),
-          })
+          }, undefined, 'dashboard')
 
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ ok: true, status }))

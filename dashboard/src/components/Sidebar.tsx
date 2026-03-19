@@ -9,8 +9,8 @@ import { Icon, type IconName } from './ui/Icon.js'
 import { useKnowledgeBaseManifest } from '../hooks/useKnowledgeBaseManifest.js'
 import type { KnowledgeBaseManifest } from '../types/index.js'
 
-export type CompanyViewId = 'overview' | 'tasks' | 'activity' | 'costs' | 'runs' | 'clients' | 'projects' | 'revenue' | 'founder' | 'team' | 'office' | 'memory' | 'docs'
-export type PersonalViewId = 'assistant' | 'documents' | 'activity' | 'docs'
+export type CompanyViewId = 'overview' | 'tasks' | 'activity' | 'costs' | 'runs' | 'clients' | 'projects' | 'revenue' | 'founder' | 'team' | 'office' | 'memory' | 'capabilities' | 'docs'
+export type PersonalViewId = 'assistant' | 'capabilities' | 'documents' | 'activity' | 'docs'
 export type ViewId = CompanyViewId | PersonalViewId
 export type DashboardMode = 'company' | 'personal'
 
@@ -56,6 +56,7 @@ const COMPANY_NAV_SECTIONS: NavSection[] = [
     items: [
       { id: 'founder',   label: 'Founder HQ',       icon: 'alert'     },
       { id: 'memory',    label: 'Neural Archive',   icon: 'memory'    },
+      { id: 'capabilities', label: 'Capabilities',  icon: 'cpu'       },
     ]
   }
 ]
@@ -65,6 +66,7 @@ const PERSONAL_NAV_SECTIONS: NavSection[] = [
     title: 'PERSONAL',
     items: [
       { id: 'assistant', label: 'Assistant HQ', icon: 'overview' },
+      { id: 'capabilities', label: 'Capabilities', icon: 'cpu' },
       { id: 'documents', label: 'Documents', icon: 'folder' },
       { id: 'activity', label: 'Activity Log', icon: 'activity' },
     ],

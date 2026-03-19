@@ -2,12 +2,132 @@
 
 ## Overview
 
-WAI is built on four pillars:
+WAI is currently built on four pillars:
 
 1. **Backend (Node.js 22)** — Agent orchestration, task routing, Telegram bot, HTTP API
 2. **LiteLLM Proxy** — Single gateway to Azure GPT-5.4 and Google Gemini 2.5 Flash
 3. **Supabase** — Postgres + pgvector: agents, tasks, runs, events, memory, clients, projects, payments
 4. **Dashboard (React 18)** — Real-time founder interface via Supabase Realtime
+
+The next architectural evolution adds a fifth pillar:
+
+5. **Capability Platform** — shared registry, assignments, policy, health, and audit for skills, plugins, integrations, channels, and memory providers
+
+This fifth pillar is what allows WAI to scale both `Company` and `Personal` mode without building two separate systems.
+
+---
+
+## Capability Platform
+
+The Capability Platform is the shared control layer between WAI runtimes and the concrete tools or integrations they use.
+
+### Core responsibilities
+
+- register what capabilities exist
+- decide which runtime, team, or agent can use them
+- enforce policy before use
+- expose health and config state
+- record audit and usage events
+
+### Capability types
+
+- `skill`
+- `plugin`
+- `integration`
+- `memory_provider`
+- `channel`
+
+### Main backend layers
+
+#### Capability Registry
+
+Source of truth for all known capabilities in WAI.
+
+#### Assignment Engine
+
+Maps capabilities to:
+
+- `personal`
+- `company`
+- individual agents
+- teams
+
+#### Policy Engine
+
+Controls:
+
+- permissions
+- execution constraints
+- path and command limits
+- approval requirements
+- environment requirements
+
+#### Health Layer
+
+Tracks:
+
+- connected
+- degraded
+- missing config
+- auth expired
+- disabled
+
+#### Audit Layer
+
+Records:
+
+- enable/disable changes
+- assignment changes
+- last success / failure
+- run or task usage
+
+### Architectural intent
+
+The key design rule is:
+
+- capabilities are defined once
+- governance is shared
+- Company and Personal consume the same system with different policies and UX
+
+This prevents drift between founder-side tooling and company-agent tooling.
+
+### Current MVP implementation
+
+The first real implementation is now live as a governance-light MVP.
+
+Backend:
+
+- shared capability contracts in `backend/src/types/index.ts`
+- registry builder in `backend/src/services/capabilities.ts`
+- persisted capability audit events in `capability_events`
+- local governance override store in `workspace/system/capability-governance.json`
+- HTTP read endpoints:
+  - `GET /api/capabilities`
+  - `GET /api/capabilities/:id`
+- HTTP governance endpoint:
+  - `POST /api/capabilities/:id/governance`
+
+Dashboard:
+
+- shared `Capabilities` view in both Company and Personal mode
+- simple search/filter controls
+- catalog + assignment visibility + health badges + policy/audit snapshot
+- safe governance editing for:
+  - policy mode
+  - policy notes
+  - assignment state `active` / `disabled`
+- recent persisted capability activity timeline
+
+Current seeded capability set:
+
+- Google Workspace MCP runtime and related Gmail / Calendar / Drive integrations
+- founder quick actions
+- founder daily brief automation
+- agent vector memory + personal workspace context
+- shared filesystem and channel capabilities
+
+This is intentionally governance-light rather than full CRUD.
+Only selected fields are editable today; richer policy mutation and deeper health telemetry come later.
 
 ---
 
@@ -31,6 +151,11 @@ WAI is built on four pillars:
 ┌──────────────────────────────────────────────────────────────┐
 │                    WAI Backend (Node.js 22)                   │
 │                    TypeScript + tsx — Port 3001               │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │                Capability Platform                      │ │
+│  │  Registry │ Assignments │ Policy │ Health │ Audit      │ │
+│  └─────────────────────────────────────────────────────────┘ │
 │                                                              │
 │  ┌──────────────────┐  ┌──────────────┐  ┌───────────────┐  │
 │  │  CEO Agent +     │  │ Model Router │  │  Founder      │  │
@@ -63,11 +188,42 @@ WAI is built on four pillars:
               │  payments              │
               │  agent_memories        │
               │  project_state         │
+              │  capability_events     │
               │                        │
               │  pgvector (256-dim)    │
               │  Realtime WebSocket    │
               └────────────────────────┘
 ```
+
+---
+
+## Runtime Surfaces
+
+WAI should now be understood as two runtimes over one shared platform:
+
+### Company Runtime
+
+Used by CEO, team leads, workers, ops, finance, and other business agents.
+
+Characteristics:
+
+- stricter assignment rules
+- stronger policy defaults
+- business memory boundaries
+- higher audit requirements
+
+### Personal Runtime
+
+Used by Neb through dashboard, Telegram, and future founder-centric channels.
+
+Characteristics:
+
+- faster setup flows
+- more direct UX
+- same capabilities underneath
+- founder-oriented control surface
+
+The same Gmail integration, filesystem adapter, or memory provider may serve both runtimes, but under different assignment and policy rules.
 
 ---
 
@@ -309,9 +465,12 @@ wai/
 │   │   └── hr.ts                       # HR digest runtime
 │   ├── config/
 │   │   ├── agents.ts                   # Agent registry (id, role, model)
+│   │   ├── capabilities.ts             # Shared capability IDs + capability/tool mapping helpers
 │   │   └── models.ts                   # Model registry + routing logic
 │   ├── services/
 │   │   ├── supabase.ts                 # DB client + typed query helpers
+│   │   ├── capabilities.ts             # Capability registry, assignments, policy, health, audit snapshot
+│   │   ├── personal-context.ts         # Founder profile + personal workspace context
 │   │   ├── memory.ts                   # Agent memory store + pgvector recall
 │   │   ├── telegram.ts                 # grammy bot handler + slash commands
 │   │   ├── logger.ts                   # Centralized run/event logger
@@ -323,9 +482,12 @@ wai/
 │   │   └── workspace.ts                # Workspace folder management
 │   └── types/index.ts                  # Shared TypeScript types
 ├── dashboard/src/
-│   ├── components/                     # 11 views: Overview, TaskBoard, FounderOps,
+│   ├── components/                     # Core views incl. Overview, TaskBoard, FounderOps,
 │   │   │                               #   Revenue, Clients, Projects, Memory,
-│   │   │                               #   Activity, Costs, Runs, TeamOrg, VirtualOffice
+│   │   │                               #   Activity, Costs, Runs, TeamOrg, VirtualOffice,
+│   │   │                               #   Docs, Personal HQ, Capabilities
+│   ├── components/CapabilitiesView.tsx # Capability catalog + health + assignments view
+│   ├── hooks/useCapabilitiesRegistry.ts# Capability registry fetch hook
 │   ├── hooks/useSupabaseRealtime.ts    # All Realtime subscription hooks
 │   ├── lib/
 │   │   ├── clientColors.ts             # Deterministic palette per client

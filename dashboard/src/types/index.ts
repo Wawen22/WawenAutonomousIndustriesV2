@@ -312,3 +312,154 @@ export interface ModelConfig {
   context_window: number
   is_active: boolean
 }
+
+export type CapabilityType =
+  | 'skill'
+  | 'plugin'
+  | 'integration'
+  | 'memory_provider'
+  | 'channel'
+
+export type CapabilityRuntimeTarget =
+  | 'personal'
+  | 'company'
+  | 'shared'
+
+export type CapabilityStatus =
+  | 'active'
+  | 'beta'
+  | 'planned'
+  | 'disabled'
+
+export type CapabilityRiskLevel =
+  | 'low'
+  | 'medium'
+  | 'high'
+
+export type CapabilityPolicyMode =
+  | 'open'
+  | 'restricted'
+  | 'approval_required'
+  | 'read_only'
+
+export type CapabilityAssignmentTargetType =
+  | 'runtime'
+  | 'team'
+  | 'agent'
+
+export type CapabilityAssignmentState =
+  | 'active'
+  | 'planned'
+  | 'disabled'
+
+export type CapabilityHealthState =
+  | 'connected'
+  | 'degraded'
+  | 'missing_config'
+  | 'auth_required'
+  | 'failing'
+  | 'disabled'
+
+export interface Capability {
+  id: string
+  type: CapabilityType
+  label: string
+  description: string
+  owner: string
+  runtimeTarget: CapabilityRuntimeTarget
+  status: CapabilityStatus
+  riskLevel: CapabilityRiskLevel
+  tags: string[]
+  dependsOn: string[]
+  isPlaceholder: boolean
+}
+
+export interface CapabilityAssignment {
+  capabilityId: string
+  targetType: CapabilityAssignmentTargetType
+  targetId: string
+  label: string
+  runtimeTarget: CapabilityRuntimeTarget
+  state: CapabilityAssignmentState
+  notes?: string
+}
+
+export interface CapabilityPolicy {
+  capabilityId: string
+  mode: CapabilityPolicyMode
+  allowedTools: string[]
+  envRequirements: string[]
+  restrictedPaths: string[]
+  notes?: string
+}
+
+export interface CapabilityHealth {
+  capabilityId: string
+  state: CapabilityHealthState
+  label: string
+  message: string
+  checkedAt: string
+  missingRequirements: string[]
+}
+
+export interface CapabilityAuditSummary {
+  capabilityId: string
+  lastChangedAt?: string
+  lastChangedBy?: string
+  lastSuccessfulAt?: string
+  lastFailedAt?: string
+  lastUsedAt?: string
+  summary?: string
+}
+
+export interface CapabilityCatalogEntry {
+  capability: Capability
+  assignments: CapabilityAssignment[]
+  policy: CapabilityPolicy
+  health: CapabilityHealth
+  audit: CapabilityAuditSummary
+}
+
+export type CapabilityEventType =
+  | 'used'
+  | 'succeeded'
+  | 'failed'
+  | 'configured'
+  | 'enabled'
+  | 'disabled'
+  | 'auth_started'
+  | 'auth_completed'
+
+export type CapabilityEventActorType =
+  | 'founder'
+  | 'agent'
+  | 'system'
+  | 'dashboard'
+  | 'runtime'
+
+export interface CapabilityEvent {
+  id: string
+  capability_id: string
+  event_type: CapabilityEventType
+  actor_type: CapabilityEventActorType
+  actor_id: string | null
+  source: string
+  summary: string
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+export interface CapabilityRegistrySummary {
+  total: number
+  byType: Record<CapabilityType, number>
+  byRuntimeTarget: Record<CapabilityRuntimeTarget, number>
+  byHealth: Record<CapabilityHealthState, number>
+}
+
+export interface CapabilityRegistrySnapshot {
+  generatedAt: string
+  catalog: CapabilityCatalogEntry[]
+  assignments: CapabilityAssignment[]
+  summary: CapabilityRegistrySummary
+  recentEvents: CapabilityEvent[]
+}

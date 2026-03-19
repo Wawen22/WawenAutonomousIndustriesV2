@@ -4,8 +4,13 @@
 // ============================================================
 
 import pino from 'pino'
-import { logEvent, logRun } from './supabase.js'
-import type { EventType, EventSeverity, LogRunInput } from '../types/index.js'
+import { logCapabilityEvent, logEvent, logRun } from './supabase.js'
+import type {
+  EventType,
+  EventSeverity,
+  LogCapabilityEventInput,
+  LogRunInput,
+} from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Pino logger (structured JSON logging)
@@ -43,6 +48,16 @@ export async function recordEvent(
     })
   } catch (err) {
     log.error({ err, type }, 'Failed to record event to Supabase')
+  }
+}
+
+export async function recordCapabilityEvent(
+  input: LogCapabilityEventInput,
+): Promise<void> {
+  try {
+    await logCapabilityEvent(input)
+  } catch (err) {
+    log.error({ err, capabilityId: input.capability_id, eventType: input.event_type }, 'Failed to record capability event to Supabase')
   }
 }
 

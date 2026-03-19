@@ -19,6 +19,11 @@ import type {
   OAuthClientMetadata,
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js'
+import {
+  inferGoogleWorkspaceCapabilityIdsFromToolName,
+  GOOGLE_WORKSPACE_PLUGIN_CAPABILITY_ID,
+} from '../config/capabilities.js'
+import { recordCapabilityEvent } from './logger.js'
 import { log } from './logger.js'
 import { createPersonalWorkspace, getPersonalWorkspacePath } from './workspace.js'
 
@@ -407,17 +412,52 @@ export async function getGoogleWorkspaceMcpRuntimeStatus(ownerSlugInput?: string
 export async function startGoogleWorkspaceMcpAuth(ownerSlugInput?: string, baseUrl?: string): Promise<GoogleWorkspaceMcpRuntimeStatus> {
   const ownerSlug = sanitizeOwnerSlug(ownerSlugInput)
   const { client, provider, transport } = await createClientSession(ownerSlug, baseUrl)
+  await recordCapabilityEvent({
+    capability_id: GOOGLE_WORKSPACE_PLUGIN_CAPABILITY_ID,
+    event_type: 'auth_started',
+    actor_type: 'dashboard',
+    actor_id: ownerSlug,
+    source: 'google-workspace-mcp:start-auth',
+    summary: 'Google Workspace MCP OAuth flow started.',
+    payload: {
+      owner_slug: ownerSlug,
+    },
+  })
 
   try {
     await client.connect(transport as never)
     const toolResult = await client.listTools()
     await provider.markConnected(normalizeToolList(toolResult.tools))
+    await recordCapabilityEvent({
+      capability_id: GOOGLE_WORKSPACE_PLUGIN_CAPABILITY_ID,
+      event_type: 'auth_completed',
+      actor_type: 'dashboard',
+      actor_id: ownerSlug,
+      source: 'google-workspace-mcp:start-auth',
+      summary: 'Google Workspace MCP OAuth flow completed during start-auth.',
+      payload: {
+        owner_slug: ownerSlug,
+        tool_count: toolResult.tools.length,
+      },
+    })
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       await provider.markError('OAuth authorization required for Google Workspace MCP')
     } else {
       const message = getErrorMessage(err)
       await provider.markError(message)
+      await recordCapabilityEvent({
+        capability_id: GOOGLE_WORKSPACE_PLUGIN_CAPABILITY_ID,
+        event_type: 'failed',
+        actor_type: 'dashboard',
+        actor_id: ownerSlug,
+        source: 'google-workspace-mcp:start-auth',
+        summary: 'Google Workspace MCP auth start failed.',
+        payload: {
+          owner_slug: ownerSlug,
+          error: message,
+        },
+      })
       throw err
     }
   } finally {
@@ -439,9 +479,33 @@ export async function finishGoogleWorkspaceMcpAuth(
     await client.connect(transport as never)
     const toolResult = await client.listTools()
     await provider.markConnected(normalizeToolList(toolResult.tools))
+    await recordCapabilityEvent({
+      capability_id: GOOGLE_WORKSPACE_PLUGIN_CAPABILITY_ID,
+      event_type: 'auth_completed',
+      actor_type: 'founder',
+      actor_id: ownerSlug,
+      source: 'google-workspace-mcp:callback',
+      summary: 'Google Workspace MCP OAuth callback completed.',
+      payload: {
+        owner_slug: ownerSlug,
+        tool_count: toolResult.tools.length,
+      },
+    })
   } catch (err) {
     const message = getErrorMessage(err)
     await provider.markError(message)
+    await recordCapabilityEvent({
+      capability_id: GOOGLE_WORKSPACE_PLUGIN_CAPABILITY_ID,
+      event_type: 'failed',
+      actor_type: 'founder',
+      actor_id: ownerSlug,
+      source: 'google-workspace-mcp:callback',
+      summary: 'Google Workspace MCP OAuth callback failed.',
+      payload: {
+        owner_slug: ownerSlug,
+        error: message,
+      },
+    })
     throw err
   } finally {
     await client.close().catch(() => undefined)
@@ -457,6 +521,21 @@ export async function callGoogleWorkspaceMcpTool(
 ): Promise<GoogleWorkspaceMcpToolResult> {
   const ownerSlug = sanitizeOwnerSlug(ownerSlugInput)
   const { client, provider, transport } = await createClientSession(ownerSlug)
+  const capabilityIds = inferGoogleWorkspaceCapabilityIdsFromToolName(name)
+
+  await Promise.all(capabilityIds.map((capabilityId) => recordCapabilityEvent({
+    capability_id: capabilityId,
+    event_type: 'used',
+    actor_type: 'agent',
+    actor_id: 'ceo',
+    source: `google-workspace-mcp:tool:${name}`,
+    summary: `Google Workspace MCP tool invoked: ${name}.`,
+    payload: {
+      owner_slug: ownerSlug,
+      tool_name: name,
+      args,
+    },
+  })))
 
   try {
     await client.connect(transport as never)
@@ -471,6 +550,22 @@ export async function callGoogleWorkspaceMcpTool(
     const content = Array.isArray(result.content) ? result.content : []
     const text = extractToolTextContent(content)
 
+    await Promise.all(capabilityIds.map((capabilityId) => recordCapabilityEvent({
+      capability_id: capabilityId,
+      event_type: result.isError ? 'failed' : 'succeeded',
+      actor_type: 'agent',
+      actor_id: 'ceo',
+      source: `google-workspace-mcp:tool:${name}`,
+      summary: result.isError
+        ? `Google Workspace MCP tool returned an error: ${name}.`
+        : `Google Workspace MCP tool completed: ${name}.`,
+      payload: {
+        owner_slug: ownerSlug,
+        tool_name: name,
+        is_error: Boolean(result.isError),
+      },
+    })))
+
     return {
       name,
       args,
@@ -482,11 +577,37 @@ export async function callGoogleWorkspaceMcpTool(
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       await provider.markError('OAuth authorization required for Google Workspace MCP')
+      await Promise.all(capabilityIds.map((capabilityId) => recordCapabilityEvent({
+        capability_id: capabilityId,
+        event_type: 'failed',
+        actor_type: 'agent',
+        actor_id: 'ceo',
+        source: `google-workspace-mcp:tool:${name}`,
+        summary: `Google Workspace MCP tool authorization failed: ${name}.`,
+        payload: {
+          owner_slug: ownerSlug,
+          tool_name: name,
+          error: 'OAuth authorization required',
+        },
+      })))
       throw new Error('Google Workspace MCP authorization required. Start OAuth and retry.')
     }
 
     const message = getErrorMessage(err)
     await provider.markError(message)
+    await Promise.all(capabilityIds.map((capabilityId) => recordCapabilityEvent({
+      capability_id: capabilityId,
+      event_type: 'failed',
+      actor_type: 'agent',
+      actor_id: 'ceo',
+      source: `google-workspace-mcp:tool:${name}`,
+      summary: `Google Workspace MCP tool failed: ${name}.`,
+      payload: {
+        owner_slug: ownerSlug,
+        tool_name: name,
+        error: message,
+      },
+    })))
     throw err
   } finally {
     await client.close().catch(() => undefined)

@@ -6,6 +6,8 @@
 import { mkdir, readFile, readdir, stat, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
+import { PERSONAL_WORKSPACE_CONTEXT_CAPABILITY_ID } from '../config/capabilities.js'
+import { recordCapabilityEvent } from './logger.js'
 import { formatMcpConnectorsForPrompt, getMcpBridgeStatus, type McpBridgeStatus } from './mcp-bridge.js'
 import {
   getGoogleWorkspaceMcpRuntimeStatus,
@@ -112,6 +114,21 @@ export async function updatePersonalProfile(
   }
 
   await writeFile(getProfilePath(slug), `${JSON.stringify(profile, null, 2)}\n`, 'utf-8')
+  await recordCapabilityEvent({
+    capability_id: PERSONAL_WORKSPACE_CONTEXT_CAPABILITY_ID,
+    event_type: 'configured',
+    actor_type: 'dashboard',
+    actor_id: slug,
+    source: 'personal-context:update-profile',
+    summary: 'Founder personal workspace context updated.',
+    payload: {
+      display_name: profile.displayName,
+      primary_email: profile.primaryEmail,
+      timezone: profile.timezone,
+      preferred_language: profile.preferredLanguage,
+      priorities_count: profile.priorities.length,
+    },
+  })
   return profile
 }
 
