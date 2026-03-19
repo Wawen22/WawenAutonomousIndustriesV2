@@ -47,7 +47,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'executive',
     model_id: 'gpt-5.4',
     config: makeConfig({
-      tools: ['supabase_read', 'supabase_write_tasks', 'supabase_write_events', 'telegram_notify', 'file_export', 'email'],
+      tools: ['supabase_read', 'supabase_write_tasks', 'supabase_write_events', 'telegram_notify', 'file_export', 'email', 'web_search'],
       maxCostPerTaskUsd: 20,
       thinkingLevel: 'high',
       canReadAllTasks: true,
@@ -183,7 +183,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'consulting',
     model_id: 'gpt-5.4',
     config: makeConfig({
-      tools: ['supabase_read', 'supabase_write_tasks', 'email', 'browser', 'file_export'],
+      tools: ['supabase_read', 'supabase_write_tasks', 'email', 'browser', 'file_export', 'web_search'],
       maxCostPerTaskUsd: 15,
       thinkingLevel: 'high',
       canReadAllTasks: true,
@@ -198,7 +198,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'consulting',
     model_id: 'gpt-5.4',
     config: makeConfig({
-      tools: ['browser', 'file_system', 'supabase_read', 'file_export'],
+      tools: ['browser', 'file_system', 'supabase_read', 'file_export', 'web_search'],
       maxCostPerTaskUsd: 10,
     }),
   },

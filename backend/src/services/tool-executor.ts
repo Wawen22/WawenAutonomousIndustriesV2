@@ -10,6 +10,7 @@ import { getAgent } from '../config/agents.js'
 import { getModelForAgent } from '../config/models.js'
 import { log, recordEvent, recordRun } from './logger.js'
 import { sendEmail } from './email.js'
+import { searchWeb, type WebSearchResponse } from './search.js'
 import {
   createPersonalWorkspace,
   getPersonalOutputPath,
@@ -21,7 +22,7 @@ import { getClientBySlug, getProjectBySlug } from './supabase.js'
 import { getToolsForAgent, validateToolEnvVars } from '../tools/index.js'
 import { ensurePersonalProfile } from './personal-context.js'
 
-export type ExecutableToolId = 'file_export' | 'email'
+export type ExecutableToolId = 'file_export' | 'email' | 'web_search'
 
 export interface ToolExecutionContext {
   agentId: string
@@ -48,11 +49,17 @@ export interface EmailToolInput {
   ownerSlug?: string
 }
 
+export interface WebSearchToolInput {
+  query: string
+  limit?: number
+}
+
 export interface ToolExecutionResult {
   toolId: ExecutableToolId
   summary: string
   relativePath?: string
   absolutePath?: string
+  search?: WebSearchResponse
 }
 
 function sanitizeSegment(value: string): string {
@@ -180,9 +187,28 @@ async function executeEmailTool(input: EmailToolInput): Promise<ToolExecutionRes
   }
 }
 
+async function executeWebSearchTool(input: WebSearchToolInput): Promise<ToolExecutionResult> {
+  const query = input.query.trim()
+  if (!query) {
+    throw new Error('web_search requires a non-empty query')
+  }
+
+  const searchResult = await searchWeb({
+    query,
+    ...(typeof input.limit === 'number' ? { limit: input.limit } : {}),
+  })
+
+  const answerSummary = searchResult.answerBox ? ` Risposta rapida: ${searchResult.answerBox}` : ''
+  return {
+    toolId: 'web_search',
+    summary: `Ricerca web completata per "${query}" con ${searchResult.organic.length} risultati.${answerSummary}`.slice(0, 500),
+    search: searchResult,
+  }
+}
+
 export async function executeTool(
   toolId: ExecutableToolId,
-  input: FileExportInput | EmailToolInput,
+  input: FileExportInput | EmailToolInput | WebSearchToolInput,
   context: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
   await assertToolAccess(context.agentId, toolId)
@@ -191,12 +217,16 @@ export async function executeTool(
   const model = getModelForAgent({ agentId: context.agentId })
   const inputSummary = toolId === 'file_export'
     ? `${toolId} ${(input as FileExportInput).filename ?? (input as FileExportInput).title ?? 'document'}`
-    : `${toolId} ${(input as EmailToolInput).subject ?? 'message'}`
+    : toolId === 'email'
+      ? `${toolId} ${(input as EmailToolInput).subject ?? 'message'}`
+      : `${toolId} ${(input as WebSearchToolInput).query ?? 'query'}`
 
   try {
     const result = toolId === 'file_export'
       ? await executeFileExport(input as FileExportInput)
-      : await executeEmailTool(input as EmailToolInput)
+      : toolId === 'email'
+        ? await executeEmailTool(input as EmailToolInput)
+        : await executeWebSearchTool(input as WebSearchToolInput)
 
     await recordRun({
       agent_id: context.agentId,

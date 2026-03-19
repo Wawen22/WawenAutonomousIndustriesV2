@@ -15,8 +15,11 @@ import {
   createTask,
   getClientBySlug,
   getClients,
+  getPayments,
+  getProjects,
   getProjectBySlug,
   getProjectsByClient,
+  getRecentEvents,
   getTasksByStatus,
   updateProjectWorkspacePath,
 } from '../services/supabase.js'
@@ -29,7 +32,8 @@ import {
 import { log, recordEvent } from '../services/logger.js'
 import { buildSystemStatusReport } from '../services/status_report.js'
 import { executeTool } from '../services/tool-executor.js'
-import { ensurePersonalProfile, formatPersonalContextForPrompt } from '../services/personal-context.js'
+import { ensurePersonalProfile, formatPersonalContextForPrompt, getPersonalContext } from '../services/personal-context.js'
+import type { WebSearchResponse } from '../services/search.js'
 import {
   executeFounderTaskAction,
   formatFounderTaskActionMessage,
@@ -42,7 +46,7 @@ import {
 } from '../services/founder_revenue_actions.js'
 import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import { runCeoAgent } from './ceo.js'
-import type { Client, ProjectType, Task } from '../types/index.js'
+import type { Client, Payment, Project, ProjectType, SystemEvent, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Conversation state (in-memory, per chatId, TTL 10 min)
@@ -108,6 +112,8 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - list_clients       → no params
 - list_projects      → params: client_slug?
 - status_report      → no params
+- personal_research  → params: query, title?, filename?
+- weekly_digest      → no params
 - retry_task         → params: task_ref, reason?
 - approve_task       → params: task_ref, reason?
 - reject_task        → params: task_ref, reason?
@@ -134,6 +140,8 @@ ${clientContext}
 10. When Neb asks to approve/confirm a task output, use approve_task. When Neb asks to reject/cancel/discard a task, use reject_task.
 11. When Neb asks to invoice a project or mark it paid, use invoice_project / mark_project_paid instead of generic create_task.
 12. task_ref may be a full UUID or a unique short prefix such as the 8-char IDs shown in Telegram/dashboard.
+13. Use personal_research when Neb asks for a quick web research/report for himself. This should create a personal markdown report in the personal workspace, not a delegable delivery task.
+14. Use weekly_digest when Neb asks for a founder recap/summary of the last week. Generate the digest directly instead of creating a task.
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -237,6 +245,248 @@ function getNumber(params: Record<string, unknown>, key: string): number | undef
   return undefined
 }
 
+function buildPersonalResearchFilename(title: string, fallbackQuery: string, explicitFilename?: string): string {
+  if (explicitFilename?.trim()) {
+    return explicitFilename.trim()
+  }
+
+  const base = slugify(title) || slugify(fallbackQuery) || 'personal-research'
+  return `${base}.md`
+}
+
+function formatUsd(amount: number): string {
+  return `$${amount.toFixed(2)}`
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+function startOfTrailingDays(days: number): Date {
+  return new Date(Date.now() - (days * 24 * 60 * 60 * 1000))
+}
+
+function isOnOrAfter(iso: string | null | undefined, since: Date): boolean {
+  if (!iso) return false
+  const timestamp = Date.parse(iso)
+  return Number.isFinite(timestamp) && timestamp >= since.getTime()
+}
+
+function buildWeeklyDigestFilename(now = new Date()): string {
+  return `weekly-digest-${now.toISOString().slice(0, 10)}.md`
+}
+
+function buildSearchEvidence(search: WebSearchResponse): string {
+  const lines: string[] = []
+
+  if (search.answerBox) {
+    lines.push(`Quick answer: ${search.answerBox}`)
+    lines.push('')
+  }
+
+  lines.push('Sources:')
+  for (const item of search.organic) {
+    lines.push(`${item.position}. ${item.title}`)
+    lines.push(`URL: ${item.url}`)
+    lines.push(`Snippet: ${item.snippet || 'n/a'}`)
+    lines.push('')
+  }
+
+  if (search.relatedQueries.length > 0) {
+    lines.push(`Related queries: ${search.relatedQueries.join(' | ')}`)
+  }
+
+  return lines.join('\n').trim()
+}
+
+function buildFallbackPersonalResearchReport(title: string, search: WebSearchResponse): string {
+  const sections: string[] = [
+    `# ${title}`,
+    '',
+    `- Query: ${search.query}`,
+    `- Provider: ${search.provider}`,
+    `- Generated at: ${new Date().toISOString()}`,
+  ]
+
+  if (search.answerBox) {
+    sections.push(`- Quick answer: ${search.answerBox}`)
+  }
+
+  sections.push('', '## Summary', '')
+
+  if (search.answerBox) {
+    sections.push(search.answerBox, '')
+  } else {
+    sections.push('No direct answer was returned. Review the source list below.', '')
+  }
+
+  sections.push('## Sources', '')
+
+  for (const item of search.organic) {
+    sections.push(`### ${item.position}. ${item.title}`)
+    sections.push(item.url)
+    sections.push('')
+    sections.push(item.snippet || '_No snippet returned._')
+    sections.push('')
+  }
+
+  if (search.relatedQueries.length > 0) {
+    sections.push('## Related Queries', '')
+    for (const query of search.relatedQueries) {
+      sections.push(`- ${query}`)
+    }
+    sections.push('')
+  }
+
+  return sections.join('\n').trim()
+}
+
+async function buildPersonalResearchReport(title: string, search: WebSearchResponse): Promise<string> {
+  const fallback = buildFallbackPersonalResearchReport(title, search)
+
+  try {
+    const result = await runAgent([
+      {
+        role: 'system',
+        content: `You are WAI's personal research analyst for the founder.
+
+Write a concise markdown report in the same language as the search query.
+
+Rules:
+- Use only the provided search evidence.
+- Do not invent facts.
+- Keep it practical and founder-oriented.
+- Include a short executive summary, key takeaways, and a source list.
+- Preserve source URLs exactly as provided.
+- If evidence is weak or conflicting, say so clearly.`,
+      },
+      {
+        role: 'user',
+        content: `Title: ${title}
+Query: ${search.query}
+Provider: ${search.provider}
+
+Evidence:
+${buildSearchEvidence(search)}`,
+      },
+    ], {
+      agentId: 'ceo',
+      taskType: 'analysis',
+      requiresComplex: false,
+      tools: ['web_search'],
+      captureMemory: false,
+      timeoutMs: 120_000,
+    })
+
+    return result.content.trim() || fallback
+  } catch {
+    return fallback
+  }
+}
+
+function buildFounderWeeklyDigestReport(input: {
+  projects: Project[]
+  payments: Payment[]
+  recentEvents: SystemEvent[]
+  doneTasks: Task[]
+  activeTasks: Task[]
+  blockedTasks: Task[]
+  statusReport: string
+  personalWorkspacePath: string
+  personalOutputPath: string
+  personalDocuments: Array<{ name: string; relativePath: string; modifiedAt: string }>
+  connectors: { email: boolean; telegram: boolean }
+  founderName: string
+  timezone: string
+  now?: Date
+}): string {
+  const now = input.now ?? new Date()
+  const since = startOfTrailingDays(7)
+  const windowStart = since.toISOString().slice(0, 10)
+  const windowEnd = now.toISOString().slice(0, 10)
+  const weeklyPayments = input.payments.filter((payment) => isOnOrAfter(payment.received_at, since))
+  const weeklyPaidUsd = weeklyPayments.reduce((sum, payment) => sum + toNumber(payment.amount_usd), 0)
+  const weeklyDoneTasks = input.doneTasks.filter((task) => isOnOrAfter(task.completed_at, since))
+  const weeklyInvoicedUsd = input.recentEvents
+    .filter((event) => event.type === 'revenue_recorded' && isOnOrAfter(event.created_at, since))
+    .reduce((sum, event) => sum + toNumber(event.payload['contract_value_usd']), 0)
+
+  const activeProjects = input.projects.filter((project) => project.status === 'active')
+  const watchProjects = input.projects
+    .filter((project) => ['active', 'blocked', 'review', 'invoiced'].includes(project.status))
+    .slice(0, 6)
+
+  const notableEvents = input.recentEvents
+    .filter((event) => isOnOrAfter(event.created_at, since))
+    .filter((event) => ['founder_command', 'task_blocked', 'human_review_requested', 'revenue_recorded', 'payment_received'].includes(event.type))
+    .slice(0, 8)
+
+  const sections: string[] = [
+    `# Weekly Digest — ${windowEnd}`,
+    '',
+    `- Founder: ${input.founderName}`,
+    `- Timezone: ${input.timezone}`,
+    `- Window: ${windowStart} → ${windowEnd}`,
+    '',
+    '## Executive Snapshot',
+    '',
+    `- Active projects now: ${activeProjects.length}`,
+    `- Active tasks now: ${input.activeTasks.length}`,
+    `- Blocked tasks now: ${input.blockedTasks.length}`,
+    `- Tasks completed in last 7 days: ${weeklyDoneTasks.length}`,
+    `- Revenue invoiced in last 7 days: ${formatUsd(weeklyInvoicedUsd)}`,
+    `- Cash collected in last 7 days: ${formatUsd(weeklyPaidUsd)}`,
+    `- Personal documents available: ${input.personalDocuments.length}`,
+    '',
+    '## Projects To Watch',
+    '',
+  ]
+
+  if (watchProjects.length === 0) {
+    sections.push('- No active watchlist projects right now.', '')
+  } else {
+    for (const project of watchProjects) {
+      sections.push(`- ${project.slug} · ${project.type} · ${project.status} · contract ${formatUsd(project.contract_value_usd ?? 0)}`)
+    }
+    sections.push('')
+  }
+
+  sections.push('## Notable Signals', '')
+  if (notableEvents.length === 0) {
+    sections.push('- No major founder/system events in the last 7 days.', '')
+  } else {
+    for (const event of notableEvents) {
+      const label =
+        typeof event.payload['project_slug'] === 'string'
+          ? `${event.type} · ${event.payload['project_slug']}`
+          : event.type
+      sections.push(`- ${event.created_at.slice(0, 10)} · ${label}`)
+    }
+    sections.push('')
+  }
+
+  sections.push('## Personal Workspace', '')
+  sections.push(`- Workspace: ${input.personalWorkspacePath}`)
+  sections.push(`- Output: ${input.personalOutputPath}`)
+  sections.push(`- Connectors: email=${input.connectors.email ? 'ready' : 'missing'} · telegram=${input.connectors.telegram ? 'ready' : 'missing'}`)
+  if (input.personalDocuments.length === 0) {
+    sections.push('- Recent docs: none', '')
+  } else {
+    for (const doc of input.personalDocuments.slice(0, 5)) {
+      sections.push(`- ${doc.modifiedAt.slice(0, 10)} · ${doc.name} · ${doc.relativePath}`)
+    }
+    sections.push('')
+  }
+
+  sections.push('## Current WAI Status', '', input.statusReport)
+  return sections.join('\n').trim()
+}
+
 function formatTaskScope(task: Task): string {
   const clientSlug = typeof task.metadata['client_slug'] === 'string' ? task.metadata['client_slug'] : null
   const projectSlug = typeof task.metadata['project_slug'] === 'string' ? task.metadata['project_slug'] : null
@@ -285,7 +535,6 @@ async function executeAction(
       if (clientSlug) {
         projects = await getProjectsByClient(clientSlug)
       } else {
-        const { getProjects } = await import('../services/supabase.js')
         projects = await getProjects()
       }
       if (projects.length === 0) {
@@ -302,6 +551,104 @@ async function executeAction(
     // ── status_report ─────────────────────────────────────────────────────
     case 'status_report': {
       return buildSystemStatusReport()
+    }
+
+    // ── personal_research ────────────────────────────────────────────────
+    case 'personal_research': {
+      const query = getString(params, 'query') ?? getString(params, 'topic')
+      const explicitTitle = getString(params, 'title')
+      const explicitFilename = getString(params, 'filename')
+
+      if (!query) throw new Error('query mancante per personal_research')
+
+      const title = explicitTitle ?? `Personal Research — ${query}`
+      const searchResult = await executeTool('web_search', {
+        query,
+        limit: 6,
+      }, {
+        agentId: 'ceo',
+      })
+
+      if (!searchResult.search) {
+        throw new Error('web_search returned no structured results')
+      }
+
+      const reportContent = await buildPersonalResearchReport(title, searchResult.search)
+      const exportResult = await executeTool('file_export', {
+        title,
+        filename: buildPersonalResearchFilename(title, query, explicitFilename),
+        format: 'md',
+        content: reportContent,
+        mode: 'personal',
+      }, {
+        agentId: 'ceo',
+      })
+
+      await recordEvent('founder_command', {
+        payload: {
+          command: 'nl_personal_research',
+          source: 'natural_language',
+          query,
+          title,
+          provider: searchResult.search.provider,
+          results_count: searchResult.search.organic.length,
+          path: exportResult.relativePath,
+        },
+      })
+
+      const answerSuffix = searchResult.search.answerBox ? ` Quick answer: ${searchResult.search.answerBox}` : ''
+      return `🔎 Ricerca personale completata su *${query}* — report salvato in \`${exportResult.relativePath}\` con ${searchResult.search.organic.length} fonti.${answerSuffix}`.trim()
+    }
+
+    // ── weekly_digest ────────────────────────────────────────────────────
+    case 'weekly_digest': {
+      const [projects, payments, recentEvents, doneTasks, activeTasks, blockedTasks, statusReport, personalContext] = await Promise.all([
+        getProjects(),
+        getPayments(),
+        getRecentEvents(60),
+        getTasksByStatus('done'),
+        getTasksByStatus('in_progress'),
+        getTasksByStatus('blocked'),
+        buildSystemStatusReport(),
+        getPersonalContext(),
+      ])
+
+      const title = `Weekly Digest — ${new Date().toISOString().slice(0, 10)}`
+      const digest = buildFounderWeeklyDigestReport({
+        projects,
+        payments,
+        recentEvents,
+        doneTasks,
+        activeTasks,
+        blockedTasks,
+        statusReport,
+        personalWorkspacePath: personalContext.workspacePath,
+        personalOutputPath: personalContext.outputPath,
+        personalDocuments: personalContext.recentDocuments,
+        connectors: personalContext.connectors,
+        founderName: personalContext.profile.displayName,
+        timezone: personalContext.profile.timezone,
+      })
+
+      const exportResult = await executeTool('file_export', {
+        title,
+        filename: buildWeeklyDigestFilename(),
+        format: 'md',
+        content: digest,
+        mode: 'personal',
+      }, {
+        agentId: 'ceo',
+      })
+
+      await recordEvent('founder_command', {
+        payload: {
+          command: 'nl_weekly_digest',
+          source: 'natural_language',
+          path: exportResult.relativePath,
+        },
+      })
+
+      return `🧾 Weekly digest generato e salvato in \`${exportResult.relativePath}\``
     }
 
     // ── create_client ─────────────────────────────────────────────────────

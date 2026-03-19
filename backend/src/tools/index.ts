@@ -90,6 +90,13 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     category: 'research',
     requiredEnvVars: [],
   },
+  web_search: {
+    id: 'web_search',
+    name: 'Web Search (Serper)',
+    description: 'Execute live web searches via Serper and return normalized search results',
+    category: 'research',
+    requiredEnvVars: ['SERPER_API_KEY'],
+  },
   file_system: {
     id: 'file_system',
     name: 'File System',

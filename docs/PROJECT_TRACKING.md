@@ -127,7 +127,7 @@
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
 | T080 | Tool Registry per agente | ✅ Done | Codex | 1 | `backend/src/services/tool-executor.ts` live — validazione permessi/env, esecuzione tool e logging su `runs/events` |
-| T081 | Web Search tool | ⬜ Todo | Claude | 1 | Brave Search API (free tier) o Serper — `searchWeb()` disponibile ad Analyst, CEO, Consulting Lead |
+| T081 | Web Search tool | ✅ Done | Codex | 1 | Provider `Serper` live con `backend/src/services/search.ts`; `web_search` eseguibile nel ToolExecutor e concesso a CEO, Analyst, Consulting Lead |
 | T082 | Send Email tool | ✅ Done | Codex | 1 | Wrapper Resend live con `backend/src/services/email.ts`; integrato nel ToolExecutor e nel CEO per `send_report` |
 | T083 | File Export tool | 🔄 In Progress | Codex | 2 | MVP live: export reale in `workspace/output/` / `workspace/personal/neb/output/` via ToolExecutor; deep-link Telegram/UI pending |
 
@@ -141,13 +141,13 @@
 
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
-| T085 | CEO personal task routing | 🔄 In Progress | Codex | 1 | `create_document` + `send_report` live nel CEO Intake; mancano `personal_research` e `weekly_digest` |
+| T085 | CEO personal task routing | ✅ Done | Codex | 1 | `create_document`, `send_report`, `personal_research` e `weekly_digest` live nel CEO Intake con output personale automatico |
 
 ### Fase 4 — MCP Integration (M10)
 
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
-| T086 | MCP integration layer | ⬜ Todo | Claude | 2 | `backend/src/services/mcp-bridge.ts` — bridge MCP → tool calls agenti; priorità: Gmail, Google Calendar, Brave Search, Filesystem |
+| T086 | MCP integration layer | ⬜ Todo | Claude | 2 | `backend/src/services/mcp-bridge.ts` — bridge MCP → tool calls agenti; priorità: Gmail, Google Calendar, Filesystem, OneDrive |
 
 ### Fase 5 — Multi-channel (M11)
 
@@ -173,6 +173,14 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-19 — Sessione 39: Serper web search live + personal routing completed
+
+- **T081 DONE** nuovo `backend/src/services/search.ts` con provider `Serper.dev`, output normalizzato (`answerBox`, risultati organici, related queries) e timeout/error handling
+- **TOOL EXECUTION** `web_search` aggiunto al `ToolExecutor`, con validazione env (`SERPER_API_KEY`), logging `runs/events` e permessi attivi per `ceo`, `analyst`, `consulting_lead`
+- **T085 DONE** `backend/src/agents/ceo_intake.ts` ora supporta `personal_research` e `weekly_digest`: ricerca live, sintesi markdown e digest founder-oriented salvati automaticamente in `workspace/personal/neb/output/`
+- **ENV** `.env.example` aggiornato con variabili `SERPER_*` per il provider di ricerca scelto
+- **VERIFY** `SERPER_API_KEY` configurata in `.env`; smoke test reale ok sia su `searchWeb()` sia su `executeTool('web_search')` con risultati live restituiti da Serper
 
 ### 2026-03-19 — Sessione 38: Personal mode foundation — Resend + personal context + dual-mode shell
 
