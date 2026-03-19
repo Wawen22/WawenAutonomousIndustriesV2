@@ -147,7 +147,7 @@
 
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
-| T086 | MCP integration layer | 🔄 In Progress | Codex | 2 | Runtime OAuth live con `backend/src/services/google-workspace-mcp.ts`, callback backend, tool discovery e prime founder actions (`gmail_inbox_summary`, `calendar_today`); Drive founder flows pending |
+| T086 | MCP integration layer | 🔄 In Progress | Codex | 2 | Runtime OAuth live con `backend/src/services/google-workspace-mcp.ts`, callback backend, tool discovery e founder actions `gmail_inbox_summary`, `gmail_latest_message`, `calendar_today`, `drive_find_file`, `drive_read_file`; advanced Drive flows pending |
 
 ### Fase 5 — Multi-channel (M11)
 
@@ -173,6 +173,13 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-19 — Sessione 43: Deterministic Gmail read + Google Drive founder retrieval
+
+- **CEO INTAKE** nuova action `gmail_latest_message`: recupera l’ultima email in modo deterministico via `search_gmail_messages` + `get_gmail_message_content`, senza passare da una summary generica
+- **DRIVE ACTIONS** nuove action founder `drive_find_file` e `drive_read_file`: ricerca file su Google Drive e recupero contenuto reale dei documenti/file leggibili
+- **FIX** `drive_read_file` preferisce risultati non-folder quando la query è ambigua, riducendo errori da cartelle restituite come primo match
+- **VERIFY** smoke test reale ok su Gmail (`get_gmail_message_content`) e Google Drive (`search_drive_files`, `get_drive_file_content`) con dati live dal tuo account MCP collegato
 
 ### 2026-03-19 — Sessione 42: Google Workspace MCP runtime + founder actions
 

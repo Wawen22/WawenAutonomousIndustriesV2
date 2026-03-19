@@ -119,3 +119,13 @@ Once this is up:
 1. keep Gmail + Calendar founder actions active
 2. add Drive founder flows (`drive_search`, recent files, content fetch)
 3. decide whether to expose more MCP-native automations in Personal mode
+
+## 9. Founder actions currently live
+
+After Google Workspace MCP is connected, CEO Intake can already use:
+
+- `gmail_inbox_summary`
+- `gmail_latest_message`
+- `calendar_today`
+- `drive_find_file`
+- `drive_read_file`

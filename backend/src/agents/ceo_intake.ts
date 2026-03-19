@@ -116,7 +116,10 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - personal_research  → params: query, title?, filename?
 - weekly_digest      → no params
 - gmail_inbox_summary → params: query?, limit?
+- gmail_latest_message → params: query?
 - calendar_today     → params: calendar_id?
+- drive_find_file    → params: query, limit?, file_type?
+- drive_read_file    → params: file_id?, query?, file_type?
 - retry_task         → params: task_ref, reason?
 - approve_task       → params: task_ref, reason?
 - reject_task        → params: task_ref, reason?
@@ -146,7 +149,10 @@ ${clientContext}
 13. Use personal_research when Neb asks for a quick web research/report for himself. This should create a personal markdown report in the personal workspace, not a delegable delivery task.
 14. Use weekly_digest when Neb asks for a founder recap/summary of the last week. Generate the digest directly instead of creating a task.
 15. Use gmail_inbox_summary when Neb asks to check, summarize, or triage his inbox / emails.
-16. Use calendar_today when Neb asks for today's agenda, meetings, or calendar schedule.
+16. Use gmail_latest_message when Neb asks for the last/latest email or asks to read the newest email directly.
+17. Use calendar_today when Neb asks for today's agenda, meetings, or calendar schedule.
+18. Use drive_find_file when Neb asks to find/search a file in Google Drive.
+19. Use drive_read_file when Neb asks to open/read the content of a Drive document or file.
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -402,6 +408,32 @@ function extractMessageIdsFromGmailSearch(raw: string, limit: number): string[] 
     .slice(0, limit)
 }
 
+interface DriveFileMatch {
+  id: string
+  name: string
+  mimeType?: string
+}
+
+function extractDriveFileMatches(raw: string, limit: number): DriveFileMatch[] {
+  const matches = [...raw.matchAll(/- Name:\s*"([^"]+)"\s+\(ID:\s*([A-Za-z0-9_-]+),\s*Type:\s*([^,)]+)/g)]
+  return matches
+    .map((match) => ({
+      name: match[1]?.trim() ?? 'Unknown',
+      id: match[2]?.trim() ?? '',
+      ...(match[3]?.trim() ? { mimeType: match[3].trim() } : {}),
+    }))
+    .filter((item) => item.id.length > 0)
+    .slice(0, limit)
+}
+
+function truncateReplyText(value: string, maxChars = 7000): string {
+  if (value.length <= maxChars) {
+    return value
+  }
+
+  return `${value.slice(0, maxChars).trimEnd()}\n\n[truncated]`
+}
+
 function formatLocalRfc3339(date: Date): string {
   const pad = (value: number): string => String(value).padStart(2, '0')
   const year = date.getFullYear()
@@ -487,6 +519,28 @@ function broadenFounderGmailQuery(query: string): string | null {
   }
 
   return null
+}
+
+function normalizeFounderDriveQuery(rawQuery: string): string {
+  const query = rawQuery.trim()
+  if (!query) {
+    return "trashed = false"
+  }
+
+  return query
+}
+
+async function resolveDriveFileFromQuery(query: string, fileType?: string): Promise<DriveFileMatch | null> {
+  const searchResult = await callGoogleWorkspaceMcpTool('search_drive_files', {
+    query: normalizeFounderDriveQuery(query),
+    page_size: 5,
+    ...(fileType ? { file_type: fileType } : {}),
+    detailed: true,
+  })
+
+  const matches = extractDriveFileMatches(searchResult.text, 5)
+  const nonFolderMatch = matches.find((item) => item.mimeType !== 'application/vnd.google-apps.folder')
+  return nonFolderMatch ?? matches[0] ?? null
 }
 
 async function summarizeFounderCalendar(rawEvents: string): Promise<string> {
@@ -842,6 +896,59 @@ async function executeAction(
       }
     }
 
+    // ── gmail_latest_message ─────────────────────────────────────────────
+    case 'gmail_latest_message': {
+      const requestedQuery = getString(params, 'query') ?? 'in:inbox newer_than:1d'
+      let query = normalizeFounderGmailQuery(requestedQuery)
+      const userGoogleEmail = await getGoogleWorkspaceUserEmail()
+
+      try {
+        let searchResult = await callGoogleWorkspaceMcpTool('search_gmail_messages', {
+          query,
+          page_size: 1,
+        })
+
+        let messageIds = extractMessageIdsFromGmailSearch(searchResult.text, 1)
+        if (messageIds.length === 0) {
+          const broaderQuery = broadenFounderGmailQuery(query)
+          if (broaderQuery && broaderQuery !== query) {
+            query = broaderQuery
+            searchResult = await callGoogleWorkspaceMcpTool('search_gmail_messages', {
+              query,
+              page_size: 1,
+            })
+            messageIds = extractMessageIdsFromGmailSearch(searchResult.text, 1)
+          }
+        }
+
+        const messageId = messageIds[0]
+        if (!messageId) {
+          return `📭 Nessuna email trovata per \`${query}\`.`
+        }
+
+        const messageResult = await callGoogleWorkspaceMcpTool('get_gmail_message_content', {
+          message_id: messageId,
+        })
+
+        await recordEvent('founder_command', {
+          payload: {
+            command: 'nl_gmail_latest_message',
+            source: 'natural_language',
+            query,
+            message_id: messageId,
+          },
+        })
+
+        return `📩 Ultima email trovata per \`${userGoogleEmail}\`\n\n${truncateReplyText(messageResult.text)}`.trim()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (/authorization required/i.test(message)) {
+          return '🔐 Gmail MCP non ancora autorizzato. Completa prima il Google Workspace auth da Personal HQ, poi riprova.'
+        }
+        throw err
+      }
+    }
+
     // ── calendar_today ───────────────────────────────────────────────────
     case 'calendar_today': {
       const calendarId = getString(params, 'calendar_id') ?? 'primary'
@@ -878,6 +985,95 @@ async function executeAction(
         const message = err instanceof Error ? err.message : String(err)
         if (/authorization required/i.test(message)) {
           return '🔐 Google Calendar MCP non ancora autorizzato. Completa prima il Google Workspace auth da Personal HQ, poi riprova.'
+        }
+        throw err
+      }
+    }
+
+    // ── drive_find_file ──────────────────────────────────────────────────
+    case 'drive_find_file': {
+      const query = getString(params, 'query') ?? getString(params, 'filename')
+      const fileType = getString(params, 'file_type')
+      const limit = Math.max(1, Math.min(getNumber(params, 'limit') ?? 5, 10))
+
+      if (!query) {
+        throw new Error('query mancante per drive_find_file')
+      }
+
+      try {
+        const result = await callGoogleWorkspaceMcpTool('search_drive_files', {
+          query: normalizeFounderDriveQuery(query),
+          page_size: limit,
+          ...(fileType ? { file_type: fileType } : {}),
+          detailed: true,
+        })
+
+        if (/No files found/i.test(result.text)) {
+          return `📂 Nessun file Drive trovato per \`${query}\`.`
+        }
+
+        await recordEvent('founder_command', {
+          payload: {
+            command: 'nl_drive_find_file',
+            source: 'natural_language',
+            query,
+            ...(fileType ? { file_type: fileType } : {}),
+          },
+        })
+
+        return `📂 Risultati Google Drive per \`${query}\`\n\n${truncateReplyText(result.text)}`.trim()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (/authorization required/i.test(message)) {
+          return '🔐 Google Drive MCP non ancora autorizzato. Completa prima il Google Workspace auth da Personal HQ, poi riprova.'
+        }
+        throw err
+      }
+    }
+
+    // ── drive_read_file ──────────────────────────────────────────────────
+    case 'drive_read_file': {
+      const explicitFileId = getString(params, 'file_id')
+      const query = getString(params, 'query') ?? getString(params, 'filename')
+      const fileType = getString(params, 'file_type')
+
+      let fileId = explicitFileId
+      let fileName: string | null = null
+
+      if (!fileId) {
+        if (!query) {
+          throw new Error('file_id o query mancanti per drive_read_file')
+        }
+
+        const match = await resolveDriveFileFromQuery(query, fileType)
+        if (!match) {
+          return `📂 Nessun file Drive trovato per \`${query}\`.`
+        }
+
+        fileId = match.id
+        fileName = match.name
+      }
+
+      try {
+        const result = await callGoogleWorkspaceMcpTool('get_drive_file_content', {
+          file_id: fileId,
+        })
+
+        await recordEvent('founder_command', {
+          payload: {
+            command: 'nl_drive_read_file',
+            source: 'natural_language',
+            file_id: fileId,
+            ...(query ? { query } : {}),
+          },
+        })
+
+        const label = fileName ?? query ?? fileId
+        return `📄 Contenuto file Drive: \`${label}\`\n\n${truncateReplyText(result.text)}`.trim()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (/authorization required/i.test(message)) {
+          return '🔐 Google Drive MCP non ancora autorizzato. Completa prima il Google Workspace auth da Personal HQ, poi riprova.'
         }
         throw err
       }
