@@ -84,6 +84,39 @@ function FreshnessPill({ freshness }: { freshness: CapabilityFreshnessState }) {
   )
 }
 
+function SkillDetailPanel({ entry }: { entry: CapabilityCatalogEntry }) {
+  const { capability } = entry
+  if (capability.type !== 'skill') return null
+  const hasContent = capability.usageInstructions || (capability.examples && capability.examples.length > 0)
+  if (!hasContent) return null
+
+  return (
+    <Panel title="Skill Details" accent="cyan">
+      <div className="space-y-4">
+        {capability.usageInstructions && (
+          <div className="rounded-2xl border border-[#00D4FF]/12 bg-[#00D4FF]/[0.04] p-4">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#00D4FF]/60">Usage Instructions</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-300">{capability.usageInstructions}</p>
+          </div>
+        )}
+        {capability.examples && capability.examples.length > 0 && (
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">Example Prompts</p>
+            <ul className="mt-3 space-y-2">
+              {capability.examples.map((example) => (
+                <li key={example} className="flex items-start gap-3 rounded-2xl border border-white/6 bg-black/20 px-4 py-3">
+                  <span className="mt-0.5 font-mono text-xs text-[#00D4FF]">›</span>
+                  <span className="text-sm text-slate-300">{example}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </Panel>
+  )
+}
+
 function HealthDepthPanel({ entry }: { entry: CapabilityCatalogEntry }) {
   const { health } = entry
   const hasDepth = health.freshness !== undefined
@@ -447,9 +480,46 @@ export function CapabilitiesView() {
 
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Catalog" value={String(data.summary.total)} accent="text-white" sub="Live capability objects" />
-          <StatCard label="Shared" value={String(data.summary.byRuntimeTarget.shared)} accent="text-[#00D4FF]" sub="Cross-runtime capabilities" />
+          <StatCard label="Skills" value={String(data.summary.byType.skill)} accent="text-[#00D4FF]" sub="Operational skill objects" />
           <StatCard label="Company" value={String(data.summary.byRuntimeTarget.company)} accent="text-amber-400" sub="Company-targeted surfaces" />
           <StatCard label="Personal" value={String(data.summary.byRuntimeTarget.personal)} accent="text-[#7CF6E6]" sub="Founder-targeted surfaces" />
+        </div>
+
+        {/* Quick-filter shortcuts */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            onClick={() => setTypeFilter('skill')}
+            className={clsx(
+              'rounded-2xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition',
+              typeFilter === 'skill'
+                ? 'border-[#00D4FF]/35 bg-[#00D4FF]/10 text-[#00D4FF]'
+                : 'border-white/8 bg-black/20 text-slate-400 hover:border-[#00D4FF]/20 hover:text-[#00D4FF]'
+            )}
+          >
+            Skills ({data.summary.byType.skill})
+          </button>
+          <button
+            onClick={() => setTypeFilter('integration')}
+            className={clsx(
+              'rounded-2xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition',
+              typeFilter === 'integration'
+                ? 'border-amber-400/35 bg-amber-400/10 text-amber-400'
+                : 'border-white/8 bg-black/20 text-slate-400 hover:border-amber-400/20 hover:text-amber-400'
+            )}
+          >
+            Integrations ({data.summary.byType.integration})
+          </button>
+          <button
+            onClick={() => setTypeFilter('all')}
+            className={clsx(
+              'rounded-2xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition',
+              typeFilter === 'all'
+                ? 'border-white/20 bg-white/8 text-white'
+                : 'border-white/8 bg-black/20 text-slate-400 hover:border-white/15 hover:text-white'
+            )}
+          >
+            All ({data.summary.total})
+          </button>
         </div>
 
         {/* Health summary bar */}
@@ -663,6 +733,8 @@ export function CapabilitiesView() {
                   )}
                 </div>
               </Panel>
+
+              <SkillDetailPanel entry={selectedEntry} />
 
               <HealthDepthPanel entry={selectedEntry} />
 

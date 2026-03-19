@@ -77,10 +77,11 @@ This now implies a platform decision:
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
 | T083 | File Export tool | 🔄 In Progress | Codex | 2 | Add deeper founder/dashboard linking and cleaner output access |
-| T084 | Skills system | ⬜ Todo | Claude | 2 | Fold into shared capability registry and define canonical skill metadata |
+| T084 | Skills system | ✅ Done | Claude | 2 | Skill registry enriched; company skills added; SkillDetailPanel live in dashboard |
 | T086 | MCP integration layer | ✅ Done | Codex | 2 | Important emails today + pre-meeting brief quick actions live; editable automation schedule; AssistantHQ tab refactor |
 | T087 | WhatsApp via Baileys or Slack | ⬜ Todo | Claude | 3 | Evaluate only after capability foundation is stable |
 | T099 | Capability health depth | ✅ Done | Codex | 2 | Freshness, auth age, drift warnings, reason codes, event-driven enrichment, dashboard health depth panel |
+| T084 | Skills system | ✅ Done | Claude | 2 | Skill registry enriched with usageInstructions + examples; company skills added; SkillDetailPanel in dashboard |
 
 ---
 
@@ -106,13 +107,26 @@ This now implies a platform decision:
 
 ## Immediate Next Steps
 
-1. Expand the capability catalog beyond the first MVP with richer company-side skills metadata and more explicit tool/integration coverage.
-2. Add T084 Skills system: fold skill metadata into the shared capability registry.
-3. Consider WhatsApp/Slack channel (T087) only after capability foundation is stable.
+1. Consider T083 File Export tool: deeper founder/dashboard linking and cleaner output access.
+2. Consider WhatsApp/Slack channel (T087) only after capability foundation is stable.
+3. Consider expanding company-side skill execution: skills currently have rich metadata and assignments but execution still flows through CEO delegation — a skill runner / execution context could make them more autonomous.
 
 ---
 
 ## Recent Changes
+
+### 2026-03-20 — Sessione 57: Skills system (T084)
+
+- Added `usageInstructions?: string` and `examples?: string[]` to `Capability` interface in both backend and dashboard types (T084 first-class skill metadata)
+- Enriched all founder quick-action skills with usage instructions and example prompts: `important_emails_today`, `pre_meeting_brief`, `latest_email`, `calendar_today`, `drive_recent_files`, `daily_founder_brief`, `daily_founder_brief_automation`
+- Added `important_emails_today` and `pre_meeting_brief` as explicit `skill.founder.*` capability objects (previously these only logged to integration IDs, now they have full skill entries with metadata)
+- Added 3 company skills to the shared capability registry: `skill.company.proposal_writing`, `skill.company.repo_bootstrap`, `skill.company.invoice_followup` — each with assignments, policy, health, and full audit entries
+- `proposal_writing` and `repo_bootstrap` use `restricted` policy; `invoice_followup` uses `approval_required` to enforce human review before external communication
+- Added `?type=` query-param filtering to `GET /api/capabilities` endpoint (e.g. `?type=skill` returns only skill entries with filtered assignments)
+- Added `SkillDetailPanel` component to `CapabilitiesView`: appears in the detail panel for any selected skill, shows Usage Instructions block and Example Prompts list
+- Added quick-filter shortcut chips to the capabilities header: **Skills (N)**, **Integrations (N)**, **All (N)** buttons for fast filtering without using the dropdown
+- Stat card changed from "Shared" to "Skills" count for immediate skill visibility at a glance
+- Typechecks and builds verified green for both backend and dashboard
 
 ### 2026-03-20 — Sessione 56: MCP integration layer depth (T086)
 

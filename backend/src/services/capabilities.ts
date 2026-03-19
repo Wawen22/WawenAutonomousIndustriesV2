@@ -35,28 +35,76 @@ const TEAM_LABELS: Record<AgentTeam, string> = {
 
 const QUICK_ACTIONS = [
   {
+    id: 'important_emails_today',
+    label: 'Important Emails Today',
+    description: 'Reads the founder inbox and surfaces high-priority or unread messages with sender, subject, preview, and urgency score.',
+    integrationId: 'integration.google_workspace.gmail',
+    usageInstructions: 'Trigger from Assistant HQ > Exec tab. Ask: "What are my important emails today?" or click the action button. CEO Intake filters by unread and urgency, logs the result to the Gmail integration capability.',
+    examples: [
+      'Show me the most important emails from today',
+      'Any urgent emails I should read right now?',
+      'What emails need my attention this morning?',
+    ],
+  },
+  {
+    id: 'pre_meeting_brief',
+    label: 'Pre-Meeting Brief',
+    description: 'Reads today\'s and tomorrow\'s Calendar events and produces a structured brief per meeting with participants, topic, and prep notes.',
+    integrationId: 'integration.google_workspace.calendar',
+    usageInstructions: 'Trigger from Assistant HQ > Exec tab. Ask: "Brief me before my next meeting" or use the action button. CEO Intake reads upcoming events for the next 48 h and produces a structured per-meeting output.',
+    examples: [
+      'Brief me before my next meeting',
+      'What meetings do I have today and what do I need to prepare?',
+      'Give me a pre-meeting brief for this afternoon',
+    ],
+  },
+  {
     id: 'latest_email',
     label: 'Latest Email',
-    description: 'Founder quick action that reads the latest Gmail message through CEO intake.',
+    description: 'Reads the single most recent Gmail message and surfaces sender, subject, and full body for the founder.',
     integrationId: 'integration.google_workspace.gmail',
+    usageInstructions: 'Trigger from Assistant HQ > Exec tab. Ask: "What is my latest email?" or click the action button. The result is the last message in your inbox, including subject line and full content.',
+    examples: [
+      'What is my latest email?',
+      'Show me the last email I received',
+      'Read my most recent message',
+    ],
   },
   {
     id: 'calendar_today',
     label: 'Today Agenda',
-    description: 'Founder quick action that summarizes today calendar events.',
+    description: 'Summarises today\'s Calendar events with times, attendees, and relevant context for the founder.',
     integrationId: 'integration.google_workspace.calendar',
+    usageInstructions: 'Trigger from Assistant HQ > Exec tab. Ask: "What is on my agenda today?" or click the action button. Returns a chronological list of events with time slots and participant context.',
+    examples: [
+      'What is on my agenda today?',
+      'Show me today\'s calendar',
+      'Any meetings this afternoon?',
+    ],
   },
   {
     id: 'drive_recent_files',
     label: 'Recent Drive Files',
-    description: 'Founder quick action that lists the latest Google Drive files.',
+    description: 'Lists the most recently modified Google Drive files accessible to the founder.',
     integrationId: 'integration.google_workspace.drive',
+    usageInstructions: 'Trigger from Assistant HQ > Exec tab. Ask: "Show me my recent Drive files" or click the action button. Returns a list of recently modified files with names, types, and last-modified timestamps.',
+    examples: [
+      'Show me my recent Drive files',
+      'What documents did I work on recently?',
+      'List the latest files from Google Drive',
+    ],
   },
   {
     id: 'daily_founder_brief',
     label: 'Daily Founder Brief',
-    description: 'Founder quick action that combines inbox, calendar, and drive context into one briefing.',
+    description: 'Combines inbox summary, today\'s calendar, and recent Drive files into a single consolidated briefing for the founder.',
     integrationId: 'plugin.google_workspace.mcp',
+    usageInstructions: 'Trigger from Assistant HQ > Exec tab or let the daily automation run it. Ask: "Give me my daily brief" or click the action button. Output is written to the personal workspace and summarised inline.',
+    examples: [
+      'Give me my daily brief',
+      'What do I need to know to start my day?',
+      'Run the daily founder brief now',
+    ],
   },
 ] as const
 
@@ -178,6 +226,8 @@ function baseCapability(input: {
   tags?: string[]
   dependsOn?: string[]
   isPlaceholder?: boolean
+  usageInstructions?: string
+  examples?: string[]
 }): Capability {
   return {
     id: input.id,
@@ -191,6 +241,8 @@ function baseCapability(input: {
     tags: input.tags ?? [],
     dependsOn: input.dependsOn ?? [],
     isPlaceholder: input.isPlaceholder ?? false,
+    ...(input.usageInstructions ? { usageInstructions: input.usageInstructions } : {}),
+    ...(input.examples?.length ? { examples: input.examples } : {}),
   }
 }
 
@@ -648,6 +700,8 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
         riskLevel: action.id === 'daily_founder_brief' ? 'medium' : 'low',
         tags: ['quick_action', 'assistant_hq'],
         dependsOn: [action.integrationId],
+        usageInstructions: action.usageInstructions,
+        examples: [...action.examples],
       }),
       assignments: [
         runtimeAssignment(`skill.founder.${action.id}`, 'personal', 'Personal Runtime', 'personal'),
@@ -690,6 +744,12 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
         riskLevel: 'medium',
         tags: ['automation', 'assistant_hq', 'briefing'],
         dependsOn: ['skill.founder.daily_founder_brief'],
+        usageInstructions: 'Enable from Assistant HQ > Automations tab. Set a schedule time (HH:MM), toggle on, and the automation runs at that local time each day. Results are written to workspace/personal/neb/output. Use "Run now" to trigger immediately without waiting for the schedule.',
+        examples: [
+          'Enable the daily brief automation at 08:00',
+          'Run the daily brief now',
+          'Check when the last brief ran',
+        ],
       }),
       assignments: [
         runtimeAssignment('skill.founder.daily_founder_brief_automation', 'personal', 'Personal Runtime', 'personal'),
@@ -757,6 +817,138 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
         summary: automationStatus.dailyFounderBrief.enabled
           ? `Schedule ${automationStatus.dailyFounderBrief.scheduleLocalTime} (${automationStatus.dailyFounderBrief.timezone}).`
           : 'Automation exists but is currently disabled by founder preference.',
+      }),
+    },
+    // T084 – Company skills
+    {
+      capability: baseCapability({
+        id: 'skill.company.proposal_writing',
+        type: 'skill',
+        label: 'Proposal Writing',
+        description: 'Produces structured client proposals from a project brief, including scope, timeline, team, and pricing sections.',
+        owner: 'Consulting Team',
+        runtimeTarget: 'company',
+        riskLevel: 'low',
+        tags: ['consulting', 'proposal', 'delivery'],
+        usageInstructions: 'Assign to the Consulting Lead agent or trigger via CEO delegation with a project brief. The skill expects: client name, project type, scope summary, and optionally a budget range. Output is a formatted proposal document written to the project workspace.',
+        examples: [
+          'Write a proposal for Acme Corp web platform redesign, budget 15k',
+          'Generate a consulting proposal from the Wawen22 brief',
+          'Create a proposal for a 3-month SaaS audit engagement',
+        ],
+      }),
+      assignments: [
+        runtimeAssignment('skill.company.proposal_writing', 'company', 'Company Runtime', 'company'),
+        teamAssignment('skill.company.proposal_writing', 'consulting', 'company', 'Primary skill for consulting lead agent deliverables.'),
+        teamAssignment('skill.company.proposal_writing', 'executive', 'company', 'CEO can delegate proposal requests to the consulting team.'),
+        agentAssignment('skill.company.proposal_writing', 'ceo', 'company', 'CEO intake routes proposal requests to consulting lead.'),
+      ],
+      policy: basePolicy({
+        capabilityId: 'skill.company.proposal_writing',
+        mode: 'restricted',
+        allowedTools: ['file_export', 'file_system', 'llm_call'],
+        notes: 'Output is written to project workspace. No external API calls required.',
+      }),
+      health: baseHealth({
+        capabilityId: 'skill.company.proposal_writing',
+        state: 'connected',
+        label: 'Active',
+        message: 'Proposal writing skill is available to the consulting team and CEO delegation path.',
+        checkedAt: generatedAt,
+        freshness: 'fresh',
+        reasonCode: 'skill_active',
+      }),
+      audit: baseAudit({
+        capabilityId: 'skill.company.proposal_writing',
+        summary: 'Company skill: proposal generation via consulting lead agent. First real revenue output (Wawen22) was produced through this flow.',
+      }),
+    },
+    {
+      capability: baseCapability({
+        id: 'skill.company.repo_bootstrap',
+        type: 'skill',
+        label: 'Repo Bootstrap',
+        description: 'Initialises a new project repository with standard structure, tooling, and CI configuration based on project type.',
+        owner: 'Dev Team',
+        runtimeTarget: 'company',
+        riskLevel: 'medium',
+        tags: ['dev', 'repo', 'bootstrap', 'saas'],
+        usageInstructions: 'Trigger via CEO delegation or Dev Lead agent with a project type (saas / api / static). The skill scaffolds the repo structure, installs base dependencies, and writes a README and initial CI config. Output lands in workspace/<project-slug>/.',
+        examples: [
+          'Bootstrap a new SaaS repo for the Acme project',
+          'Initialise a TypeScript API project under workspace/acme-api',
+          'Create a Next.js starter for the Wawen landing page',
+        ],
+      }),
+      assignments: [
+        runtimeAssignment('skill.company.repo_bootstrap', 'company', 'Company Runtime', 'company'),
+        teamAssignment('skill.company.repo_bootstrap', 'dev', 'company', 'Dev lead and dev agents use this for project initialisation.'),
+        teamAssignment('skill.company.repo_bootstrap', 'saas', 'company', 'SaaS team uses this when spinning up new product repos.'),
+        agentAssignment('skill.company.repo_bootstrap', 'ceo', 'company', 'CEO can delegate repo bootstrap to the dev team.'),
+      ],
+      policy: basePolicy({
+        capabilityId: 'skill.company.repo_bootstrap',
+        mode: 'restricted',
+        allowedTools: ['file_system', 'shell', 'git'],
+        restrictedPaths: ['workspace/'],
+        notes: 'Shell and git access scoped to the workspace directory. No write outside workspace.',
+      }),
+      health: baseHealth({
+        capabilityId: 'skill.company.repo_bootstrap',
+        state: 'connected',
+        label: 'Active',
+        message: 'Repo bootstrap skill is available to dev and SaaS teams.',
+        checkedAt: generatedAt,
+        freshness: 'fresh',
+        reasonCode: 'skill_active',
+      }),
+      audit: baseAudit({
+        capabilityId: 'skill.company.repo_bootstrap',
+        summary: 'Company skill: repository initialisation for new client and internal projects.',
+      }),
+    },
+    {
+      capability: baseCapability({
+        id: 'skill.company.invoice_followup',
+        type: 'skill',
+        label: 'Invoice Follow-up',
+        description: 'Generates and sends a professional invoice follow-up message for unpaid or overdue client invoices.',
+        owner: 'Ops / Finance / HR',
+        runtimeTarget: 'company',
+        riskLevel: 'low',
+        tags: ['invoicing', 'finance', 'ops', 'client'],
+        usageInstructions: 'Trigger via CEO delegation or Finance agent with: client name, invoice number, amount due, and due date. The skill drafts a polite but firm follow-up message and can optionally write it to the client workspace folder. Human review is recommended before sending.',
+        examples: [
+          'Follow up on invoice #42 for Acme Corp, 3000 EUR, due March 1st',
+          'Draft an overdue invoice reminder for Wawen22',
+          'Send a payment follow-up for the landing page project',
+        ],
+      }),
+      assignments: [
+        runtimeAssignment('skill.company.invoice_followup', 'company', 'Company Runtime', 'company'),
+        teamAssignment('skill.company.invoice_followup', 'ops', 'company', 'Finance and ops agents handle invoice follow-ups.'),
+        teamAssignment('skill.company.invoice_followup', 'executive', 'company', 'CEO can delegate follow-ups through the executive layer.'),
+        agentAssignment('skill.company.invoice_followup', 'finance', 'company', 'Finance agent is the primary executor of invoice actions.'),
+        agentAssignment('skill.company.invoice_followup', 'ceo', 'company', 'CEO intake can initiate or review invoice follow-ups.'),
+      ],
+      policy: basePolicy({
+        capabilityId: 'skill.company.invoice_followup',
+        mode: 'approval_required',
+        allowedTools: ['file_system', 'telegram_notify'],
+        notes: 'Human review required before any external communication. Draft output only unless founder approves.',
+      }),
+      health: baseHealth({
+        capabilityId: 'skill.company.invoice_followup',
+        state: 'connected',
+        label: 'Active',
+        message: 'Invoice follow-up skill is available to the ops and finance teams.',
+        checkedAt: generatedAt,
+        freshness: 'fresh',
+        reasonCode: 'skill_active',
+      }),
+      audit: baseAudit({
+        capabilityId: 'skill.company.invoice_followup',
+        summary: 'Company skill: invoice follow-up drafting for unpaid client invoices. Approval-required policy enforced.',
       }),
     },
     {

@@ -187,8 +187,23 @@ async function main(): Promise<void> {
       void (async () => {
         try {
           const snapshot = await getCapabilityRegistrySnapshot()
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify(snapshot))
+          const typeParam = url.searchParams.get('type')
+          if (typeParam) {
+            const filtered = {
+              ...snapshot,
+              catalog: snapshot.catalog.filter((entry) => entry.capability.type === typeParam),
+              assignments: snapshot.assignments.filter((assignment) =>
+                snapshot.catalog.some((entry) =>
+                  entry.capability.id === assignment.capabilityId && entry.capability.type === typeParam
+                )
+              ),
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify(filtered))
+          } else {
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify(snapshot))
+          }
         } catch (err) {
           log.error({ err }, 'Capabilities registry API error')
           res.writeHead(500, { 'Content-Type': 'application/json' })

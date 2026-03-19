@@ -378,6 +378,9 @@ export interface Capability {
   tags: string[]
   dependsOn: string[]
   isPlaceholder: boolean
+  // T084 – skill-specific metadata (optional, present when type === 'skill')
+  usageInstructions?: string
+  examples?: string[]
 }
 
 export interface CapabilityAssignment {
