@@ -33,28 +33,17 @@ import { getPersonalContext, updatePersonalProfile } from './services/personal-c
 import { startOpsMonitor } from './agents/ops.js'
 import { startFinanceRuntime } from './agents/finance.js'
 import { startHrRuntime } from './agents/hr.js'
-import { runCeoNaturalLanguageHandler } from './agents/ceo_intake.js'
-
-type PersonalAssistantQuickActionId =
-  | 'latest_email'
-  | 'calendar_today'
-  | 'drive_recent_files'
-  | 'daily_founder_brief'
-
-function getPersonalAssistantQuickActionPrompt(actionId: string): string | null {
-  switch (actionId as PersonalAssistantQuickActionId) {
-    case 'latest_email':
-      return "Leggi l'ultima email ricevuta"
-    case 'calendar_today':
-      return "Mostrami l'agenda di oggi"
-    case 'drive_recent_files':
-      return 'Mostrami i file recenti su Google Drive'
-    case 'daily_founder_brief':
-      return 'Genera il daily founder brief di oggi'
-    default:
-      return null
-  }
-}
+import {
+  executePersonalAssistantQuickAction,
+  getPersonalAssistantQuickActionPrompt,
+  type PersonalAssistantQuickActionId,
+} from './services/personal-assistant-actions.js'
+import {
+  getPersonalAutomationStatus,
+  runDailyFounderBriefAutomationNow,
+  startFounderAutomationRuntime,
+  updateDailyFounderBriefAutomation,
+} from './services/personal-automation.js'
 
 function isLocalRequest(req: IncomingMessage): boolean {
   const remote = req.socket.remoteAddress ?? ''
@@ -569,32 +558,93 @@ async function main(): Promise<void> {
             return
           }
 
-          const replies: string[] = []
-          const notifications: string[] = []
-
-          await runCeoNaturalLanguageHandler(
+          const result = await executePersonalAssistantQuickAction(
+            actionId as PersonalAssistantQuickActionId,
             `dashboard:personal:${actionId}`,
-            prompt,
-            async (msg) => {
-              replies.push(msg)
-            },
-            async (msg) => {
-              notifications.push(msg)
-            }
           )
 
           res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({
-            ok: true,
-            actionId,
-            prompt,
-            reply: replies.join('\n\n').trim(),
-            replies,
-            notifications,
-          }))
+          res.end(JSON.stringify({ ok: true, ...result }))
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error'
           log.error({ err }, 'Personal assistant quick action API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/personal/automation/status' && req.method === 'GET') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const status = await getPersonalAutomationStatus()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(status))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Personal automation status API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/personal/automation/config' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null
+            ? body as Record<string, unknown>
+            : {}
+
+          const status = await updateDailyFounderBriefAutomation({
+            ...(typeof payload['enabled'] === 'boolean' ? { enabled: payload['enabled'] } : {}),
+            ...(typeof payload['scheduleLocalTime'] === 'string'
+              ? { scheduleLocalTime: payload['scheduleLocalTime'] }
+              : {}),
+          })
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, status }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Personal automation config API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/personal/automation/run' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const status = await runDailyFounderBriefAutomationNow('manual')
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, status }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Personal automation manual run API error')
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: message }))
         }
@@ -804,6 +854,7 @@ async function main(): Promise<void> {
   startOpsMonitor(sendTelegramNotification)
   startFinanceRuntime(sendTelegramNotification)
   startHrRuntime(sendTelegramNotification)
+  startFounderAutomationRuntime()
 
   // --- Project state summary ---
   try {

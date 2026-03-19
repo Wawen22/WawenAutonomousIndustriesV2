@@ -226,6 +226,30 @@ export interface GoogleWorkspaceMcpRuntimeStatus {
   tools: GoogleWorkspaceToolSummary[]
 }
 
+export type PersonalAutomationRunStatus =
+  | 'idle'
+  | 'running'
+  | 'success'
+  | 'error'
+
+export interface DailyFounderBriefAutomationStatus {
+  id: 'daily_founder_brief'
+  label: string
+  enabled: boolean
+  scheduleLocalTime: string
+  timezone: string
+  status: PersonalAutomationRunStatus
+  lastRunAt?: string
+  lastSuccessAt?: string
+  lastError?: string
+  lastOutputPath?: string
+  nextPlannedRunLabel?: string
+}
+
+export interface PersonalAutomationStatus {
+  dailyFounderBrief: DailyFounderBriefAutomationStatus
+}
+
 export interface PersonalContext {
   profile: PersonalProfile
   workspacePath: string

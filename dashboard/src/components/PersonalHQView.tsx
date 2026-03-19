@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { Icon } from './ui/Icon.js'
 import { Badge } from './ui/Badge.js'
 import { usePersonalContext } from '../hooks/usePersonalContext.js'
+import type { PersonalAutomationStatus } from '../types/index.js'
 
 const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? 'http://localhost:3001'
 
@@ -36,6 +37,11 @@ interface FounderQuickActionState {
   result?: string
   notifications: string[]
   executedAt?: string
+}
+
+interface AutomationActionState {
+  status: 'idle' | 'working' | 'done' | 'error'
+  message?: string
 }
 
 const FOUNDER_QUICK_ACTIONS: FounderQuickAction[] = [
@@ -73,6 +79,10 @@ export function PersonalHQView() {
     status: 'idle',
     notifications: [],
   })
+  const [automationStatus, setAutomationStatus] = useState<PersonalAutomationStatus | null>(null)
+  const [automationLoading, setAutomationLoading] = useState(true)
+  const [automationError, setAutomationError] = useState<string | null>(null)
+  const [automationActionState, setAutomationActionState] = useState<AutomationActionState>({ status: 'idle' })
 
   useEffect(() => {
     if (!data) return
@@ -91,6 +101,27 @@ export function PersonalHQView() {
       data.recentDocuments.length > 0,
     ].filter(Boolean).length
   }, [data])
+
+  const fetchAutomationStatus = useCallback(async () => {
+    try {
+      setAutomationLoading(true)
+      const response = await fetch(`${BACKEND_URL}/api/personal/automation/status`)
+      const payload = await response.json() as PersonalAutomationStatus & { error?: string }
+      if (!response.ok) {
+        throw new Error(payload.error ?? `HTTP ${response.status}`)
+      }
+      setAutomationStatus(payload)
+      setAutomationError(null)
+    } catch (err) {
+      setAutomationError(err instanceof Error ? err.message : 'Automation status failed')
+    } finally {
+      setAutomationLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchAutomationStatus()
+  }, [fetchAutomationStatus])
 
   async function handleSave() {
     try {
@@ -181,6 +212,70 @@ export function PersonalHQView() {
         message: err instanceof Error ? err.message : 'Quick action failed',
         notifications: [],
       })
+    }
+  }
+
+  async function handleAutomationToggle(enabled: boolean) {
+    try {
+      setAutomationActionState({
+        status: 'working',
+        message: enabled ? 'Enabling automation...' : 'Disabling automation...',
+      })
+
+      const response = await fetch(`${BACKEND_URL}/api/personal/automation/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      })
+
+      const payload = await response.json() as { status?: PersonalAutomationStatus; error?: string }
+      if (!response.ok || !payload.status) {
+        throw new Error(payload.error ?? `HTTP ${response.status}`)
+      }
+
+      setAutomationStatus(payload.status)
+      setAutomationActionState({
+        status: 'done',
+        message: enabled ? 'Automation enabled' : 'Automation disabled',
+      })
+    } catch (err) {
+      setAutomationActionState({
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Automation update failed',
+      })
+    }
+  }
+
+  async function handleAutomationRunNow() {
+    try {
+      setAutomationActionState({
+        status: 'working',
+        message: 'Running daily founder brief now...',
+      })
+
+      const response = await fetch(`${BACKEND_URL}/api/personal/automation/run`, {
+        method: 'POST',
+      })
+
+      const payload = await response.json() as { status?: PersonalAutomationStatus; error?: string }
+      if (!response.ok || !payload.status) {
+        throw new Error(payload.error ?? `HTTP ${response.status}`)
+      }
+
+      setAutomationStatus(payload.status)
+      setAutomationActionState({
+        status: 'done',
+        message: 'Daily founder brief executed',
+      })
+
+      await refetch()
+    } catch (err) {
+      setAutomationActionState({
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Automation run failed',
+      })
+    } finally {
+      await fetchAutomationStatus()
     }
   }
 
@@ -294,6 +389,112 @@ export function PersonalHQView() {
         </section>
 
         <div className="space-y-6">
+          <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">Automation Control</h2>
+                <p className="mt-1 text-xs text-slate-500">Founder automations can be paused any time to avoid unnecessary token spend or noise.</p>
+              </div>
+              <Badge
+                variant={
+                  automationStatus?.dailyFounderBrief.enabled
+                    ? 'done'
+                    : 'warning'
+                }
+              >
+                {automationStatus?.dailyFounderBrief.enabled ? 'ENABLED' : 'DISABLED'}
+              </Badge>
+            </div>
+
+            {automationLoading ? (
+              <p className="mt-5 text-xs text-slate-500">Loading automation state...</p>
+            ) : automationError ? (
+              <p className="mt-5 text-xs text-rose-400">{automationError}</p>
+            ) : automationStatus ? (
+              <div className="mt-5 rounded-2xl border border-white/5 bg-black/25 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#7CF6E6]/80">
+                      {automationStatus.dailyFounderBrief.label}
+                    </p>
+                    <p className="mt-2 text-xs text-slate-300">
+                      Schedule: <span className="font-mono text-slate-400">{automationStatus.dailyFounderBrief.scheduleLocalTime}</span>
+                      {' '}<span className="text-slate-500">({automationStatus.dailyFounderBrief.timezone})</span>
+                    </p>
+                    <p className="mt-1 text-xs text-slate-300">
+                      Runtime status: <span className="font-mono text-slate-400">{automationStatus.dailyFounderBrief.status}</span>
+                    </p>
+                    {automationStatus.dailyFounderBrief.nextPlannedRunLabel && (
+                      <p className="mt-1 text-xs text-slate-300">
+                        Next run: <span className="text-slate-400">{automationStatus.dailyFounderBrief.nextPlannedRunLabel}</span>
+                      </p>
+                    )}
+                    {automationStatus.dailyFounderBrief.lastRunAt && (
+                      <p className="mt-1 text-xs text-slate-300">
+                        Last run: <span className="text-slate-400">{new Date(automationStatus.dailyFounderBrief.lastRunAt).toLocaleString()}</span>
+                      </p>
+                    )}
+                    {automationStatus.dailyFounderBrief.lastOutputPath && (
+                      <p className="mt-1 text-xs text-slate-300">
+                        Last output: <span className="font-mono text-slate-500">{automationStatus.dailyFounderBrief.lastOutputPath}</span>
+                      </p>
+                    )}
+                    {automationStatus.dailyFounderBrief.lastError && (
+                      <p className="mt-2 text-xs text-rose-400">{automationStatus.dailyFounderBrief.lastError}</p>
+                    )}
+                  </div>
+
+                  <Badge
+                    variant={
+                      automationStatus.dailyFounderBrief.status === 'success'
+                        ? 'done'
+                        : automationStatus.dailyFounderBrief.status === 'error'
+                          ? 'error'
+                          : automationStatus.dailyFounderBrief.status === 'running'
+                            ? 'warning'
+                            : 'warning'
+                    }
+                  >
+                    {automationStatus.dailyFounderBrief.status.toUpperCase()}
+                  </Badge>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    disabled={automationActionState.status === 'working'}
+                    onClick={() => void handleAutomationToggle(!automationStatus.dailyFounderBrief.enabled)}
+                    className={clsx(
+                      'rounded-2xl border px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] transition',
+                      automationStatus.dailyFounderBrief.enabled
+                        ? 'border-rose-400/30 bg-rose-400/10 text-rose-300 hover:bg-rose-400/18'
+                        : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/18',
+                    )}
+                  >
+                    {automationStatus.dailyFounderBrief.enabled ? 'Disable Auto Run' : 'Enable Auto Run'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={automationActionState.status === 'working' || !googleWorkspaceReady}
+                    onClick={() => void handleAutomationRunNow()}
+                    className={clsx(
+                      'rounded-2xl border border-[#7CF6E6]/30 bg-[#7CF6E6]/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] text-[#7CF6E6] transition hover:bg-[#7CF6E6]/18',
+                      (!googleWorkspaceReady || automationActionState.status === 'working') && 'cursor-not-allowed opacity-50',
+                    )}
+                  >
+                    Run Now
+                  </button>
+                </div>
+
+                {automationActionState.message && (
+                  <p className={clsx('mt-4 text-xs', automationActionState.status === 'error' ? 'text-rose-400' : 'text-slate-400')}>
+                    {automationActionState.message}
+                  </p>
+                )}
+              </div>
+            ) : null}
+          </section>
+
           <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
             <div className="flex items-center justify-between gap-4">
               <div>

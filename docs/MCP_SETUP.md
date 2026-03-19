@@ -142,3 +142,20 @@ Once the runtime is `connected`, the dashboard `Assistant HQ` can trigger these 
 - `Daily Founder Brief`
 
 These buttons call the local backend endpoint `POST /api/personal/assistant/quick-action`, which reuses the CEO Intake routing instead of maintaining a second MCP execution path in the dashboard.
+
+## 11. Founder automation control
+
+`Assistant HQ` now also exposes a founder automation panel for the daily brief.
+
+- automation is `disabled` by default
+- you can enable or disable it from the panel at any time
+- when disabled, it does not auto-run until re-enabled
+- `Run now` stays available even while the automation is disabled
+
+Current local endpoints:
+
+- `GET /api/personal/automation/status`
+- `POST /api/personal/automation/config`
+- `POST /api/personal/automation/run`
+
+State is persisted in `workspace/personal/neb/automations.json`.
