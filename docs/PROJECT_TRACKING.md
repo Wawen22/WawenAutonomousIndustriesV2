@@ -78,9 +78,9 @@ This now implies a platform decision:
 |----|-------|--------|-------|----------|-----------|
 | T083 | File Export tool | 🔄 In Progress | Codex | 2 | Add deeper founder/dashboard linking and cleaner output access |
 | T084 | Skills system | ⬜ Todo | Claude | 2 | Fold into shared capability registry and define canonical skill metadata |
-| T086 | MCP integration layer | 🔄 In Progress | Codex | 2 | Add richer founder automations, important-email layer, pre-meeting brief, schedule editor |
+| T086 | MCP integration layer | ✅ Done | Codex | 2 | Important emails today + pre-meeting brief quick actions live; editable automation schedule; AssistantHQ tab refactor |
 | T087 | WhatsApp via Baileys or Slack | ⬜ Todo | Claude | 3 | Evaluate only after capability foundation is stable |
-| T099 | Capability health depth | ⬜ Todo | Codex | 2 | Add richer health telemetry and drift detection beyond env/runtime checks |
+| T099 | Capability health depth | ✅ Done | Codex | 2 | Freshness, auth age, drift warnings, reason codes, event-driven enrichment, dashboard health depth panel |
 
 ---
 
@@ -93,6 +93,7 @@ This now implies a platform decision:
 | T094 | Capability registry API MVP | ✅ Done | Read-only backend registry now exposes current capabilities for dashboard consumption |
 | T095 | Dashboard Capabilities view MVP | ✅ Done | New `Capabilities` dashboard view ships catalog, filters, assignments, health, and policy visibility |
 | T096 | Company + Personal capability assignment model | ✅ Done | One shared model now maps capabilities to runtime, team, and agent targets without splitting systems |
+| T099 | Capability health depth | ✅ Done | Freshness state, drift warnings, reason codes, event-derived last-success/failure, health depth panel in dashboard |
 | T097 | Capability audit depth | ✅ Done | Persisted `capability_events` now back the audit summary and recent activity timeline in `Capabilities` |
 | T098 | Capability policy editing | ✅ Done | Dashboard now supports safe governance editing for policy mode, policy notes, and assignment active/disabled state |
 | T088 | Dual-mode shell: Company / Personal | ✅ Done | Founder can switch cleanly between business and personal operating modes |
@@ -105,14 +106,37 @@ This now implies a platform decision:
 
 ## Immediate Next Steps
 
-1. Add richer capability health telemetry and drift detection so the control plane can surface runtime drift, auth freshness, and operational failures more explicitly.
-2. Expand the capability catalog beyond the first MVP with richer company-side skills metadata and more explicit tool/integration coverage.
-3. Refactor `Assistant HQ` information architecture so execution, automation, setup, and profile stop competing in one long page.
-4. Then resume founder workflow expansion such as editable automation schedule, `important emails today`, and `pre-meeting brief`.
+1. Expand the capability catalog beyond the first MVP with richer company-side skills metadata and more explicit tool/integration coverage.
+2. Add T084 Skills system: fold skill metadata into the shared capability registry.
+3. Consider WhatsApp/Slack channel (T087) only after capability foundation is stable.
 
 ---
 
 ## Recent Changes
+
+### 2026-03-20 — Sessione 56: MCP integration layer depth (T086)
+
+- Added `important_emails_today` quick action: prompts CEO Intake to filter high-priority/unread emails with sender, subject, preview and urgency — logs to `integration.google_workspace.gmail`
+- Added `pre_meeting_brief` quick action: reads Calendar events for today+tomorrow, produces structured brief per meeting with participants and topic — logs to `integration.google_workspace.calendar`
+- Updated `getFounderQuickActionCapabilityId` to map new actions to their integration-level capability IDs instead of generic skill IDs
+- Added editable automation schedule in `Automations` tab: inline `HH:MM` input with Save/Cancel, persisted via existing `POST /api/personal/automation/config` endpoint
+- Refactored `Assistant HQ` into 4 tabs: **Exec** (quick actions + recent docs), **Automations** (schedule editor + enable/run controls), **Setup** (MCP bridge + connector status), **Profile** (identity context)
+- Typechecks and builds verified green for both backend and dashboard
+
+### 2026-03-20 — Sessione 55: Capability health depth (T099)
+
+- Extended `CapabilityHealth` type with `freshness`, `lastSuccessAt`, `lastFailedAt`, `driftWarnings`, `reasonCode`, and `details` fields
+- Added `computeFreshness` helper: `fresh` (< 1 h) / `aging` (1–24 h) / `stale` (> 24 h) / `unknown`, driven by real runtime timestamps
+- Added `computeGoogleDriftWarnings`: surfaces stale-connection and missing-registration drift for Google Workspace MCP
+- Added `googleReasonCode`: structured reason codes for all Google runtime states (`oauth_connected`, `oauth_required`, `env_missing`, `server_unreachable`, `runtime_error`)
+- Enriched all health constructors with new signals: `healthFromGoogleRuntime`, `healthFromGoogleConnector`, `healthFromEnv`, automation health, filesystem/workspace health
+- Added `enrichHealthFromEvents`: after fetching recent `capability_events`, updates health `lastSuccessAt`/`lastFailedAt` and recomputes freshness from real event history
+- Added `mostRecentTimestamp` utility for safe event-vs-runtime timestamp comparison
+- Dashboard `CapabilitiesView`: added health summary bar (connected / degraded / auth-required / failing / stale / drift counts) at top of page
+- Dashboard `CapabilitiesView`: added `FreshnessPill` and `HealthDepthPanel` components — freshness, reason code, last success/failure, drift warnings, details breakdown — rendered for every selected capability
+- Dashboard list items now show staleness and drift count indicators inline
+- Freshness pill shown in the health message block of the selected capability panel
+- Typechecks and builds verified green for both backend and dashboard
 
 ### 2026-03-19 — Sessione 54: Capability governance editing MVP
 

@@ -10,7 +10,14 @@ export const PERSONAL_WORKSPACE_CONTEXT_CAPABILITY_ID = 'memory.personal_workspa
 export function getFounderQuickActionCapabilityId(
   actionId: PersonalAssistantQuickActionId,
 ): string {
-  return `skill.founder.${actionId}`
+  switch (actionId) {
+    case 'important_emails_today':
+      return GMAIL_INTEGRATION_CAPABILITY_ID
+    case 'pre_meeting_brief':
+      return CALENDAR_INTEGRATION_CAPABILITY_ID
+    default:
+      return `skill.founder.${actionId}`
+  }
 }
 
 export function inferGoogleWorkspaceCapabilityIdsFromToolName(name: string): string[] {

@@ -8,6 +8,7 @@ import type {
   CapabilityAssignment,
   CapabilityCatalogEntry,
   CapabilityEvent,
+  CapabilityFreshnessState,
   CapabilityHealthState,
   CapabilityRuntimeTarget,
   CapabilityType,
@@ -65,6 +66,110 @@ interface GovernanceDraft {
 interface GovernanceSaveState {
   status: 'idle' | 'saving' | 'done' | 'error'
   message?: string
+}
+
+const FRESHNESS_CONFIG: Record<CapabilityFreshnessState, { label: string; color: string }> = {
+  fresh:   { label: 'Fresh',   color: 'text-emerald-400' },
+  aging:   { label: 'Aging',   color: 'text-amber-400' },
+  stale:   { label: 'Stale',   color: 'text-rose-400' },
+  unknown: { label: 'Unknown', color: 'text-slate-500' },
+}
+
+function FreshnessPill({ freshness }: { freshness: CapabilityFreshnessState }) {
+  const cfg = FRESHNESS_CONFIG[freshness]
+  return (
+    <span className={clsx('text-[10px] font-black uppercase tracking-[0.18em]', cfg.color)}>
+      {cfg.label}
+    </span>
+  )
+}
+
+function HealthDepthPanel({ entry }: { entry: CapabilityCatalogEntry }) {
+  const { health } = entry
+  const hasDepth = health.freshness !== undefined
+    || health.lastSuccessAt
+    || health.lastFailedAt
+    || (health.driftWarnings && health.driftWarnings.length > 0)
+    || health.reasonCode
+    || (health.details && health.details.length > 0)
+
+  if (!hasDepth) return null
+
+  return (
+    <Panel title="Health Depth" accent="violet">
+      <div className="space-y-4">
+
+        {/* Freshness + reason row */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {health.freshness !== undefined && (
+            <div className="rounded-2xl border border-white/6 bg-black/20 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">Freshness</p>
+              <div className="mt-2">
+                <FreshnessPill freshness={health.freshness} />
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {health.freshness === 'fresh' && 'Verified within the last hour'}
+                {health.freshness === 'aging' && 'Last verified 1–24 h ago'}
+                {health.freshness === 'stale' && 'Not verified in over 24 h'}
+                {health.freshness === 'unknown' && 'No verification timestamp available'}
+              </p>
+            </div>
+          )}
+          {health.reasonCode && (
+            <div className="rounded-2xl border border-white/6 bg-black/20 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">Reason Code</p>
+              <p className="mt-2 font-mono text-sm text-[#00D4FF]">{health.reasonCode}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Last success / last failure */}
+        {(health.lastSuccessAt || health.lastFailedAt) && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {health.lastSuccessAt && (
+              <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.04] p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-700">Last Success</p>
+                <p className="mt-2 text-sm text-emerald-300">{formatTimestamp(health.lastSuccessAt)}</p>
+              </div>
+            )}
+            {health.lastFailedAt && (
+              <div className="rounded-2xl border border-rose-500/15 bg-rose-500/[0.04] p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-700">Last Failure</p>
+                <p className="mt-2 text-sm text-rose-300">{formatTimestamp(health.lastFailedAt)}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Drift warnings */}
+        {health.driftWarnings && health.driftWarnings.length > 0 && (
+          <div className="space-y-2">
+            {health.driftWarnings.map((warning) => (
+              <div key={warning} className="flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3">
+                <span className="mt-0.5 text-amber-400 text-sm">⚠</span>
+                <p className="text-sm leading-relaxed text-amber-300">{warning}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Detail breakdown */}
+        {health.details && health.details.length > 0 && (
+          <div className="rounded-2xl border border-white/6 bg-black/20 p-4">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">Details</p>
+            <ul className="mt-3 space-y-1">
+              {health.details.map((line) => (
+                <li key={line} className="flex items-start gap-2 text-sm text-slate-300">
+                  <span className="mt-1 text-[#00D4FF] text-xs">›</span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </Panel>
+  )
 }
 
 function summarizeAssignments(assignments: CapabilityAssignment[]): string {
@@ -147,9 +252,19 @@ function CapabilityListItem({
 
       <div className="mt-4 flex items-center justify-between gap-4">
         <span className="text-[11px] text-slate-500">{summarizeAssignments(assignments)}</span>
-        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">
-          {assignments.length} assignments
-        </span>
+        <div className="flex items-center gap-3">
+          {health.freshness && health.freshness !== 'fresh' && health.freshness !== 'unknown' && (
+            <FreshnessPill freshness={health.freshness} />
+          )}
+          {health.driftWarnings && health.driftWarnings.length > 0 && (
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-500">
+              {health.driftWarnings.length} drift
+            </span>
+          )}
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">
+            {assignments.length} assignments
+          </span>
+        </div>
       </div>
     </button>
   )
@@ -336,6 +451,66 @@ export function CapabilitiesView() {
           <StatCard label="Company" value={String(data.summary.byRuntimeTarget.company)} accent="text-amber-400" sub="Company-targeted surfaces" />
           <StatCard label="Personal" value={String(data.summary.byRuntimeTarget.personal)} accent="text-[#7CF6E6]" sub="Founder-targeted surfaces" />
         </div>
+
+        {/* Health summary bar */}
+        <div className="mt-4 flex flex-wrap gap-3">
+          {data.summary.byHealth.connected > 0 && (
+            <div className="flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+              <span className="text-[11px] font-black text-emerald-400">{data.summary.byHealth.connected} connected</span>
+            </div>
+          )}
+          {data.summary.byHealth.degraded > 0 && (
+            <div className="flex items-center gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2">
+              <span className="h-2 w-2 rounded-full bg-amber-400" />
+              <span className="text-[11px] font-black text-amber-400">{data.summary.byHealth.degraded} degraded</span>
+            </div>
+          )}
+          {data.summary.byHealth.auth_required > 0 && (
+            <div className="flex items-center gap-2 rounded-2xl border border-orange-500/20 bg-orange-500/[0.06] px-3 py-2">
+              <span className="h-2 w-2 rounded-full bg-orange-400" />
+              <span className="text-[11px] font-black text-orange-400">{data.summary.byHealth.auth_required} auth required</span>
+            </div>
+          )}
+          {data.summary.byHealth.failing > 0 && (
+            <div className="flex items-center gap-2 rounded-2xl border border-rose-500/20 bg-rose-500/[0.06] px-3 py-2">
+              <span className="h-2 w-2 rounded-full bg-rose-400" />
+              <span className="text-[11px] font-black text-rose-400">{data.summary.byHealth.failing} failing</span>
+            </div>
+          )}
+          {data.summary.byHealth.missing_config > 0 && (
+            <div className="flex items-center gap-2 rounded-2xl border border-slate-500/20 bg-slate-500/[0.06] px-3 py-2">
+              <span className="h-2 w-2 rounded-full bg-slate-400" />
+              <span className="text-[11px] font-black text-slate-400">{data.summary.byHealth.missing_config} missing config</span>
+            </div>
+          )}
+          {data.summary.byHealth.disabled > 0 && (
+            <div className="flex items-center gap-2 rounded-2xl border border-white/8 bg-black/20 px-3 py-2">
+              <span className="h-2 w-2 rounded-full bg-slate-600" />
+              <span className="text-[11px] font-black text-slate-500">{data.summary.byHealth.disabled} disabled</span>
+            </div>
+          )}
+          {/* Stale count derived from catalog */}
+          {(() => {
+            const staleCount = data.catalog.filter((entry) => entry.health.freshness === 'stale').length
+            return staleCount > 0 ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-rose-500/15 bg-rose-500/[0.04] px-3 py-2">
+                <span className="h-2 w-2 rounded-full bg-rose-600" />
+                <span className="text-[11px] font-black text-rose-500">{staleCount} stale</span>
+              </div>
+            ) : null
+          })()}
+          {/* Drift count */}
+          {(() => {
+            const driftCount = data.catalog.filter((entry) => (entry.health.driftWarnings?.length ?? 0) > 0).length
+            return driftCount > 0 ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-amber-500/15 bg-amber-500/[0.04] px-3 py-2">
+                <span className="h-2 w-2 rounded-full bg-amber-600" />
+                <span className="text-[11px] font-black text-amber-500">{driftCount} with drift</span>
+              </div>
+            ) : null
+          })()}
+        </div>
       </section>
 
       <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-5">
@@ -455,7 +630,12 @@ export function CapabilitiesView() {
                   </div>
 
                   <div className="rounded-2xl border border-white/6 bg-black/20 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">Health Message</p>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">Health Message</p>
+                      {selectedEntry.health.freshness && (
+                        <FreshnessPill freshness={selectedEntry.health.freshness} />
+                      )}
+                    </div>
                     <p className="mt-2 text-sm leading-relaxed text-slate-300">{selectedEntry.health.message}</p>
                     <p className="mt-2 text-[11px] text-slate-500">Checked {formatTimestamp(selectedEntry.health.checkedAt)}</p>
                   </div>
@@ -483,6 +663,8 @@ export function CapabilitiesView() {
                   )}
                 </div>
               </Panel>
+
+              <HealthDepthPanel entry={selectedEntry} />
 
               <Panel title="Assignments" accent="emerald">
                 <div className="space-y-5">

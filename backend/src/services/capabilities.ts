@@ -6,6 +6,7 @@ import type {
   CapabilityAssignment,
   CapabilityCatalogEntry,
   CapabilityEvent,
+  CapabilityFreshnessState,
   CapabilityHealth,
   CapabilityHealthState,
   CapabilityPolicy,
@@ -65,6 +66,47 @@ function hasEnvVars(required: string[]): boolean {
 
 function getMissingEnvVars(required: string[]): string[] {
   return required.filter((envVar) => !process.env[envVar]?.trim())
+}
+
+// T099 – freshness / health depth helpers
+const HOUR_MS = 3_600_000
+
+function computeFreshness(lastKnownGoodAt: string | undefined): CapabilityFreshnessState {
+  if (!lastKnownGoodAt) return 'unknown'
+  const ageMs = Date.now() - new Date(lastKnownGoodAt).getTime()
+  if (ageMs < HOUR_MS) return 'fresh'
+  if (ageMs < 24 * HOUR_MS) return 'aging'
+  return 'stale'
+}
+
+function computeGoogleDriftWarnings(
+  runtimeState: Awaited<ReturnType<typeof getGoogleWorkspaceMcpRuntimeStatus>>,
+): string[] {
+  const warnings: string[] = []
+  if (runtimeState.state === 'connected' && runtimeState.lastConnectedAt) {
+    const ageMs = Date.now() - new Date(runtimeState.lastConnectedAt).getTime()
+    if (ageMs > 24 * HOUR_MS) {
+      warnings.push('Last verified connection is more than 24 h ago — token freshness unconfirmed.')
+    }
+    if (ageMs > 7 * 24 * HOUR_MS) {
+      warnings.push('Connection not verified for over 7 days — consider re-authorizing OAuth.')
+    }
+  }
+  if (runtimeState.hasTokens && !runtimeState.hasClientRegistration) {
+    warnings.push('OAuth tokens present but client registration is missing — may require re-auth.')
+  }
+  return warnings
+}
+
+function googleReasonCode(state: Awaited<ReturnType<typeof getGoogleWorkspaceMcpRuntimeStatus>>['state']): string {
+  switch (state) {
+    case 'connected': return 'oauth_connected'
+    case 'auth_required': return 'oauth_required'
+    case 'missing_config': return 'env_missing'
+    case 'offline': return 'server_unreachable'
+    case 'error': return 'runtime_error'
+    default: return 'unknown'
+  }
 }
 
 function runtimeAssignment(
@@ -197,6 +239,12 @@ function baseHealth(input: {
   message: string
   checkedAt: string
   missingRequirements?: string[]
+  freshness?: CapabilityFreshnessState
+  lastSuccessAt?: string | undefined
+  lastFailedAt?: string | undefined
+  driftWarnings?: string[]
+  reasonCode?: string
+  details?: string[]
 }): CapabilityHealth {
   return {
     capabilityId: input.capabilityId,
@@ -205,6 +253,12 @@ function baseHealth(input: {
     message: input.message,
     checkedAt: input.checkedAt,
     missingRequirements: input.missingRequirements ?? [],
+    ...(input.freshness !== undefined ? { freshness: input.freshness } : {}),
+    ...(input.lastSuccessAt ? { lastSuccessAt: input.lastSuccessAt } : {}),
+    ...(input.lastFailedAt ? { lastFailedAt: input.lastFailedAt } : {}),
+    ...(input.driftWarnings?.length ? { driftWarnings: input.driftWarnings } : {}),
+    ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
+    ...(input.details?.length ? { details: input.details } : {}),
   }
 }
 
@@ -222,16 +276,36 @@ function healthFromGoogleRuntime(
     'GOOGLE_OAUTH_CLIENT_SECRET',
     'USER_GOOGLE_EMAIL',
   ])
+  const freshness = computeFreshness(runtimeState.lastConnectedAt)
+  const driftWarnings = computeGoogleDriftWarnings(runtimeState)
+  const reasonCode = googleReasonCode(runtimeState.state)
 
   switch (runtimeState.state) {
-    case 'connected':
+    case 'connected': {
+      const details: string[] = [
+        `${String(runtimeState.toolCount)} MCP tool${runtimeState.toolCount !== 1 ? 's' : ''} visible`,
+      ]
+      if (runtimeState.userGoogleEmail) {
+        details.push(`Authorized as ${runtimeState.userGoogleEmail}`)
+      }
+      if (runtimeState.lastConnectedAt) {
+        const ageMs = Date.now() - new Date(runtimeState.lastConnectedAt).getTime()
+        const ageHours = Math.round(ageMs / HOUR_MS)
+        details.push(`Last verified ${ageHours < 1 ? 'less than 1 h' : `${String(ageHours)} h`} ago`)
+      }
       return baseHealth({
         capabilityId,
         state: 'connected',
-        label: 'Connected',
+        label: freshness === 'stale' ? 'Connected (stale)' : 'Connected',
         message: `OAuth completed for ${runtimeState.userGoogleEmail ?? 'configured user'} and ${String(runtimeState.toolCount)} MCP tools are visible.`,
         checkedAt,
+        freshness,
+        lastSuccessAt: runtimeState.lastConnectedAt,
+        driftWarnings,
+        reasonCode,
+        details,
       })
+    }
     case 'auth_required':
       return baseHealth({
         capabilityId,
@@ -240,6 +314,12 @@ function healthFromGoogleRuntime(
         message: 'Google Workspace MCP is configured but OAuth must be completed again.',
         checkedAt,
         missingRequirements,
+        freshness: 'unknown',
+        lastSuccessAt: runtimeState.lastConnectedAt,
+        reasonCode,
+        details: runtimeState.lastConnectedAt
+          ? [`Last successful connection: ${new Date(runtimeState.lastConnectedAt).toLocaleString()}`]
+          : [],
       })
     case 'missing_config':
       return baseHealth({
@@ -249,14 +329,20 @@ function healthFromGoogleRuntime(
         message: 'The google_workspace MCP server or required OAuth env vars are missing.',
         checkedAt,
         missingRequirements,
+        freshness: 'unknown',
+        reasonCode,
       })
     case 'offline':
       return baseHealth({
         capabilityId,
         state: 'degraded',
-        label: 'Offline',
+        label: 'Server Offline',
         message: 'The google_workspace MCP server is configured but not reachable right now.',
         checkedAt,
+        freshness: 'unknown',
+        lastSuccessAt: runtimeState.lastConnectedAt,
+        driftWarnings: ['MCP server unreachable — check that the local google_workspace server is running.'],
+        reasonCode,
       })
     case 'error':
     default:
@@ -266,6 +352,11 @@ function healthFromGoogleRuntime(
         label: 'Failing',
         message: runtimeState.lastError ?? 'Google Workspace MCP reported an unexpected runtime error.',
         checkedAt,
+        freshness: 'unknown',
+        lastSuccessAt: runtimeState.lastConnectedAt,
+        lastFailedAt: checkedAt,
+        reasonCode,
+        details: runtimeState.lastError ? [`Error: ${runtimeState.lastError}`] : [],
       })
   }
 }
@@ -285,10 +376,21 @@ function healthFromGoogleConnector(
       message: connector?.notes ?? `${label} is not configured in the MCP bridge.`,
       checkedAt,
       missingRequirements: getMissingEnvVars(['GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET']),
+      freshness: 'unknown',
+      reasonCode: 'connector_missing',
     })
   }
 
-  return healthFromGoogleRuntime(capabilityId, checkedAt, runtimeState)
+  // Connector is ready — delegate to the parent Google runtime health
+  const parentHealth = healthFromGoogleRuntime(capabilityId, checkedAt, runtimeState)
+  // Inherit parent health but tag with connector-specific context
+  return {
+    ...parentHealth,
+    details: [
+      `Connector ${connector.id} is ready`,
+      ...(parentHealth.details ?? []),
+    ],
+  }
 }
 
 function healthFromEnv(
@@ -299,15 +401,18 @@ function healthFromEnv(
   description: string,
 ): CapabilityHealth {
   const missingRequirements = getMissingEnvVars(requiredEnvVars)
+  const connected = missingRequirements.length === 0
   return baseHealth({
     capabilityId,
-    state: missingRequirements.length === 0 ? 'connected' : 'missing_config',
+    state: connected ? 'connected' : 'missing_config',
     label,
-    message: missingRequirements.length === 0
+    message: connected
       ? description
       : `Missing required environment: ${missingRequirements.join(', ')}.`,
     checkedAt,
     missingRequirements,
+    freshness: connected ? 'fresh' : 'unknown',
+    reasonCode: connected ? 'env_present' : 'env_missing',
   })
 }
 
@@ -323,6 +428,45 @@ function sortCatalog(a: CapabilityCatalogEntry, b: CapabilityCatalogEntry): numb
 
 function actorLabelFromEvent(event: CapabilityEvent): string {
   return event.actor_id ?? event.actor_type
+}
+
+// T099 – enrich health signals using persisted capability events
+function enrichHealthFromEvents(
+  health: CapabilityHealth,
+  events: CapabilityEvent[],
+): CapabilityHealth {
+  if (events.length === 0) return health
+
+  const lastSuccess = events.find((event) =>
+    ['succeeded', 'auth_completed', 'enabled', 'configured'].includes(event.event_type)
+  )
+  const lastFailure = events.find((event) => event.event_type === 'failed')
+
+  const eventLastSuccessAt = lastSuccess?.created_at
+  const eventLastFailedAt = lastFailure?.created_at
+
+  // Use event-derived signals only if they are more recent than what we have
+  const updatedLastSuccessAt = mostRecentTimestamp(health.lastSuccessAt, eventLastSuccessAt)
+  const updatedLastFailedAt = mostRecentTimestamp(health.lastFailedAt, eventLastFailedAt)
+
+  // Recompute freshness if we got a better lastSuccessAt from events
+  const updatedFreshness = updatedLastSuccessAt !== health.lastSuccessAt
+    ? computeFreshness(updatedLastSuccessAt)
+    : health.freshness
+
+  return {
+    ...health,
+    ...(updatedLastSuccessAt ? { lastSuccessAt: updatedLastSuccessAt } : {}),
+    ...(updatedLastFailedAt ? { lastFailedAt: updatedLastFailedAt } : {}),
+    ...(updatedFreshness !== undefined ? { freshness: updatedFreshness } : {}),
+  }
+}
+
+function mostRecentTimestamp(a: string | undefined, b: string | undefined): string | undefined {
+  if (!a && !b) return undefined
+  if (!a) return b
+  if (!b) return a
+  return new Date(a).getTime() >= new Date(b).getTime() ? a : b
 }
 
 function deriveAuditFromEvents(
@@ -557,29 +701,52 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
         restrictedPaths: [`workspace/personal/${DEFAULT_OWNER_SLUG}/output`],
         notes: 'Writes briefing artifacts into founder personal output only.',
       }),
-      health: baseHealth({
-        capabilityId: 'skill.founder.daily_founder_brief_automation',
-        state: !automationStatus.dailyFounderBrief.enabled
+      health: (() => {
+        const auto = automationStatus.dailyFounderBrief
+        const isDisabled = !auto.enabled
+        const isFailing = auto.status === 'error'
+        const isConnected = googleWorkspaceRuntime.state === 'connected'
+        const state: CapabilityHealthState = isDisabled
           ? 'disabled'
-          : automationStatus.dailyFounderBrief.status === 'error'
+          : isFailing
             ? 'failing'
-            : googleWorkspaceRuntime.state === 'connected'
+            : isConnected
               ? 'connected'
-              : 'degraded',
-        label: !automationStatus.dailyFounderBrief.enabled
-          ? 'Disabled'
-          : automationStatus.dailyFounderBrief.status === 'error'
-            ? 'Failing'
-            : googleWorkspaceRuntime.state === 'connected'
-              ? 'Scheduled'
-              : 'Degraded',
-        message: !automationStatus.dailyFounderBrief.enabled
-          ? 'Automation is configured but currently switched off.'
-          : automationStatus.dailyFounderBrief.lastError
-            ? automationStatus.dailyFounderBrief.lastError
-            : `${automationStatus.dailyFounderBrief.nextPlannedRunLabel ?? 'Schedule active'} via ${automationStatus.dailyFounderBrief.timezone}.`,
-        checkedAt: generatedAt,
-      }),
+              : 'degraded'
+        const freshness = computeFreshness(auto.lastSuccessAt)
+        const details: string[] = []
+        if (auto.scheduleLocalTime && auto.timezone) {
+          details.push(`Schedule: ${auto.scheduleLocalTime} (${auto.timezone})`)
+        }
+        if (auto.nextPlannedRunLabel) {
+          details.push(`Next run: ${auto.nextPlannedRunLabel}`)
+        }
+        if (auto.lastRunAt) {
+          details.push(`Last run: ${new Date(auto.lastRunAt).toLocaleString()}`)
+        }
+        const driftWarnings: string[] = []
+        if (!isDisabled && !isConnected) {
+          driftWarnings.push('Automation is enabled but Google Workspace MCP is not connected — runs will fail.')
+        }
+        if (!isDisabled && freshness === 'stale') {
+          driftWarnings.push('No successful brief run in over 24 h — automation may be stalled.')
+        }
+        return baseHealth({
+          capabilityId: 'skill.founder.daily_founder_brief_automation',
+          state,
+          label: isDisabled ? 'Disabled' : isFailing ? 'Failing' : isConnected ? 'Scheduled' : 'Degraded',
+          message: isDisabled
+            ? 'Automation is configured but currently switched off.'
+            : auto.lastError ?? `${auto.nextPlannedRunLabel ?? 'Schedule active'} via ${auto.timezone}.`,
+          checkedAt: generatedAt,
+          freshness,
+          lastSuccessAt: auto.lastSuccessAt ?? undefined,
+          lastFailedAt: isFailing ? auto.lastRunAt ?? undefined : undefined,
+          driftWarnings,
+          reasonCode: isDisabled ? 'automation_disabled' : isFailing ? 'last_run_failed' : isConnected ? 'scheduled' : 'dependency_degraded',
+          details,
+        })
+      })(),
       audit: baseAudit({
         capabilityId: 'skill.founder.daily_founder_brief_automation',
         lastChangedAt: automationStatus.dailyFounderBrief.lastRunAt,
@@ -652,15 +819,23 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
         restrictedPaths: [`workspace/personal/${DEFAULT_OWNER_SLUG}`],
         notes: 'Assistant HQ reads founder profile and generated output from the personal workspace.',
       }),
-      health: baseHealth({
-        capabilityId: 'memory.personal_workspace_context',
-        state: existsSync(getPersonalWorkspacePath(DEFAULT_OWNER_SLUG)) ? 'connected' : 'degraded',
-        label: existsSync(getPersonalWorkspacePath(DEFAULT_OWNER_SLUG)) ? 'Connected' : 'Bootstrap Pending',
-        message: existsSync(getPersonalWorkspacePath(DEFAULT_OWNER_SLUG))
-          ? 'Founder personal workspace is present and can be read by Assistant HQ.'
-          : 'Personal workspace will be initialized on first founder interaction.',
-        checkedAt: generatedAt,
-      }),
+      health: (() => {
+        const workspacePresent = existsSync(getPersonalWorkspacePath(DEFAULT_OWNER_SLUG))
+        return baseHealth({
+          capabilityId: 'memory.personal_workspace_context',
+          state: workspacePresent ? 'connected' : 'degraded',
+          label: workspacePresent ? 'Connected' : 'Bootstrap Pending',
+          message: workspacePresent
+            ? 'Founder personal workspace is present and can be read by Assistant HQ.'
+            : 'Personal workspace will be initialized on first founder interaction.',
+          checkedAt: generatedAt,
+          freshness: workspacePresent ? 'fresh' : 'unknown',
+          reasonCode: workspacePresent ? 'filesystem_present' : 'filesystem_missing',
+          details: workspacePresent
+            ? [`Workspace path: ${getPersonalWorkspacePath(DEFAULT_OWNER_SLUG)}`]
+            : [],
+        })
+      })(),
       audit: baseAudit({
         capabilityId: 'memory.personal_workspace_context',
         summary: 'Current MVP exposes workspace context as a first-class capability, not a hidden Assistant HQ assumption.',
@@ -692,15 +867,22 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
         restrictedPaths: ['workspace/', 'workspace/personal/'],
         notes: 'Dangerous broad writes stay behind agent-level permissions and path conventions.',
       }),
-      health: baseHealth({
-        capabilityId: 'integration.local_workspace_filesystem',
-        state: existsSync(getWorkspaceRoot()) ? 'connected' : 'degraded',
-        label: existsSync(getWorkspaceRoot()) ? 'Connected' : 'Workspace Missing',
-        message: existsSync(getWorkspaceRoot())
-          ? `Workspace root available at ${getWorkspaceRoot()}.`
-          : 'Workspace root is not available on disk.',
-        checkedAt: generatedAt,
-      }),
+      health: (() => {
+        const workspaceRoot = getWorkspaceRoot()
+        const rootPresent = existsSync(workspaceRoot)
+        return baseHealth({
+          capabilityId: 'integration.local_workspace_filesystem',
+          state: rootPresent ? 'connected' : 'degraded',
+          label: rootPresent ? 'Connected' : 'Workspace Missing',
+          message: rootPresent
+            ? `Workspace root available at ${workspaceRoot}.`
+            : 'Workspace root is not available on disk.',
+          checkedAt: generatedAt,
+          freshness: rootPresent ? 'fresh' : 'unknown',
+          reasonCode: rootPresent ? 'filesystem_present' : 'filesystem_missing',
+          driftWarnings: rootPresent ? [] : ['Workspace root not found — agent file operations will fail.'],
+        })
+      })(),
       audit: baseAudit({
         capabilityId: 'integration.local_workspace_filesystem',
         summary: 'Shared filesystem surface backs both repo execution and founder document output.',
@@ -783,13 +965,14 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
   const catalogWithGovernance = await applyCapabilityGovernanceOverrides(catalogBase)
 
   const catalog = catalogWithGovernance
-    .map((entry) => ({
-      ...entry,
-      audit: deriveAuditFromEvents(
-        entry.audit,
-        recentEvents.filter((event) => event.capability_id === entry.capability.id),
-      ),
-    }))
+    .map((entry) => {
+      const capabilityEvents = recentEvents.filter((event) => event.capability_id === entry.capability.id)
+      return {
+        ...entry,
+        health: enrichHealthFromEvents(entry.health, capabilityEvents),
+        audit: deriveAuditFromEvents(entry.audit, capabilityEvents),
+      }
+    })
     .sort(sortCatalog)
 
   const assignments = catalog.flatMap((entry) => entry.assignments)

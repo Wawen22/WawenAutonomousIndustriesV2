@@ -22,6 +22,8 @@ type FounderQuickActionId =
   | 'calendar_today'
   | 'drive_recent_files'
   | 'daily_founder_brief'
+  | 'important_emails_today'
+  | 'pre_meeting_brief'
 
 interface FounderQuickAction {
   id: FounderQuickActionId
@@ -46,6 +48,16 @@ interface AutomationActionState {
 
 const FOUNDER_QUICK_ACTIONS: FounderQuickAction[] = [
   {
+    id: 'important_emails_today',
+    label: 'Important Emails Today',
+    description: 'High-priority and unread emails with sender, subject, preview and urgency.',
+  },
+  {
+    id: 'pre_meeting_brief',
+    label: 'Pre-meeting Brief',
+    description: 'Structured brief for every upcoming meeting: attendees, topic, notes.',
+  },
+  {
     id: 'latest_email',
     label: 'Latest Email',
     description: 'Read the newest inbox message without opening Gmail.',
@@ -67,8 +79,18 @@ const FOUNDER_QUICK_ACTIONS: FounderQuickAction[] = [
   },
 ]
 
+type HQTab = 'exec' | 'automations' | 'setup' | 'profile'
+
+const HQ_TABS: { id: HQTab; label: string }[] = [
+  { id: 'exec', label: 'Exec' },
+  { id: 'automations', label: 'Automations' },
+  { id: 'setup', label: 'Setup' },
+  { id: 'profile', label: 'Profile' },
+]
+
 export function PersonalHQView() {
   const { data, loading, error, refetch } = usePersonalContext()
+  const [activeTab, setActiveTab] = useState<HQTab>('exec')
   const [displayName, setDisplayName] = useState('')
   const [primaryEmail, setPrimaryEmail] = useState('')
   const [assistantStyle, setAssistantStyle] = useState('')
@@ -83,6 +105,8 @@ export function PersonalHQView() {
   const [automationLoading, setAutomationLoading] = useState(true)
   const [automationError, setAutomationError] = useState<string | null>(null)
   const [automationActionState, setAutomationActionState] = useState<AutomationActionState>({ status: 'idle' })
+  const [scheduleInput, setScheduleInput] = useState('')
+  const [scheduleEditMode, setScheduleEditMode] = useState(false)
 
   useEffect(() => {
     if (!data) return
@@ -246,6 +270,30 @@ export function PersonalHQView() {
     }
   }
 
+  async function handleScheduleUpdate() {
+    if (!scheduleInput.trim()) return
+    try {
+      setAutomationActionState({ status: 'working', message: 'Updating schedule...' })
+      const response = await fetch(`${BACKEND_URL}/api/personal/automation/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduleLocalTime: scheduleInput.trim() }),
+      })
+      const payload = await response.json() as { status?: PersonalAutomationStatus; error?: string }
+      if (!response.ok || !payload.status) {
+        throw new Error(payload.error ?? `HTTP ${response.status}`)
+      }
+      setAutomationStatus(payload.status)
+      setScheduleEditMode(false)
+      setAutomationActionState({ status: 'done', message: 'Schedule updated' })
+    } catch (err) {
+      setAutomationActionState({
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Schedule update failed',
+      })
+    }
+  }
+
   async function handleAutomationRunNow() {
     try {
       setAutomationActionState({
@@ -344,157 +392,28 @@ export function PersonalHQView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">Identity Context</h2>
-              <p className="mt-1 text-xs text-slate-500">What the assistant should know and use by default.</p>
-            </div>
-            {saveState.status !== 'idle' && (
-              <Badge variant={saveState.status === 'done' ? 'done' : saveState.status === 'error' ? 'error' : 'warning'}>
-                {saveState.status === 'saving' ? 'SAVING' : saveState.status === 'done' ? 'SAVED' : 'ERROR'}
-              </Badge>
+      {/* Tab navigation */}
+      <div className="flex gap-1 rounded-2xl border border-white/5 bg-white/[0.02] p-1">
+        {HQ_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={clsx(
+              'flex-1 rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-[0.2em] transition',
+              activeTab === tab.id
+                ? 'bg-[#7CF6E6]/15 text-[#7CF6E6]'
+                : 'text-slate-500 hover:text-slate-300',
             )}
-          </div>
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-2">
-            <label className="space-y-2">
-              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Display Name</span>
-              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-[#7CF6E6]/40" />
-            </label>
-            <label className="space-y-2">
-              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Primary Email</span>
-              <input value={primaryEmail} onChange={(e) => setPrimaryEmail(e.target.value)} placeholder="neb@example.com" className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-[#7CF6E6]/40" />
-            </label>
-            <label className="space-y-2 md:col-span-2">
-              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Assistant Style</span>
-              <input value={assistantStyle} onChange={(e) => setAssistantStyle(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-[#7CF6E6]/40" />
-            </label>
-            <label className="space-y-2 md:col-span-2">
-              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Priorities</span>
-              <textarea value={prioritiesText} onChange={(e) => setPrioritiesText(e.target.value)} rows={5} className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-[#7CF6E6]/40" />
-            </label>
-          </div>
-
-          <div className="mt-6 flex items-center justify-between gap-4">
-            <p className="text-xs text-slate-500">
-              The CEO Intake now reads this context before planning personal actions.
-            </p>
-            <button onClick={() => void handleSave()} className="rounded-2xl border border-[#7CF6E6]/30 bg-[#7CF6E6]/10 px-5 py-2.5 text-[11px] font-black uppercase tracking-[0.25em] text-[#7CF6E6] transition hover:bg-[#7CF6E6]/18">
-              Save Profile
-            </button>
-          </div>
-          {saveState.message && <p className={clsx('mt-3 text-xs', saveState.status === 'error' ? 'text-rose-400' : 'text-slate-500')}>{saveState.message}</p>}
-        </section>
-
+      {/* Tab: Exec */}
+      {activeTab === 'exec' && (
         <div className="space-y-6">
-          <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">Automation Control</h2>
-                <p className="mt-1 text-xs text-slate-500">Founder automations can be paused any time to avoid unnecessary token spend or noise.</p>
-              </div>
-              <Badge
-                variant={
-                  automationStatus?.dailyFounderBrief.enabled
-                    ? 'done'
-                    : 'warning'
-                }
-              >
-                {automationStatus?.dailyFounderBrief.enabled ? 'ENABLED' : 'DISABLED'}
-              </Badge>
-            </div>
-
-            {automationLoading ? (
-              <p className="mt-5 text-xs text-slate-500">Loading automation state...</p>
-            ) : automationError ? (
-              <p className="mt-5 text-xs text-rose-400">{automationError}</p>
-            ) : automationStatus ? (
-              <div className="mt-5 rounded-2xl border border-white/5 bg-black/25 p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#7CF6E6]/80">
-                      {automationStatus.dailyFounderBrief.label}
-                    </p>
-                    <p className="mt-2 text-xs text-slate-300">
-                      Schedule: <span className="font-mono text-slate-400">{automationStatus.dailyFounderBrief.scheduleLocalTime}</span>
-                      {' '}<span className="text-slate-500">({automationStatus.dailyFounderBrief.timezone})</span>
-                    </p>
-                    <p className="mt-1 text-xs text-slate-300">
-                      Runtime status: <span className="font-mono text-slate-400">{automationStatus.dailyFounderBrief.status}</span>
-                    </p>
-                    {automationStatus.dailyFounderBrief.nextPlannedRunLabel && (
-                      <p className="mt-1 text-xs text-slate-300">
-                        Next run: <span className="text-slate-400">{automationStatus.dailyFounderBrief.nextPlannedRunLabel}</span>
-                      </p>
-                    )}
-                    {automationStatus.dailyFounderBrief.lastRunAt && (
-                      <p className="mt-1 text-xs text-slate-300">
-                        Last run: <span className="text-slate-400">{new Date(automationStatus.dailyFounderBrief.lastRunAt).toLocaleString()}</span>
-                      </p>
-                    )}
-                    {automationStatus.dailyFounderBrief.lastOutputPath && (
-                      <p className="mt-1 text-xs text-slate-300">
-                        Last output: <span className="font-mono text-slate-500">{automationStatus.dailyFounderBrief.lastOutputPath}</span>
-                      </p>
-                    )}
-                    {automationStatus.dailyFounderBrief.lastError && (
-                      <p className="mt-2 text-xs text-rose-400">{automationStatus.dailyFounderBrief.lastError}</p>
-                    )}
-                  </div>
-
-                  <Badge
-                    variant={
-                      automationStatus.dailyFounderBrief.status === 'success'
-                        ? 'done'
-                        : automationStatus.dailyFounderBrief.status === 'error'
-                          ? 'error'
-                          : automationStatus.dailyFounderBrief.status === 'running'
-                            ? 'warning'
-                            : 'warning'
-                    }
-                  >
-                    {automationStatus.dailyFounderBrief.status.toUpperCase()}
-                  </Badge>
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    disabled={automationActionState.status === 'working'}
-                    onClick={() => void handleAutomationToggle(!automationStatus.dailyFounderBrief.enabled)}
-                    className={clsx(
-                      'rounded-2xl border px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] transition',
-                      automationStatus.dailyFounderBrief.enabled
-                        ? 'border-rose-400/30 bg-rose-400/10 text-rose-300 hover:bg-rose-400/18'
-                        : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/18',
-                    )}
-                  >
-                    {automationStatus.dailyFounderBrief.enabled ? 'Disable Auto Run' : 'Enable Auto Run'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={automationActionState.status === 'working' || !googleWorkspaceReady}
-                    onClick={() => void handleAutomationRunNow()}
-                    className={clsx(
-                      'rounded-2xl border border-[#7CF6E6]/30 bg-[#7CF6E6]/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] text-[#7CF6E6] transition hover:bg-[#7CF6E6]/18',
-                      (!googleWorkspaceReady || automationActionState.status === 'working') && 'cursor-not-allowed opacity-50',
-                    )}
-                  >
-                    Run Now
-                  </button>
-                </div>
-
-                {automationActionState.message && (
-                  <p className={clsx('mt-4 text-xs', automationActionState.status === 'error' ? 'text-rose-400' : 'text-slate-400')}>
-                    {automationActionState.message}
-                  </p>
-                )}
-              </div>
-            ) : null}
-          </section>
-
           <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -506,7 +425,7 @@ export function PersonalHQView() {
               </Badge>
             </div>
 
-            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {FOUNDER_QUICK_ACTIONS.map((action) => {
                 const active = quickActionState.actionId === action.id && quickActionState.status === 'working'
 
@@ -535,7 +454,7 @@ export function PersonalHQView() {
 
             {!googleWorkspaceReady && (
               <p className="mt-4 text-[11px] text-amber-300/80">
-                Connect Google Workspace MCP first. These actions depend on live Gmail, Calendar and Drive access.
+                Connect Google Workspace MCP first (Setup tab). These actions depend on live Gmail, Calendar and Drive access.
               </p>
             )}
 
@@ -550,11 +469,6 @@ export function PersonalHQView() {
                 <p className={clsx('mt-3 text-xs font-bold', quickActionState.status === 'error' ? 'text-rose-400' : 'text-[#7CF6E6]')}>
                   {quickActionState.message}
                 </p>
-                {quickActionState.prompt && (
-                  <p className="mt-3 text-[11px] text-slate-500">
-                    Prompt: <span className="font-mono text-slate-400">{quickActionState.prompt}</span>
-                  </p>
-                )}
                 {quickActionState.result && (
                   <div className="mt-3 rounded-2xl border border-white/5 bg-[#03060b] px-4 py-3">
                     <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-200">
@@ -566,7 +480,7 @@ export function PersonalHQView() {
                   <div className="mt-3 space-y-2">
                     {quickActionState.notifications.map((notification) => (
                       <p key={notification} className="text-[11px] text-slate-500">
-                        Notification: <span className="text-slate-400">{notification}</span>
+                        <span className="text-slate-400">{notification}</span>
                       </p>
                     ))}
                   </div>
@@ -580,6 +494,171 @@ export function PersonalHQView() {
             )}
           </section>
 
+          <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
+            <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">Recent Personal Docs</h2>
+            <div className="mt-4 space-y-3">
+              {data.recentDocuments.slice(0, 5).map((doc) => (
+                <div key={doc.relativePath} className="rounded-2xl border border-white/5 bg-black/25 px-4 py-3">
+                  <p className="text-xs font-black uppercase tracking-[0.15em] text-white">{doc.name}</p>
+                  <p className="mt-1 text-[10px] font-mono text-slate-600">{doc.relativePath}</p>
+                </div>
+              ))}
+              {data.recentDocuments.length === 0 && (
+                <p className="text-xs text-slate-500">No personal documents yet. Use CEO Intake with a `create_document` or `send_report` flow.</p>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* Tab: Automations */}
+      {activeTab === 'automations' && (
+        <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">Automation Control</h2>
+              <p className="mt-1 text-xs text-slate-500">Founder automations can be paused any time to avoid unnecessary token spend or noise.</p>
+            </div>
+            <Badge variant={automationStatus?.dailyFounderBrief.enabled ? 'done' : 'warning'}>
+              {automationStatus?.dailyFounderBrief.enabled ? 'ENABLED' : 'DISABLED'}
+            </Badge>
+          </div>
+
+          {automationLoading ? (
+            <p className="mt-5 text-xs text-slate-500">Loading automation state...</p>
+          ) : automationError ? (
+            <p className="mt-5 text-xs text-rose-400">{automationError}</p>
+          ) : automationStatus ? (
+            <div className="mt-5 rounded-2xl border border-white/5 bg-black/25 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#7CF6E6]/80">
+                    {automationStatus.dailyFounderBrief.label}
+                  </p>
+
+                  {/* Schedule display + editor */}
+                  <div className="mt-2">
+                    {scheduleEditMode ? (
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="text"
+                          value={scheduleInput}
+                          onChange={(e) => setScheduleInput(e.target.value)}
+                          placeholder="HH:MM"
+                          className="w-24 rounded-xl border border-[#7CF6E6]/30 bg-black/40 px-3 py-1.5 text-xs font-mono text-white outline-none focus:border-[#7CF6E6]/60"
+                        />
+                        <button
+                          type="button"
+                          disabled={automationActionState.status === 'working'}
+                          onClick={() => void handleScheduleUpdate()}
+                          className="rounded-xl border border-[#7CF6E6]/30 bg-[#7CF6E6]/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-[#7CF6E6] transition hover:bg-[#7CF6E6]/18"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setScheduleEditMode(false)}
+                          className="text-[10px] text-slate-500 transition hover:text-slate-300"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <p className="text-xs text-slate-300">
+                          Schedule: <span className="font-mono text-slate-400">{automationStatus.dailyFounderBrief.scheduleLocalTime}</span>
+                          {' '}<span className="text-slate-500">({automationStatus.dailyFounderBrief.timezone})</span>
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setScheduleInput(automationStatus.dailyFounderBrief.scheduleLocalTime)
+                            setScheduleEditMode(true)
+                          }}
+                          className="text-[10px] font-black uppercase tracking-[0.2em] text-[#7CF6E6]/60 transition hover:text-[#7CF6E6]"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="mt-1 text-xs text-slate-300">
+                    Runtime status: <span className="font-mono text-slate-400">{automationStatus.dailyFounderBrief.status}</span>
+                  </p>
+                  {automationStatus.dailyFounderBrief.nextPlannedRunLabel && (
+                    <p className="mt-1 text-xs text-slate-300">
+                      Next run: <span className="text-slate-400">{automationStatus.dailyFounderBrief.nextPlannedRunLabel}</span>
+                    </p>
+                  )}
+                  {automationStatus.dailyFounderBrief.lastRunAt && (
+                    <p className="mt-1 text-xs text-slate-300">
+                      Last run: <span className="text-slate-400">{new Date(automationStatus.dailyFounderBrief.lastRunAt).toLocaleString()}</span>
+                    </p>
+                  )}
+                  {automationStatus.dailyFounderBrief.lastOutputPath && (
+                    <p className="mt-1 text-xs text-slate-300">
+                      Last output: <span className="font-mono text-slate-500">{automationStatus.dailyFounderBrief.lastOutputPath}</span>
+                    </p>
+                  )}
+                  {automationStatus.dailyFounderBrief.lastError && (
+                    <p className="mt-2 text-xs text-rose-400">{automationStatus.dailyFounderBrief.lastError}</p>
+                  )}
+                </div>
+
+                <Badge
+                  variant={
+                    automationStatus.dailyFounderBrief.status === 'success'
+                      ? 'done'
+                      : automationStatus.dailyFounderBrief.status === 'error'
+                        ? 'error'
+                        : 'warning'
+                  }
+                >
+                  {automationStatus.dailyFounderBrief.status.toUpperCase()}
+                </Badge>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  disabled={automationActionState.status === 'working'}
+                  onClick={() => void handleAutomationToggle(!automationStatus.dailyFounderBrief.enabled)}
+                  className={clsx(
+                    'rounded-2xl border px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] transition',
+                    automationStatus.dailyFounderBrief.enabled
+                      ? 'border-rose-400/30 bg-rose-400/10 text-rose-300 hover:bg-rose-400/18'
+                      : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/18',
+                  )}
+                >
+                  {automationStatus.dailyFounderBrief.enabled ? 'Disable Auto Run' : 'Enable Auto Run'}
+                </button>
+                <button
+                  type="button"
+                  disabled={automationActionState.status === 'working' || !googleWorkspaceReady}
+                  onClick={() => void handleAutomationRunNow()}
+                  className={clsx(
+                    'rounded-2xl border border-[#7CF6E6]/30 bg-[#7CF6E6]/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] text-[#7CF6E6] transition hover:bg-[#7CF6E6]/18',
+                    (!googleWorkspaceReady || automationActionState.status === 'working') && 'cursor-not-allowed opacity-50',
+                  )}
+                >
+                  Run Now
+                </button>
+              </div>
+
+              {automationActionState.message && (
+                <p className={clsx('mt-4 text-xs', automationActionState.status === 'error' ? 'text-rose-400' : 'text-slate-400')}>
+                  {automationActionState.message}
+                </p>
+              )}
+            </div>
+          ) : null}
+        </section>
+      )}
+
+      {/* Tab: Setup */}
+      {activeTab === 'setup' && (
+        <div className="space-y-6">
           <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
             <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">Connector Status</h2>
             <div className="mt-5 space-y-3">
@@ -673,7 +752,7 @@ export function PersonalHQView() {
 
               <div className="mt-4 flex items-center justify-between gap-4">
                 <p className="text-[11px] text-slate-500">
-                  WAI now has a real OAuth callback and MCP tool discovery path. Complete auth once, then founder actions can use Gmail and Calendar directly.
+                  Complete OAuth once, then all founder actions can use Gmail and Calendar directly.
                 </p>
                 <button
                   onClick={() => void handleGoogleMcpAuth()}
@@ -689,23 +768,54 @@ export function PersonalHQView() {
               )}
             </div>
           </section>
-
-          <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
-            <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">Recent Personal Docs</h2>
-            <div className="mt-4 space-y-3">
-              {data.recentDocuments.slice(0, 5).map((doc) => (
-                <div key={doc.relativePath} className="rounded-2xl border border-white/5 bg-black/25 px-4 py-3">
-                  <p className="text-xs font-black uppercase tracking-[0.15em] text-white">{doc.name}</p>
-                  <p className="mt-1 text-[10px] font-mono text-slate-600">{doc.relativePath}</p>
-                </div>
-              ))}
-              {data.recentDocuments.length === 0 && (
-                <p className="text-xs text-slate-500">No personal documents yet. Use CEO Intake with a `create_document` or `send_report` flow.</p>
-              )}
-            </div>
-          </section>
         </div>
-      </div>
+      )}
+
+      {/* Tab: Profile */}
+      {activeTab === 'profile' && (
+        <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">Identity Context</h2>
+              <p className="mt-1 text-xs text-slate-500">What the assistant should know and use by default.</p>
+            </div>
+            {saveState.status !== 'idle' && (
+              <Badge variant={saveState.status === 'done' ? 'done' : saveState.status === 'error' ? 'error' : 'warning'}>
+                {saveState.status === 'saving' ? 'SAVING' : saveState.status === 'done' ? 'SAVED' : 'ERROR'}
+              </Badge>
+            )}
+          </div>
+
+          <div className="mt-6 grid gap-5 md:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Display Name</span>
+              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-[#7CF6E6]/40" />
+            </label>
+            <label className="space-y-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Primary Email</span>
+              <input value={primaryEmail} onChange={(e) => setPrimaryEmail(e.target.value)} placeholder="neb@example.com" className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-[#7CF6E6]/40" />
+            </label>
+            <label className="space-y-2 md:col-span-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Assistant Style</span>
+              <input value={assistantStyle} onChange={(e) => setAssistantStyle(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-[#7CF6E6]/40" />
+            </label>
+            <label className="space-y-2 md:col-span-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Priorities</span>
+              <textarea value={prioritiesText} onChange={(e) => setPrioritiesText(e.target.value)} rows={5} className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-[#7CF6E6]/40" />
+            </label>
+          </div>
+
+          <div className="mt-6 flex items-center justify-between gap-4">
+            <p className="text-xs text-slate-500">
+              The CEO Intake reads this context before planning personal actions.
+            </p>
+            <button onClick={() => void handleSave()} className="rounded-2xl border border-[#7CF6E6]/30 bg-[#7CF6E6]/10 px-5 py-2.5 text-[11px] font-black uppercase tracking-[0.25em] text-[#7CF6E6] transition hover:bg-[#7CF6E6]/18">
+              Save Profile
+            </button>
+          </div>
+          {saveState.message && <p className={clsx('mt-3 text-xs', saveState.status === 'error' ? 'text-rose-400' : 'text-slate-500')}>{saveState.message}</p>}
+        </section>
+      )}
     </div>
   )
 }

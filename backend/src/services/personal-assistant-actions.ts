@@ -7,6 +7,8 @@ export type PersonalAssistantQuickActionId =
   | 'calendar_today'
   | 'drive_recent_files'
   | 'daily_founder_brief'
+  | 'important_emails_today'
+  | 'pre_meeting_brief'
 
 export interface PersonalAssistantQuickActionResult {
   actionId: PersonalAssistantQuickActionId
@@ -28,6 +30,10 @@ export function getPersonalAssistantQuickActionPrompt(
       return 'Mostrami i file recenti su Google Drive'
     case 'daily_founder_brief':
       return 'Genera il daily founder brief di oggi'
+    case 'important_emails_today':
+      return 'Mostrami le email importanti di oggi: filtra le email ad alta priorità o non lette, mostrami mittente, oggetto, breve preview e un indicatore di urgenza per ciascuna'
+    case 'pre_meeting_brief':
+      return 'Prepara un pre-meeting brief: leggi gli eventi di oggi e domani da Google Calendar, per ogni meeting imminente componi un brief con partecipanti, oggetto e note utili'
     default:
       return null
   }

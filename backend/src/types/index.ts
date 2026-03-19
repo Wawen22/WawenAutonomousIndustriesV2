@@ -401,6 +401,12 @@ export type CapabilityHealthState =
   | 'failing'
   | 'disabled'
 
+export type CapabilityFreshnessState =
+  | 'fresh'
+  | 'aging'
+  | 'stale'
+  | 'unknown'
+
 export interface Capability {
   id: string
   type: CapabilityType
@@ -441,6 +447,13 @@ export interface CapabilityHealth {
   message: string
   checkedAt: string
   missingRequirements: string[]
+  // T099 – health depth
+  freshness?: CapabilityFreshnessState
+  lastSuccessAt?: string
+  lastFailedAt?: string
+  driftWarnings?: string[]
+  reasonCode?: string
+  details?: string[]
 }
 
 export interface CapabilityAuditSummary {
