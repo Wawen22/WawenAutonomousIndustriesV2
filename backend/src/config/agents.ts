@@ -47,7 +47,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'executive',
     model_id: 'gpt-5.4',
     config: makeConfig({
-      tools: ['supabase_read', 'supabase_write_tasks', 'supabase_write_events', 'telegram_notify'],
+      tools: ['supabase_read', 'supabase_write_tasks', 'supabase_write_events', 'telegram_notify', 'file_export'],
       maxCostPerTaskUsd: 20,
       thinkingLevel: 'high',
       canReadAllTasks: true,
@@ -182,7 +182,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'consulting',
     model_id: 'gpt-5.4',
     config: makeConfig({
-      tools: ['supabase_read', 'supabase_write_tasks', 'email', 'browser'],
+      tools: ['supabase_read', 'supabase_write_tasks', 'email', 'browser', 'file_export'],
       maxCostPerTaskUsd: 15,
       thinkingLevel: 'high',
       canReadAllTasks: true,
@@ -197,7 +197,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'consulting',
     model_id: 'gpt-5.4',
     config: makeConfig({
-      tools: ['browser', 'file_system', 'supabase_read'],
+      tools: ['browser', 'file_system', 'supabase_read', 'file_export'],
       maxCostPerTaskUsd: 10,
     }),
   },
@@ -211,7 +211,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'marketing',
     model_id: 'gpt-5.4',
     config: makeConfig({
-      tools: ['supabase_read', 'browser', 'email'],
+      tools: ['supabase_read', 'browser', 'email', 'file_export'],
       maxCostPerTaskUsd: 10,
       thinkingLevel: 'high',
       canSendEmail: true,
@@ -225,7 +225,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'marketing',
     model_id: 'gemini-2.5-flash',
     config: makeConfig({
-      tools: ['file_system', 'browser', 'supabase_read'],
+      tools: ['file_system', 'browser', 'supabase_read', 'file_export'],
       maxCostPerTaskUsd: 2,
     }),
   },
@@ -237,7 +237,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'marketing',
     model_id: 'gemini-2.5-flash',
     config: makeConfig({
-      tools: ['browser', 'supabase_read', 'email'],
+      tools: ['browser', 'supabase_read', 'email', 'file_export'],
       maxCostPerTaskUsd: 1,
       canSendEmail: true,
     }),
@@ -266,7 +266,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'ops',
     model_id: 'gpt-5.4',
     config: makeConfig({
-      tools: ['supabase_read', 'supabase_write_events', 'email', 'telegram_notify'],
+      tools: ['supabase_read', 'supabase_write_events', 'email', 'telegram_notify', 'file_export'],
       maxCostPerTaskUsd: 2,
       canReadAllTasks: true,
       canSendEmail: true,
@@ -281,7 +281,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'ops',
     model_id: 'gemini-2.5-flash',
     config: makeConfig({
-      tools: ['file_system', 'supabase_read', 'supabase_write_events'],
+      tools: ['file_system', 'supabase_read', 'supabase_write_events', 'file_export'],
       maxCostPerTaskUsd: 2,
     }),
   },

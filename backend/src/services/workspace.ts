@@ -28,6 +28,10 @@ export function getProjectWorkspacePath(clientSlug: string, projectSlug: string)
   return join(WORKSPACE_ROOT, clientSlug, projectSlug)
 }
 
+export function getProjectOutputPath(clientSlug: string, projectSlug: string): string {
+  return join(getProjectWorkspacePath(clientSlug, projectSlug), 'output')
+}
+
 export function getProjectRepoPath(clientSlug: string, projectSlug: string): string {
   return join(getProjectWorkspacePath(clientSlug, projectSlug), 'repo')
 }
@@ -35,6 +39,23 @@ export function getProjectRepoPath(clientSlug: string, projectSlug: string): str
 /** Relative path stored in Supabase (portable across machines) */
 export function getRelativeProjectPath(clientSlug: string, projectSlug: string): string {
   return `workspace/${clientSlug}/${projectSlug}`
+}
+
+export function getPersonalWorkspacePath(ownerSlug: string = 'neb'): string {
+  return join(WORKSPACE_ROOT, 'personal', ownerSlug)
+}
+
+export function getPersonalOutputPath(ownerSlug: string = 'neb'): string {
+  return join(getPersonalWorkspacePath(ownerSlug), 'output')
+}
+
+export function resolveWorkspacePath(relativeOrAbsolutePath: string): string {
+  if (relativeOrAbsolutePath.startsWith(WORKSPACE_ROOT)) {
+    return relativeOrAbsolutePath
+  }
+
+  const normalized = relativeOrAbsolutePath.replace(/^workspace\//, '')
+  return join(WORKSPACE_ROOT, normalized)
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +89,7 @@ export async function createProjectWorkspace(
   await createClientWorkspace(clientSlug)
 
   // Create project dir and subdirs
-  for (const subdir of ['deliverables', 'assets', 'drafts']) {
+  for (const subdir of ['deliverables', 'assets', 'drafts', 'output']) {
     await mkdir(join(projectPath, subdir), { recursive: true })
   }
 
@@ -130,6 +151,15 @@ _Any additional context._
   await writeFile(join(projectPath, 'PROGRESS.md'), progress, 'utf-8')
 
   return projectPath
+}
+
+export async function createPersonalWorkspace(ownerSlug: string = 'neb'): Promise<string> {
+  const workspacePath = getPersonalWorkspacePath(ownerSlug)
+  for (const subdir of ['output', 'assets', 'drafts']) {
+    await mkdir(join(workspacePath, subdir), { recursive: true })
+  }
+
+  return workspacePath
 }
 
 // ---------------------------------------------------------------------------

@@ -126,10 +126,10 @@
 
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
-| T080 | Tool Registry per agente | ⬜ Todo | Claude | 1 | `backend/src/services/tool-executor.ts` — ogni agente dichiara tool in `agents.ts`; ToolExecutor li esegue e logga su `runs` |
+| T080 | Tool Registry per agente | ✅ Done | Codex | 1 | `backend/src/services/tool-executor.ts` live — validazione permessi/env, esecuzione tool e logging su `runs/events` |
 | T081 | Web Search tool | ⬜ Todo | Claude | 1 | Brave Search API (free tier) o Serper — `searchWeb()` disponibile ad Analyst, CEO, Consulting Lead |
-| T082 | Send Email tool | ⬜ Todo | Claude | 1 | Wrapper SendGrid già configurato — `sendEmail({to, subject, body})` disponibile a tutti gli agenti |
-| T083 | File Export tool | ⬜ Todo | Claude | 2 | Salva Markdown/TXT/CSV in `workspace/output/` + link diretto in notifica Telegram |
+| T082 | Send Email tool | ⬜ Todo | Claude | 1 | Wrapper Resend da implementare — `sendEmail({to, subject, body})` disponibile a tutti gli agenti |
+| T083 | File Export tool | 🔄 In Progress | Codex | 2 | MVP live: export reale in `workspace/output/` / `workspace/personal/neb/output/` via ToolExecutor; deep-link Telegram/UI pending |
 
 ### Fase 2 — Skills System
 
@@ -141,7 +141,7 @@
 
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
-| T085 | CEO personal task routing | ⬜ Todo | Claude | 1 | Nuove azioni CEO Intake: `personal_research`, `weekly_digest`, `create_document`, `send_report`; Neb può chiedere "ricerca X e mandamela per mail" |
+| T085 | CEO personal task routing | 🔄 In Progress | Codex | 1 | `create_document` già live nel CEO Intake; mancano `personal_research`, `weekly_digest`, `send_report` |
 
 ### Fase 4 — MCP Integration (M10)
 
@@ -154,6 +154,9 @@
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
 | T087 | WhatsApp via Baileys o Slack | ⬜ Todo | Claude | 3 | Canale secondario — solo dopo Fase 3 stabile |
+| T088 | Dual-mode shell: Company / Personal | ⬜ Todo | Codex | 1 | Switch globale dashboard + app state condiviso; modalità Company resta Mission Control, modalità Personal semplifica vista e routing |
+| T089 | Personal dashboard shell + JARVIS transition | ⬜ Todo | Codex | 2 | Navbar e layout dedicati: niente Revenue/Team/Founder Ops in Personal; transizione visuale intenzionale tra le due modalità |
+| T090 | Personal workspace + identity context | ⬜ Todo | Codex | 1 | `workspace/personal/neb/` come base persistente; profilo, preferenze, note e documenti personali disponibili al CEO Intake |
 
 ---
 
@@ -170,6 +173,16 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-19 — Sessione 37: M9 foundation avviata — dashboard green + ToolExecutor + File Export MVP
+
+- **STABILITY** dashboard tornata `typecheck` green: rimossi import/tipi inutilizzati e fix ReactNode in `Overview.tsx`
+- **T080 DONE** nuovo `backend/src/services/tool-executor.ts`: valida permessi agente e env vars, esegue tool concreti e logga `runs/events`
+- **T083 MVP** nuovo tool `file_export` registrato e concesso agli agenti che producono documenti; export reale su `workspace/output/` e `workspace/personal/neb/output/`
+- **CEO INTAKE** prima action personale live: `create_document` nel parser NL del CEO, basata su `file_export`
+- **WORKSPACE** aggiunti helper per personal workspace e cartella `output/`; i nuovi project workspace includono `output/`
+- **ALIGNMENT** backend description ripulita dal riferimento a OpenClaw; tool email riallineato a Resend; README aggiornato con milestone M9-M11
+- **SMOKE TEST** verificato export reale di `workspace/personal/neb/output/ceo-note.md` (logging Supabase non verificato nel test shell senza `.env`)
 
 ### 2026-03-19 — Sessione 36: Nuova roadmap M9-M11 definita — Tool Foundation + Personal Assistant Mode
 

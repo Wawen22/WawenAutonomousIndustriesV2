@@ -71,10 +71,10 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
   },
   email: {
     id: 'email',
-    name: 'Email (SendGrid)',
-    description: 'Send emails to clients and stakeholders',
+    name: 'Email (Resend)',
+    description: 'Send emails to clients and stakeholders via Resend',
     category: 'communication',
-    requiredEnvVars: ['SENDGRID_API_KEY'],
+    requiredEnvVars: ['RESEND_API_KEY', 'RESEND_FROM_EMAIL'],
   },
   telegram_notify: {
     id: 'telegram_notify',
@@ -94,6 +94,13 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     id: 'file_system',
     name: 'File System',
     description: 'Read and write files in the project workspace',
+    category: 'system',
+    requiredEnvVars: [],
+  },
+  file_export: {
+    id: 'file_export',
+    name: 'File Export',
+    description: 'Export generated documents into workspace/output for founder or project workflows',
     category: 'system',
     requiredEnvVars: [],
   },

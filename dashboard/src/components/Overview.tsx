@@ -6,7 +6,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
-import { Stat } from './ui/Stat.js'
 import { Badge } from './ui/Badge.js'
 import { Panel } from './ui/Panel.js'
 import { Icon } from './ui/Icon.js'
@@ -15,12 +14,11 @@ import {
   useEventsWithContext,
   useTasks,
   useProjectState,
-  useRecentRuns,
   useAgentStats,
   usePayments
 } from '../hooks/useSupabaseRealtime.js'
 import { AgentDetailSidebar } from './AgentDetailSidebar.js'
-import type { Agent, AgentStatus, Task, SystemEventWithContext } from '../types/index.js'
+import type { Agent, AgentStatus, SystemEventWithContext } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Constants & Styles
@@ -57,9 +55,9 @@ function InfoTooltip({ text }: { text: string }) {
   return (
     <div className="group relative">
       <Icon name="info" size={12} className="text-slate-600 hover:text-[#00D4FF] cursor-help transition-colors" />
-      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-56 p-3 rounded-xl bg-[#0A1628] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[999] pointer-events-none scale-95 group-hover:scale-100">
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-56 p-3 rounded-xl bg-[#0A1628] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[9999]">
         <p className="text-[10px] leading-relaxed text-slate-300 font-medium uppercase tracking-wider">{text}</p>
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 w-2.5 h-2.5 bg-[#0A1628] border-l border-t border-white/10 rotate-45 -mb-1.5" />
+        <div className="absolute top-full left-1/2 -translate-x-1/2 w-2.5 h-2.5 bg-[#0A1628] border-r border-b border-white/10 rotate-45 -mt-1.5" />
       </div>
     </div>
   )
@@ -125,7 +123,7 @@ function TerminalFeed({ events }: { events: SystemEventWithContext[] }) {
                 {e.type.toUpperCase()}
               </span>
               <span className="truncate">
-                {e.payload['message'] || JSON.stringify(e.payload).slice(0, 60)}
+                {typeof e.payload['message'] === 'string' ? e.payload['message'] : JSON.stringify(e.payload).slice(0, 60)}
               </span>
               {idx === 0 && <span className="animate-blink">_</span>}
             </div>

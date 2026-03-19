@@ -4,14 +4,12 @@
 // ============================================================
 
 import { useMemo, useState } from 'react'
-import { clsx } from 'clsx'
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns'
-import { Panel } from './ui/Panel.js'
 import { Badge } from './ui/Badge.js'
 import { Odometer } from './ui/Odometer.js'
 import { Icon } from './ui/Icon.js'
 import { useClients, useInvoicedProjects, usePayments } from '../hooks/useSupabaseRealtime.js'
-import type { Payment, Project, ProjectType } from '../types/index.js'
+import type { Payment, ProjectType } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Constants & Styles
@@ -20,11 +18,6 @@ import type { Payment, Project, ProjectType } from '../types/index.js'
 const ALL_TYPES: (ProjectType | 'all')[] = [
   'all', 'website', 'app', 'saas', 'consulting', 'ai', 'marketing', 'content', 'copywriting', 'design', 'automation', 'other',
 ]
-
-const TYPE_BADGE: Record<ProjectType, string> = {
-  website: 'dev', app: 'dev_complex', saas: 'dev_complex', consulting: 'consulting', ai: 'analysis',
-  marketing: 'marketing', content: 'content', copywriting: 'content', design: 'default', automation: 'ops', other: 'default',
-}
 
 // ---------------------------------------------------------------------------
 // Sub-component: Weekly Glitch Chart

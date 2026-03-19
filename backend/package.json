@@ -1,7 +1,7 @@
 {
   "name": "@wai/backend",
   "version": "0.1.0",
-  "description": "WAI Backend - OpenClaw agent orchestration and services",
+  "description": "WAI Backend - multi-agent orchestration and founder services",
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file ../.env src/index.ts",

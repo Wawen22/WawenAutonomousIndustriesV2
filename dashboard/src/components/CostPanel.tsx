@@ -3,11 +3,9 @@
 // High-tech cost tracking with Odometer and Model diagnostics.
 // ============================================================
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
-import { Panel } from './ui/Panel.js'
-import { Stat } from './ui/Stat.js'
 import { Badge } from './ui/Badge.js'
 import { Odometer } from './ui/Odometer.js'
 import { Icon } from './ui/Icon.js'
@@ -32,7 +30,7 @@ function InfoTooltip({ text }: { text: string }) {
   return (
     <div className="group relative inline-block ml-2">
       <Icon name="info" size={10} className="text-slate-600 hover:text-cyan-400 cursor-help transition-colors" />
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 rounded-lg bg-[#0A1628] border border-white/10 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[150] pointer-events-none">
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 rounded-lg bg-[#0A1628] border border-white/10 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[9999]">
         <p className="text-[8px] leading-relaxed text-slate-400 font-black uppercase tracking-widest">{text}</p>
         <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0A1628] border-r border-b border-white/10 rotate-45 -mt-1" />
       </div>

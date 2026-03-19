@@ -3,14 +3,12 @@
 // Categorized "Blueprint Browser" with Immersive Command Modal.
 // ============================================================
 
-import { useState, useMemo, useEffect, Fragment, useCallback } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
-import { Badge } from './ui/Badge.js'
 import { Stat } from './ui/Stat.js'
 import { Icon, type IconName } from './ui/Icon.js'
-import { ExpandableText } from './ui/ExpandableText.js'
 import { AgentDetailSidebar } from './AgentDetailSidebar.js'
 import { 
   useClients, 
@@ -22,7 +20,7 @@ import {
 } from '../hooks/useSupabaseRealtime.js'
 import { getClientColor } from '../lib/clientColors.js'
 import { getAgentColor } from '../lib/agentColors.js'
-import type { Project, ProjectStatus, ProjectType, Agent, Task } from '../types/index.js'
+import type { Project, ProjectStatus, ProjectType, Agent } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Constants & Mappings
@@ -377,7 +375,7 @@ function BlueprintCard({ project, involvedAgents, onSelect }: { project: Project
 // ---------------------------------------------------------------------------
 
 export function ProjectsView() {
-  const { data: projects, loading: pLoad, error } = useProjects()
+  const { data: projects, loading: pLoad } = useProjects()
   const { data: clients } = useClients()
   const { data: agents } = useAgents()
   const { data: tasks } = useTasks()

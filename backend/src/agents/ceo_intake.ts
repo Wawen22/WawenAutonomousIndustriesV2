@@ -28,6 +28,7 @@ import {
 } from '../services/workspace.js'
 import { log, recordEvent } from '../services/logger.js'
 import { buildSystemStatusReport } from '../services/status_report.js'
+import { executeTool } from '../services/tool-executor.js'
 import {
   executeFounderTaskAction,
   formatFounderTaskActionMessage,
@@ -109,6 +110,7 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - retry_task         → params: task_ref, reason?
 - approve_task       → params: task_ref, reason?
 - reject_task        → params: task_ref, reason?
+- create_document    → params: title, content, filename?, format?, client_slug?, project_slug?, mode?
 - invoice_project    → params: client_slug, project_slug, amount_usd?
 - mark_project_paid  → params: client_slug, project_slug, amount_usd
 
@@ -597,6 +599,46 @@ async function executeAction(
       })
 
       return formatFounderTaskActionMessage(result)
+    }
+
+    // ── create_document ───────────────────────────────────────────────────
+    case 'create_document': {
+      const title = getString(params, 'title')
+      const content = getString(params, 'content')
+      const filename = getString(params, 'filename')
+      const format = getString(params, 'format')
+      const clientSlug = getString(params, 'client_slug')
+      const projectSlug = getString(params, 'project_slug')
+      const mode = getString(params, 'mode')
+
+      if (!title) throw new Error('title mancante per create_document')
+      if (!content) throw new Error('content mancante per create_document')
+
+      const result = await executeTool('file_export', {
+        title,
+        content,
+        ...(filename ? { filename } : {}),
+        ...(format === 'md' || format === 'txt' || format === 'csv' || format === 'json' || format === 'html' ? { format } : {}),
+        ...(clientSlug ? { clientSlug } : {}),
+        ...(projectSlug ? { projectSlug } : {}),
+        ...(mode === 'company' || mode === 'personal' ? { mode } : {}),
+      }, {
+        agentId: 'ceo',
+      })
+
+      await recordEvent('founder_command', {
+        payload: {
+          command: 'nl_create_document',
+          source: 'natural_language',
+          title,
+          path: result.relativePath,
+          mode: mode === 'company' ? 'company' : 'personal',
+          ...(clientSlug ? { client_slug: clientSlug } : {}),
+          ...(projectSlug ? { project_slug: projectSlug } : {}),
+        },
+      })
+
+      return `📝 ${result.summary}`
     }
 
     // ── invoice_project ───────────────────────────────────────────────────

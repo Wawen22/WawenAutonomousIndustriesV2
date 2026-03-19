@@ -164,6 +164,9 @@ Full reference → [docs/FOUNDER_OPERATIONS_PLAYBOOK.md](docs/FOUNDER_OPERATIONS
 | M6 | Deploy to Hetzner VPS | ⏸ Deferred (final infra step) |
 | M7 | First revenue-generating output | ✅ Done — Wawen22 LandingPage $222 |
 | M8 | Migrate to personal mini PC | ⬜ Todo |
+| M9 | Tool Foundation + Personal Assistant Mode | 🔄 In Progress |
+| M10 | MCP Integration (Gmail, Calendar, Search) | ⬜ Todo |
+| M11 | Multi-channel (WhatsApp/Slack) | ⬜ Todo |
 
 ---
 

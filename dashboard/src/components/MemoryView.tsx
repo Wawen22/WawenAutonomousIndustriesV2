@@ -6,14 +6,13 @@
 import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { format, formatDistanceToNowStrict } from 'date-fns'
-import { Panel } from './ui/Panel.js'
 import { Badge } from './ui/Badge.js'
 import { Icon } from './ui/Icon.js'
 import { ExpandableText } from './ui/ExpandableText.js'
 import { AgentDetailSidebar } from './AgentDetailSidebar.js'
 import { useAgentMemories, useAgents, useAgentStats, useTasks, useEventsWithContext } from '../hooks/useSupabaseRealtime.js'
 import { getAgentColor } from '../lib/agentColors.js'
-import type { AgentMemory, Agent, Task, SystemEventWithContext } from '../types/index.js'
+import type { AgentMemory, Agent } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -117,7 +116,7 @@ function KnowledgeCell({
 // ---------------------------------------------------------------------------
 
 export function MemoryView() {
-  const { data: memories, loading: mLoad, error } = useAgentMemories(500)
+  const { data: memories, loading: mLoad } = useAgentMemories(500)
   const { data: agents,   loading: aLoad } = useAgents()
   const { runCounts, lastRuns } = useAgentStats()
   const { data: tasks } = useTasks('in_progress')
