@@ -120,6 +120,8 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - calendar_today     → params: calendar_id?
 - drive_find_file    → params: query, limit?, file_type?
 - drive_read_file    → params: file_id?, query?, file_type?
+- drive_recent_files → params: days?, limit?, file_type?
+- daily_founder_brief → params: inbox_query?, drive_days?
 - retry_task         → params: task_ref, reason?
 - approve_task       → params: task_ref, reason?
 - reject_task        → params: task_ref, reason?
@@ -153,6 +155,8 @@ ${clientContext}
 17. Use calendar_today when Neb asks for today's agenda, meetings, or calendar schedule.
 18. Use drive_find_file when Neb asks to find/search a file in Google Drive.
 19. Use drive_read_file when Neb asks to open/read the content of a Drive document or file.
+20. Use drive_recent_files when Neb asks for recent/recently modified files in Google Drive.
+21. Use daily_founder_brief when Neb asks for a daily founder briefing combining inbox, calendar, and recent Drive activity.
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -184,6 +188,76 @@ interface IntentResponse {
   action: 'ask' | 'execute' | 'reply' | 'unclear'
   message: string
   commands?: CommandItem[]
+}
+
+function detectFounderShortcutIntent(text: string): IntentResponse | null {
+  const normalized = text.trim().toLowerCase()
+  if (!normalized) {
+    return null
+  }
+
+  if (/(daily founder brief|brief giornaliero|brief quotidiano|daily brief)/i.test(normalized)) {
+    return {
+      action: 'execute',
+      message: 'Genero il daily founder brief.',
+      commands: [{ type: 'daily_founder_brief', params: {} }],
+    }
+  }
+
+  if (
+    /(file recenti|recent files|recenti su google drive|recenti di google drive|ultimi file.*google drive|google drive.*file recenti)/i.test(normalized) &&
+    /google drive|drive/i.test(normalized)
+  ) {
+    return {
+      action: 'execute',
+      message: 'Recupero i file recenti da Google Drive.',
+      commands: [{ type: 'drive_recent_files', params: {} }],
+    }
+  }
+
+  if (/(ultima email|latest email|last email|leggi l'ultima email|leggi ultima mail|ultima mail)/i.test(normalized)) {
+    return {
+      action: 'execute',
+      message: 'Recupero l’ultima email.',
+      commands: [{ type: 'gmail_latest_message', params: {} }],
+    }
+  }
+
+  if (/(inbox|email ricevute|riassumimi le email|summary inbox|summarize inbox)/i.test(normalized)) {
+    return {
+      action: 'execute',
+      message: 'Controllo e riassumo la inbox.',
+      commands: [{ type: 'gmail_inbox_summary', params: {} }],
+    }
+  }
+
+  if (/(agenda di oggi|calendar today|today agenda|today calendar|eventi di oggi|riunioni di oggi)/i.test(normalized)) {
+    return {
+      action: 'execute',
+      message: 'Recupero l’agenda di oggi.',
+      commands: [{ type: 'calendar_today', params: {} }],
+    }
+  }
+
+  const driveReadMatch = text.match(/(?:leggi|apri|read|open)\s+(?:il\s+file\s+)?(.+?)\s+(?:su\s+google\s+drive|su\s+drive)$/i)
+  if (driveReadMatch?.[1]?.trim()) {
+    return {
+      action: 'execute',
+      message: 'Recupero il contenuto del file da Google Drive.',
+      commands: [{ type: 'drive_read_file', params: { query: driveReadMatch[1].trim() } }],
+    }
+  }
+
+  const driveFindMatch = text.match(/(?:trova|cerca|find|search)\s+(?:su\s+google\s+drive\s+)?(?:il\s+file\s+)?(.+?)(?:\s+su\s+google\s+drive|\s+su\s+drive)?$/i)
+  if (driveFindMatch?.[1]?.trim() && /google drive|drive/i.test(normalized)) {
+    return {
+      action: 'execute',
+      message: 'Cerco il file su Google Drive.',
+      commands: [{ type: 'drive_find_file', params: { query: driveFindMatch[1].trim() } }],
+    }
+  }
+
+  return null
 }
 
 function parseIntentResponse(raw: string): IntentResponse | null {
@@ -290,6 +364,10 @@ function isOnOrAfter(iso: string | null | undefined, since: Date): boolean {
 
 function buildWeeklyDigestFilename(now = new Date()): string {
   return `weekly-digest-${now.toISOString().slice(0, 10)}.md`
+}
+
+function buildDailyFounderBriefFilename(now = new Date()): string {
+  return `daily-founder-brief-${now.toISOString().slice(0, 10)}.md`
 }
 
 function buildSearchEvidence(search: WebSearchResponse): string {
@@ -541,6 +619,47 @@ async function resolveDriveFileFromQuery(query: string, fileType?: string): Prom
   const matches = extractDriveFileMatches(searchResult.text, 5)
   const nonFolderMatch = matches.find((item) => item.mimeType !== 'application/vnd.google-apps.folder')
   return nonFolderMatch ?? matches[0] ?? null
+}
+
+function buildRecentDriveQuery(days: number): string {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+  return `modifiedTime > '${since}' and trashed = false`
+}
+
+function buildFounderDailyBriefReport(input: {
+  founderName: string
+  userGoogleEmail: string
+  timezone: string
+  inboxQuery: string
+  inboxSummary: string
+  calendarSummary: string
+  recentDriveSummary: string
+  generatedAt?: Date
+}): string {
+  const generatedAt = input.generatedAt ?? new Date()
+  const sections: string[] = [
+    `# Daily Founder Brief — ${generatedAt.toISOString().slice(0, 10)}`,
+    '',
+    `- Founder: ${input.founderName}`,
+    `- Google account: ${input.userGoogleEmail}`,
+    `- Timezone: ${input.timezone}`,
+    `- Generated at: ${generatedAt.toISOString()}`,
+    `- Inbox query: ${input.inboxQuery}`,
+    '',
+    '## Inbox',
+    '',
+    input.inboxSummary.trim() || 'No inbox summary available.',
+    '',
+    '## Calendar Today',
+    '',
+    input.calendarSummary.trim() || 'No calendar summary available.',
+    '',
+    '## Recent Drive Activity',
+    '',
+    input.recentDriveSummary.trim() || 'No recent Drive activity available.',
+  ]
+
+  return sections.join('\n').trim()
 }
 
 async function summarizeFounderCalendar(rawEvents: string): Promise<string> {
@@ -1079,6 +1198,132 @@ async function executeAction(
       }
     }
 
+    // ── drive_recent_files ───────────────────────────────────────────────
+    case 'drive_recent_files': {
+      const days = Math.max(1, Math.min(getNumber(params, 'days') ?? 7, 30))
+      const limit = Math.max(1, Math.min(getNumber(params, 'limit') ?? 8, 15))
+      const fileType = getString(params, 'file_type')
+      const query = buildRecentDriveQuery(days)
+
+      try {
+        const result = await callGoogleWorkspaceMcpTool('search_drive_files', {
+          query,
+          page_size: limit,
+          ...(fileType ? { file_type: fileType } : {}),
+          detailed: true,
+        })
+
+        if (/No files found/i.test(result.text)) {
+          return `📂 Nessun file Drive modificato negli ultimi ${days} giorni.`
+        }
+
+        await recordEvent('founder_command', {
+          payload: {
+            command: 'nl_drive_recent_files',
+            source: 'natural_language',
+            days,
+            limit,
+            ...(fileType ? { file_type: fileType } : {}),
+          },
+        })
+
+        return `🗂️ File Drive recenti (ultimi ${days} giorni)\n\n${truncateReplyText(result.text)}`.trim()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (/authorization required/i.test(message)) {
+          return '🔐 Google Drive MCP non ancora autorizzato. Completa prima il Google Workspace auth da Personal HQ, poi riprova.'
+        }
+        throw err
+      }
+    }
+
+    // ── daily_founder_brief ──────────────────────────────────────────────
+    case 'daily_founder_brief': {
+      const inboxQuery = normalizeFounderGmailQuery(
+        getString(params, 'inbox_query') ?? 'in:inbox newer_than:1d -category:promotions -category:social'
+      )
+      const driveDays = Math.max(1, Math.min(getNumber(params, 'drive_days') ?? 7, 30))
+      const userGoogleEmail = await getGoogleWorkspaceUserEmail()
+      const personalContext = await getPersonalContext()
+      const { start, end } = getTodayWindowInLocalTimezone()
+
+      try {
+        const inboxSearch = await callGoogleWorkspaceMcpTool('search_gmail_messages', {
+          query: inboxQuery,
+          page_size: 5,
+        })
+        const inboxIds = extractMessageIdsFromGmailSearch(inboxSearch.text, 5)
+        const inboxMetadata = inboxIds.length > 0
+          ? await callGoogleWorkspaceMcpTool('get_gmail_messages_content_batch', {
+              message_ids: inboxIds,
+              format: 'metadata',
+            })
+          : null
+        const inboxSummary = inboxMetadata
+          ? await summarizeFounderInbox(inboxMetadata.text, inboxQuery)
+          : `No messages found for query: ${inboxQuery}`
+
+        const calendarResult = await callGoogleWorkspaceMcpTool('get_events', {
+          calendar_id: 'primary',
+          time_min: start,
+          time_max: end,
+          max_results: 12,
+          detailed: false,
+        })
+        const calendarSummary = /No events found/i.test(calendarResult.text)
+          ? 'No events today.'
+          : await summarizeFounderCalendar(calendarResult.text)
+
+        const driveResult = await callGoogleWorkspaceMcpTool('search_drive_files', {
+          query: buildRecentDriveQuery(driveDays),
+          page_size: 6,
+          detailed: true,
+        })
+        const driveSummary = /No files found/i.test(driveResult.text)
+          ? `No Drive files modified in the last ${driveDays} days.`
+          : driveResult.text
+
+        const title = `Daily Founder Brief — ${new Date().toISOString().slice(0, 10)}`
+        const report = buildFounderDailyBriefReport({
+          founderName: personalContext.profile.displayName,
+          userGoogleEmail,
+          timezone: personalContext.profile.timezone,
+          inboxQuery,
+          inboxSummary,
+          calendarSummary,
+          recentDriveSummary: truncateReplyText(driveSummary, 3000),
+        })
+
+        const exportResult = await executeTool('file_export', {
+          title,
+          filename: buildDailyFounderBriefFilename(),
+          format: 'md',
+          content: report,
+          mode: 'personal',
+        }, {
+          agentId: 'ceo',
+        })
+
+        await recordEvent('founder_command', {
+          payload: {
+            command: 'nl_daily_founder_brief',
+            source: 'natural_language',
+            inbox_query: inboxQuery,
+            drive_days: driveDays,
+            path: exportResult.relativePath,
+          },
+        })
+
+        return `🧠 Daily founder brief generato e salvato in \`${exportResult.relativePath}\`\n\n${truncateReplyText(report, 3500)}`.trim()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (/authorization required/i.test(message)) {
+          return '🔐 Google Workspace MCP non ancora autorizzato. Completa prima il Google Workspace auth da Personal HQ, poi riprova.'
+        }
+        throw err
+      }
+    }
+
     // ── create_client ─────────────────────────────────────────────────────
     case 'create_client': {
       const name = getString(params, 'name')
@@ -1569,6 +1814,36 @@ export async function runCeoNaturalLanguageHandler(
   notify: (msg: string) => Promise<void>
 ): Promise<void> {
   log.info({ chatId, text: text.substring(0, 120) }, 'CEO Intake: free-text received')
+
+  const shortcutIntent = detectFounderShortcutIntent(text)
+  if (shortcutIntent?.commands?.length) {
+    const summaries: string[] = []
+    let failed = false
+
+    for (const command of shortcutIntent.commands) {
+      try {
+        const summary = await executeAction(command, notify)
+        summaries.push(summary)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        log.error({ err, command: command.type }, 'CEO Intake: shortcut action execution error')
+        summaries.push(`❌ Errore in \`${command.type}\`: ${msg}`)
+        failed = true
+        break
+      }
+    }
+
+    const body = summaries.join('\n')
+    const finalMessage = failed
+      ? `⚠️ *Piano parzialmente eseguito:*\n\n${body}`
+      : summaries.length === 1
+        ? body
+        : `*Piano eseguito — ${summaries.length} step:*\n\n${body}`
+
+    await reply(finalMessage)
+    clearConversation(chatId)
+    return
+  }
 
   const clientContext = await buildClientContext()
 

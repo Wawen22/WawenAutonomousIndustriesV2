@@ -147,7 +147,7 @@
 
 | ID | Title | Status | Owner | Priority | Notes |
 |----|-------|--------|-------|----------|-------|
-| T086 | MCP integration layer | 🔄 In Progress | Codex | 2 | Runtime OAuth live con `backend/src/services/google-workspace-mcp.ts`, callback backend, tool discovery e founder actions `gmail_inbox_summary`, `gmail_latest_message`, `calendar_today`, `drive_find_file`, `drive_read_file`; advanced Drive flows pending |
+| T086 | MCP integration layer | 🔄 In Progress | Codex | 2 | Runtime OAuth live con `backend/src/services/google-workspace-mcp.ts`, callback backend, tool discovery e founder actions `gmail_inbox_summary`, `gmail_latest_message`, `calendar_today`, `drive_find_file`, `drive_read_file`, `drive_recent_files`, `daily_founder_brief`; advanced composed automations pending |
 
 ### Fase 5 — Multi-channel (M11)
 
@@ -173,6 +173,13 @@
 ---
 
 ## CHANGELOG
+
+### 2026-03-19 — Sessione 44: Daily Founder Brief + recent Drive activity
+
+- **FOUNDER BRIEF** nuova action `daily_founder_brief`: combina inbox, agenda di oggi e attività recenti su Google Drive, poi esporta il briefing in `workspace/personal/neb/output/daily-founder-brief-YYYY-MM-DD.md`
+- **DRIVE ACTION** nuova action `drive_recent_files`: restituisce i file Drive modificati di recente con query strutturata su `modifiedTime`
+- **VERIFY** smoke test end-to-end ok: `runCeoNaturalLanguageHandler()` ha generato davvero il daily founder brief e salvato il file personale; backend `typecheck` verde
+- **ROBUSTNESS** shortcut founder deterministici aggiunti nel CEO Intake per richieste ovvie (`file recenti su Google Drive`, `ultima email`, `agenda di oggi`, `daily founder brief`, ricerca/lettura file Drive), così i comandi chiari non dipendono più solo dal routing LLM
 
 ### 2026-03-19 — Sessione 43: Deterministic Gmail read + Google Drive founder retrieval
 

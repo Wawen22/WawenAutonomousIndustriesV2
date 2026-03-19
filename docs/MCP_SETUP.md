@@ -129,3 +129,5 @@ After Google Workspace MCP is connected, CEO Intake can already use:
 - `calendar_today`
 - `drive_find_file`
 - `drive_read_file`
+- `drive_recent_files`
+- `daily_founder_brief`
