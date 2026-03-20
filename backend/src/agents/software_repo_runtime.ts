@@ -927,6 +927,8 @@ Write COMPLETE, WORKING file contents. No placeholders. No "TODO" comments.
     filesBefore.warnings.length > 0 ? `\nRepo file loading warnings:\n- ${filesBefore.warnings.join('\n- ')}` : '',
   ].filter(Boolean).join('\n')
 
+  // Code generation requires reliable long-form structured JSON output.
+  // Free models (OpenRouter) get truncated on large file contents — use gpt-5.4 explicitly.
   const editResult = await runAgent(
     [
       { role: 'system', content: editSystemPrompt },
@@ -936,7 +938,7 @@ Write COMPLETE, WORKING file contents. No placeholders. No "TODO" comments.
       agentId,
       taskId: task.id,
       taskType,
-      requiresComplex: agentId === 'dev_general_1' || agentId === 'dev_saas_1',
+      modelOverride: 'gpt-5.4',
       tools: ['file_system', 'shell'],
       captureMemory: false,
     }

@@ -144,7 +144,7 @@ ${clientContext}
 6. A task description should be detailed enough for the CEO routing agent to understand the deliverable.
 7. Only ask (action: "ask") when you genuinely cannot determine a required field from context.
 8. **CRITICAL — ONE TASK PER PROJECT**: When creating work for a project, create EXACTLY ONE create_task command that covers the FULL deliverable. NEVER create 2 or 3 separate tasks for the same project in the same plan — this causes multiple Architect agents to run in parallel and collide on the same repository. One comprehensive task (e.g., "Crea landing page completa per [Client]") is always better than several partial tasks. If Neb asks to "launch tasks" or "start work" on a project, create ONE task that covers everything.
-9. When Neb asks to unblock/retry/relaunch a blocked task, use retry_task instead of creating a new task.
+9. When Neb asks to "lancia il lavoro" / "inizia il lavoro" / "start work" / "relaunch" / "riprendi" on a project: check EXISTING WAI STATE first. If there is a BLOCKED task for that project → use retry_task. If there is NO blocked task (tasks are completed, cancelled, or the project has no tasks at all) → use create_task to create new work. NEVER ask Neb for a task ID — determine the right action from context.
 10. When Neb asks to approve/confirm a task output, use approve_task. When Neb asks to reject/cancel/discard a task, use reject_task.
 11. When Neb asks to invoice a project or mark it paid, use invoice_project / mark_project_paid instead of generic create_task.
 12. task_ref may be a full UUID or a unique short prefix such as the 8-char IDs shown in Telegram/dashboard.
