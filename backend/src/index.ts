@@ -1366,19 +1366,32 @@ async function main(): Promise<void> {
     log.warn({ err }, 'Failed to update agent statuses (DB may not be ready yet)')
   }
 
-  // --- Start Telegram bot ---
-  try {
-    const bot = getTelegramBot()
-    void bot.start({
-      onStart: () => {
-        log.info('Telegram bot started')
-      },
-    }).catch((err: unknown) => {
-      log.warn({ err }, 'Telegram bot polling unavailable; backend will continue without Telegram polling')
-    })
-  } catch (err) {
-    log.error({ err }, 'Failed to start Telegram bot')
-  }
+  // --- Start Telegram bot (with retry for 409 hot-reload conflicts) ---
+  void (async () => {
+    const MAX_ATTEMPTS = 5
+    const RETRY_DELAY_MS = 15_000
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const bot = getTelegramBot()
+        await bot.start({
+          onStart: () => {
+            log.info({ attempt }, 'Telegram bot started')
+          },
+        })
+        return
+      } catch (err: unknown) {
+        const is409 =
+          err instanceof Error && err.message.includes('409')
+        if (is409 && attempt < MAX_ATTEMPTS) {
+          log.warn({ attempt }, `Telegram 409 conflict — retrying in ${RETRY_DELAY_MS / 1000}s (previous instance still polling)`)
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
+        } else {
+          log.warn({ err }, 'Telegram bot polling unavailable; backend will continue without Telegram polling')
+          return
+        }
+      }
+    }
+  })()
 
   // --- Ping LiteLLM ---
   const litellmOk = await pingLiteLLM()
