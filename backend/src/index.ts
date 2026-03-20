@@ -18,7 +18,7 @@ import {
   formatInvoiceProjectMessage,
   formatMarkProjectPaidMessage,
 } from './services/founder_revenue_actions.js'
-import { getTelegramBot, sendTelegramNotification } from './services/telegram.js'
+import { getTelegramBot } from './services/telegram.js'
 import { updateAgentStatus, getProjectState } from './services/supabase.js'
 import { getAllAgentIds } from './config/agents.js'
 import { pingLiteLLM } from './services/llm.js'
@@ -57,6 +57,13 @@ import {
   updateCapabilityGovernance,
   type CapabilityGovernanceUpdateInput,
 } from './services/capability-governance.js'
+import { runSkill, SkillPolicyError } from './services/skill-runner.js'
+import {
+  getWhatsAppStatus,
+  initWhatsAppSession,
+  disconnectWhatsApp,
+} from './services/whatsapp.js'
+import { sendFounderNotification } from './services/notification-router.js'
 import type {
   CapabilityAssignmentState,
   CapabilityAssignmentTargetType,
@@ -77,7 +84,8 @@ function isLocalRequest(req: IncomingMessage): boolean {
 
 function isAllowedDashboardOrigin(origin: string | undefined): boolean {
   if (!origin) return true
-  return origin === 'http://localhost:3000' || origin === 'http://127.0.0.1:3000'
+  // Accept any localhost/127.0.0.1 port — Vite may start on a different port when 3000 is taken
+  return origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')
 }
 
 function getRequestBaseUrl(req: IncomingMessage): string {
@@ -208,6 +216,61 @@ async function main(): Promise<void> {
           log.error({ err }, 'Capabilities registry API error')
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // POST /api/skills/:id/run — T100 Skill Execution Context
+    const skillRunMatch = url.pathname.match(/^\/api\/skills\/(.+)\/run$/)
+    if (skillRunMatch && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const skillId = decodeURIComponent(skillRunMatch[1] ?? '').trim()
+          if (!skillId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing skill id' }))
+            return
+          }
+
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+
+          const input = typeof payload['input'] === 'object' && payload['input'] !== null
+            ? payload['input'] as Record<string, unknown>
+            : {}
+
+          const forceApproval = payload['forceApproval'] === true
+
+          const result = await runSkill(
+            skillId,
+            input,
+            { source: 'dashboard:capabilities-panel', actorId: 'neb' },
+            forceApproval,
+          )
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, ...result }))
+        } catch (err) {
+          if (err instanceof SkillPolicyError) {
+            const statusCode = err.requiresApproval ? 403 : 400
+            res.writeHead(statusCode, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({
+              error: err.message,
+              ...(err.requiresApproval ? { requiresApproval: true } : {}),
+            }))
+            return
+          }
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Skill run API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
         }
       })()
       return
@@ -651,7 +714,7 @@ async function main(): Promise<void> {
           const result = await executeFounderTaskAction(taskId, action, {
             source: 'dashboard',
             reason,
-            notify: sendTelegramNotification,
+            notify: sendFounderNotification,
           })
 
           res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -1172,6 +1235,101 @@ async function main(): Promise<void> {
       return
     }
 
+    // GET /api/whatsapp/status — T101 WhatsApp channel status
+    if (url.pathname === '/api/whatsapp/status' && req.method === 'GET') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const status = getWhatsAppStatus()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(status))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'WhatsApp status API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    // POST /api/whatsapp/disconnect — T101 disconnect and clear WhatsApp session
+    if (url.pathname === '/api/whatsapp/disconnect' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          await disconnectWhatsApp()
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, message: 'WhatsApp session disconnected.' }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'WhatsApp disconnect API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    // POST /api/whatsapp/connect — T101 start or restart WhatsApp session
+    if (url.pathname === '/api/whatsapp/connect' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          void initWhatsAppSession()
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, message: 'WhatsApp session starting — check /api/whatsapp/status for QR code.' }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'WhatsApp connect API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    // POST /api/whatsapp/test-send — T101 send a test notification via all channels
+    if (url.pathname === '/api/whatsapp/test-send' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          await sendFounderNotification('🧪 WAI test notification — Telegram + WhatsApp delivery check.')
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, message: 'Test notification sent via all connected channels.' }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'WhatsApp test-send API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
     res.writeHead(404)
     res.end()
   })
@@ -1215,6 +1373,8 @@ async function main(): Promise<void> {
       onStart: () => {
         log.info('Telegram bot started')
       },
+    }).catch((err: unknown) => {
+      log.warn({ err }, 'Telegram bot polling unavailable; backend will continue without Telegram polling')
     })
   } catch (err) {
     log.error({ err }, 'Failed to start Telegram bot')
@@ -1229,10 +1389,15 @@ async function main(): Promise<void> {
   }
 
   // --- Start Ops / Finance / HR runtimes ---
-  startOpsMonitor(sendTelegramNotification)
-  startFinanceRuntime(sendTelegramNotification)
-  startHrRuntime(sendTelegramNotification)
+  startOpsMonitor(sendFounderNotification)
+  startFinanceRuntime(sendFounderNotification)
+  startHrRuntime(sendFounderNotification)
   startFounderAutomationRuntime()
+
+  // --- Start WhatsApp channel (T101) — non-blocking ---
+  void initWhatsAppSession().catch((err: unknown) => {
+    log.warn({ err }, 'WhatsApp session init failed at startup (will retry on connect request)')
+  })
 
   // --- Project state summary ---
   try {

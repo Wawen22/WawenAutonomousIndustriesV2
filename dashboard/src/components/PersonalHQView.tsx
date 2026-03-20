@@ -3,9 +3,9 @@ import { clsx } from 'clsx'
 import { Icon } from './ui/Icon.js'
 import { Badge } from './ui/Badge.js'
 import { usePersonalContext } from '../hooks/usePersonalContext.js'
-import type { PersonalAutomationStatus } from '../types/index.js'
+import type { PersonalAutomationStatus, WhatsAppStatus } from '../types/index.js'
 
-const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? 'http://localhost:3001'
+const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? ''
 
 interface SaveState {
   status: 'idle' | 'saving' | 'done' | 'error'
@@ -107,6 +107,9 @@ export function PersonalHQView() {
   const [automationActionState, setAutomationActionState] = useState<AutomationActionState>({ status: 'idle' })
   const [scheduleInput, setScheduleInput] = useState('')
   const [scheduleEditMode, setScheduleEditMode] = useState(false)
+  const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus | null>(null)
+  const [whatsAppLoading, setWhatsAppLoading] = useState(false)
+  const [whatsAppActionState, setWhatsAppActionState] = useState<{ status: 'idle' | 'working' | 'done' | 'error'; message?: string }>({ status: 'idle' })
 
   useEffect(() => {
     if (!data) return
@@ -146,6 +149,66 @@ export function PersonalHQView() {
   useEffect(() => {
     void fetchAutomationStatus()
   }, [fetchAutomationStatus])
+
+  const fetchWhatsAppStatus = useCallback(async () => {
+    try {
+      setWhatsAppLoading(true)
+      const response = await fetch(`${BACKEND_URL}/api/whatsapp/status`)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const payload = await response.json() as WhatsAppStatus
+      setWhatsAppStatus(payload)
+    } catch {
+      // silently ignore — WhatsApp is optional
+    } finally {
+      setWhatsAppLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchWhatsAppStatus()
+    // Poll for QR code while pending
+    const timer = setInterval(() => {
+      if (whatsAppStatus?.state === 'qr_pending') {
+        void fetchWhatsAppStatus()
+      }
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [fetchWhatsAppStatus, whatsAppStatus?.state])
+
+  async function handleWhatsAppConnect() {
+    try {
+      setWhatsAppActionState({ status: 'working', message: 'Starting WhatsApp session...' })
+      const response = await fetch(`${BACKEND_URL}/api/whatsapp/connect`, { method: 'POST' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      setWhatsAppActionState({ status: 'done', message: 'Session starting — scan the QR code below.' })
+      setTimeout(() => void fetchWhatsAppStatus(), 2000)
+    } catch (err) {
+      setWhatsAppActionState({ status: 'error', message: err instanceof Error ? err.message : 'Connect failed' })
+    }
+  }
+
+  async function handleWhatsAppDisconnect() {
+    try {
+      setWhatsAppActionState({ status: 'working', message: 'Disconnecting...' })
+      const response = await fetch(`${BACKEND_URL}/api/whatsapp/disconnect`, { method: 'POST' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      setWhatsAppActionState({ status: 'done', message: 'Disconnected.' })
+      await fetchWhatsAppStatus()
+    } catch (err) {
+      setWhatsAppActionState({ status: 'error', message: err instanceof Error ? err.message : 'Disconnect failed' })
+    }
+  }
+
+  async function handleWhatsAppTestSend() {
+    try {
+      setWhatsAppActionState({ status: 'working', message: 'Sending test...' })
+      const response = await fetch(`${BACKEND_URL}/api/whatsapp/test-send`, { method: 'POST' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      setWhatsAppActionState({ status: 'done', message: 'Test sent — check Telegram and WhatsApp.' })
+    } catch (err) {
+      setWhatsAppActionState({ status: 'error', message: err instanceof Error ? err.message : 'Test send failed' })
+    }
+  }
 
   async function handleSave() {
     try {
@@ -767,6 +830,98 @@ export function PersonalHQView() {
                 </p>
               )}
             </div>
+          </section>
+
+          {/* WhatsApp Channel */}
+          <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">WhatsApp Channel</h2>
+                <p className="mt-1 text-xs text-slate-500">Secondary founder notification channel. Runs alongside Telegram.</p>
+              </div>
+              {whatsAppLoading ? (
+                <Badge variant="warning">LOADING</Badge>
+              ) : whatsAppStatus?.state === 'connected' ? (
+                <Badge variant="done">CONNECTED</Badge>
+              ) : whatsAppStatus?.state === 'qr_pending' ? (
+                <Badge variant="warning">QR PENDING</Badge>
+              ) : (
+                <Badge variant="warning">OFFLINE</Badge>
+              )}
+            </div>
+
+            {whatsAppStatus?.state === 'connected' && (
+              <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400">Session Active</p>
+                {whatsAppStatus.connectedPhone && (
+                  <p className="mt-2 font-mono text-xs text-slate-300">{whatsAppStatus.connectedPhone}</p>
+                )}
+                <p className="mt-1 text-[11px] text-slate-500">Notifications will be duplicated to WhatsApp in addition to Telegram.</p>
+              </div>
+            )}
+
+            {whatsAppStatus?.state === 'qr_pending' && whatsAppStatus.qrCode && (
+              <div className="mt-4 flex flex-col items-center gap-4">
+                <p className="text-xs text-slate-400">Open WhatsApp on your phone → Linked Devices → Link a Device, then scan:</p>
+                <img
+                  src={whatsAppStatus.qrCode}
+                  alt="WhatsApp QR Code"
+                  className="h-48 w-48 rounded-2xl border border-white/10 bg-white p-2"
+                />
+                <p className="text-[11px] text-slate-500">QR refreshes automatically. Do not close this page until connected.</p>
+              </div>
+            )}
+
+            {whatsAppStatus?.state === 'offline' && (
+              <div className="mt-4 rounded-2xl border border-white/5 bg-black/25 px-4 py-3">
+                <p className="text-[11px] text-slate-500">
+                  Set <span className="font-mono text-slate-400">WHATSAPP_FOUNDER_JID</span> in your <span className="font-mono text-slate-400">.env</span> file
+                  (format: <span className="font-mono text-slate-400">39333XXXXXXX@s.whatsapp.net</span>), then connect below.
+                </p>
+              </div>
+            )}
+
+            <div className="mt-4 flex items-center justify-between gap-4">
+              <p className="text-[11px] text-slate-500">
+                {whatsAppStatus?.state === 'connected'
+                  ? 'Session active. Disconnect removes the local session files.'
+                  : 'Connect starts a QR session. Scan to authorize.'}
+              </p>
+              <div className="flex gap-2">
+                {whatsAppStatus?.state === 'connected' && (
+                  <>
+                    <button
+                      onClick={() => void handleWhatsAppTestSend()}
+                      disabled={whatsAppActionState.status === 'working'}
+                      className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400 transition hover:bg-emerald-500/18 disabled:opacity-50"
+                    >
+                      {whatsAppActionState.status === 'working' ? '...' : 'Send Test'}
+                    </button>
+                    <button
+                      onClick={() => void handleWhatsAppDisconnect()}
+                      disabled={whatsAppActionState.status === 'working'}
+                      className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] text-rose-400 transition hover:bg-rose-500/18 disabled:opacity-50"
+                    >
+                      {whatsAppActionState.status === 'working' ? '...' : 'Disconnect'}
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => void handleWhatsAppConnect()}
+                  disabled={whatsAppActionState.status === 'working'}
+                  className="rounded-2xl border border-fuchsia-500/30 bg-fuchsia-500/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] text-fuchsia-400 transition hover:bg-fuchsia-500/18 disabled:opacity-50"
+                >
+                  {whatsAppActionState.status === 'working'
+                    ? '...'
+                    : whatsAppStatus?.state === 'connected' ? 'Reconnect' : 'Connect'}
+                </button>
+              </div>
+            </div>
+            {whatsAppActionState.message && (
+              <p className={clsx('mt-3 text-xs', whatsAppActionState.status === 'error' ? 'text-rose-400' : 'text-slate-500')}>
+                {whatsAppActionState.message}
+              </p>
+            )}
           </section>
         </div>
       )}

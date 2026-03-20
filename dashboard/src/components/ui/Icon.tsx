@@ -6,6 +6,7 @@ export type IconName =
   | 'chevron-left' | 'chevron-right'
   | 'check' | 'x' | 'clock' | 'zap' | 'arrow-right' | 'info' | 'alert'
   | 'cpu' | 'dollar' | 'trending-up' | 'refresh' | 'folder' | 'building' | 'book'
+  | 'play'
 
 interface IconProps {
   name: IconName
@@ -224,6 +225,12 @@ export function Icon({ name, size = 16, className }: IconProps) {
           <path d="M4 12h16v4H4z" />
           <path d="M8 4v4M12 4v4M16 4v4M8 12v4M12 12v4M16 12v4" />
           <path d="M4 8v4M20 8v4" />
+        </svg>
+      )
+    case 'play':
+      return (
+        <svg {...p}>
+          <polygon points="5 3 19 12 5 21 5 3" />
         </svg>
       )
     default:

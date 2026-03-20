@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { KnowledgeBaseManifest } from '../types/index.js'
 
-const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? 'http://localhost:3001'
+const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? ''
 
 export function useKnowledgeBaseManifest() {
   const [data, setData] = useState<KnowledgeBaseManifest | null>(null)

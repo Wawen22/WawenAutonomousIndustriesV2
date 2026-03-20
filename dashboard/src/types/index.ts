@@ -496,3 +496,24 @@ export interface CapabilityRegistrySnapshot {
   summary: CapabilityRegistrySummary
   recentEvents: CapabilityEvent[]
 }
+
+// --- Skill Runner (T100) ---
+
+export interface SkillRunResult {
+  skillId: string
+  output: string
+  runId: string | null
+  durationMs: number
+}
+
+// --- WhatsApp Channel (T101) ---
+
+export type WhatsAppState = 'connected' | 'qr_pending' | 'offline'
+
+export interface WhatsAppStatus {
+  state: WhatsAppState
+  /** Base64 data URL (PNG) of the QR code — present when state === 'qr_pending' */
+  qrCode?: string
+  /** Connected phone number — present when state === 'connected' */
+  connectedPhone?: string
+}

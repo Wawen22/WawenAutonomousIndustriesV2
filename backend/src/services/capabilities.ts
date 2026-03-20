@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { AGENTS } from '../config/agents.js'
+import { getWhatsAppStatus } from './whatsapp.js'
 import type {
   AgentTeam,
   Capability,
@@ -1152,6 +1153,76 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
         summary: 'Telegram remains the fastest founder control path while dashboard visibility catches up.',
       }),
     },
+    // T101 – WhatsApp channel
+    (() => {
+      const waStatus = getWhatsAppStatus()
+      const waHealth = (() => {
+        if (waStatus.state === 'connected') {
+          return baseHealth({
+            capabilityId: 'channel.whatsapp_founder_interface',
+            state: 'connected',
+            label: 'Connected',
+            message: `WhatsApp session active${waStatus.connectedPhone ? ` (${waStatus.connectedPhone})` : ''}.`,
+            checkedAt: generatedAt,
+            freshness: 'fresh',
+            reasonCode: 'wa_connected',
+          })
+        }
+        if (waStatus.state === 'qr_pending') {
+          return baseHealth({
+            capabilityId: 'channel.whatsapp_founder_interface',
+            state: 'auth_required',
+            label: 'QR Pending',
+            message: 'WhatsApp QR code ready — scan from the Setup tab in Assistant HQ.',
+            checkedAt: generatedAt,
+            freshness: 'unknown',
+            reasonCode: 'wa_qr_pending',
+          })
+        }
+        return baseHealth({
+          capabilityId: 'channel.whatsapp_founder_interface',
+          state: 'missing_config',
+          label: 'Offline',
+          message: 'WhatsApp not initialized. Use Connect in the Assistant HQ Setup tab.',
+          checkedAt: generatedAt,
+          freshness: 'unknown',
+          reasonCode: 'wa_offline',
+          driftWarnings: process.env['WHATSAPP_FOUNDER_JID']
+            ? []
+            : ['WHATSAPP_FOUNDER_JID env var not set — notifications will not be routed.'],
+        })
+      })()
+
+      return {
+        capability: baseCapability({
+          id: 'channel.whatsapp_founder_interface',
+          type: 'channel',
+          label: 'WhatsApp Founder Interface',
+          description: 'Secondary founder notification channel via WhatsApp, running alongside Telegram. QR-scan based auth, session persisted locally.',
+          owner: 'Founder',
+          runtimeTarget: 'shared',
+          riskLevel: 'medium',
+          tags: ['whatsapp', 'notifications', 'founder'],
+          dependsOn: ['channel.telegram_founder_interface'],
+        }),
+        assignments: [
+          runtimeAssignment('channel.whatsapp_founder_interface', 'company', 'Company Runtime', 'shared'),
+          runtimeAssignment('channel.whatsapp_founder_interface', 'personal', 'Personal Runtime', 'shared'),
+        ],
+        policy: basePolicy({
+          capabilityId: 'channel.whatsapp_founder_interface',
+          mode: 'restricted',
+          allowedTools: ['whatsapp_notify'],
+          envRequirements: ['WHATSAPP_FOUNDER_JID'],
+          notes: 'Notification-only channel. WHATSAPP_FOUNDER_JID must be set for routing. No inbound command handling.',
+        }),
+        health: waHealth,
+        audit: baseAudit({
+          capabilityId: 'channel.whatsapp_founder_interface',
+          summary: 'WhatsApp is a secondary notification channel — Telegram remains primary. Requires local QR scan to activate.',
+        }),
+      }
+    })(),
   ]
 
   const catalogWithGovernance = await applyCapabilityGovernanceOverrides(catalogBase)

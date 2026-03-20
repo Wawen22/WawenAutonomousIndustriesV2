@@ -4,20 +4,36 @@
 
 ### Local Development Stack
 
+Run each in a separate terminal from the repo root (`/home/rnebili/Progetti/NEB/Projects/WAI V2`):
+
 ```bash
-# 1. Start LiteLLM proxy (Docker)
+# Terminal 1 — LiteLLM proxy (Docker)
 sg docker -c "docker compose up litellm -d"
 
-# 2. Start backend (hot reload)
+# Terminal 2 — Backend (hot reload)
 cd backend && pnpm dev
 
-# 3. Start dashboard
+# Terminal 3 — Dashboard
 cd dashboard && pnpm dev
+
+# Terminal 4 — Google Workspace MCP (required for Gmail / Calendar / Drive)
+./scripts/start-google-workspace-mcp.sh
 ```
 
-- Backend: http://localhost:3001
-- Dashboard: http://localhost:3000
-- LiteLLM proxy: http://localhost:4000
+Default ports (see `.env` to override):
+
+| Service | Default port |
+|---------|-------------|
+| Backend | 3101 (formerly 3001) |
+| Dashboard | 3100 (Vite may auto-increment if busy) |
+| LiteLLM | 4000 |
+| Google Workspace MCP | 8000 |
+
+**Google Workspace MCP** requires `uvx` — install with:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+Restart the terminal after installing, then run the script again. The server must be running for Gmail, Calendar, and Drive founder actions to work.
 
 ### Typechecks
 

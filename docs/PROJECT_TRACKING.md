@@ -42,7 +42,7 @@ This now implies a platform decision:
 | M10 | MCP Integration (Gmail, Calendar, Drive) | 🔄 In Progress | Google Workspace runtime live, founder workflows live, automations started |
 | M11 | Shared Capability Platform | 🔄 In Progress | Registry, assignments, policy, health, audit foundation now live as MVP |
 | M12 | Dashboard Capabilities Control Plane | 🔄 In Progress | `Capabilities` view now exposes catalog, assignments, health, audit, and safe governance editing |
-| M13 | Multi-channel (WhatsApp/Slack) | ⬜ Todo | Only after capability foundation and personal mode are stable |
+| M13 | Multi-channel (WhatsApp/Slack) | ✅ Done | WhatsApp via Baileys live — QR scan flow, notification router, capability in control plane |
 
 ---
 
@@ -76,12 +76,13 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
-| T083 | File Export tool | ✅ Done | Claude | 2 | Capability event logging, /api/files/exports endpoint, Exports tab in Assistant HQ |
-| T084 | Skills system | ✅ Done | Claude | 2 | Skill registry enriched; company skills added; SkillDetailPanel live in dashboard |
-| T086 | MCP integration layer | ✅ Done | Codex | 2 | Important emails today + pre-meeting brief quick actions live; editable automation schedule; AssistantHQ tab refactor |
-| T087 | WhatsApp via Baileys or Slack | ⬜ Todo | Claude | 3 | Evaluate only after capability foundation is stable |
-| T099 | Capability health depth | ✅ Done | Codex | 2 | Freshness, auth age, drift warnings, reason codes, event-driven enrichment, dashboard health depth panel |
+| T083 | File Export tool | ✅ Done | Claude | 2 | Capability event logging on every export + /api/files/exports endpoint |
 | T084 | Skills system | ✅ Done | Claude | 2 | Skill registry enriched with usageInstructions + examples; company skills added; SkillDetailPanel in dashboard |
+| T086 | MCP integration layer | ✅ Done | Codex | 2 | Important emails today + pre-meeting brief quick actions live; editable automation schedule; AssistantHQ tab refactor |
+| T087 | WhatsApp via Baileys or Slack | ✅ Done | Claude | 3 | Merged into T101 |
+| T099 | Capability health depth | ✅ Done | Codex | 2 | Freshness, auth age, drift warnings, reason codes, event-driven enrichment, dashboard health depth panel |
+| T100 | Skill execution context | ✅ Done | Claude | 2 | Skill runner service, POST /api/skills/:id/run, Run button in CapabilitiesView UsageTab |
+| T101 | Multi-channel: WhatsApp via Baileys | ✅ Done | Claude | 3 | WhatsApp channel service, notification router, capability registry, dashboard Setup panel |
 
 ---
 
@@ -107,13 +108,34 @@ This now implies a platform decision:
 
 ## Immediate Next Steps
 
-1. Consider WhatsApp/Slack channel (T087) now that capability foundation and file export are stable.
-2. Consider WhatsApp/Slack channel (T087) only after capability foundation is stable.
-3. Consider expanding company-side skill execution: skills currently have rich metadata and assignments but execution still flows through CEO delegation — a skill runner / execution context could make them more autonomous.
+1. **Activate WhatsApp**: set `WHATSAPP_FOUNDER_JID=<phone>@s.whatsapp.net` in `.env`, then hit Connect in Assistant HQ → Setup.
+2. **Infra**: considerare M8 (migrazione mini PC) e M6 (deploy Hetzner) quando il prodotto è maturo.
 
 ---
 
 ## Recent Changes
+
+### 2026-03-20 — Sessione 61: Multi-channel WhatsApp (T101/M13)
+
+**Library:** `@whiskeysockets/baileys` chosen over whatsapp-web.js — pure WebSocket, no Puppeteer/Chromium, TypeScript native, ESM module, filesystem-persistent sessions.
+
+- Created `backend/src/services/whatsapp.ts` — initializes a Baileys session from `workspace/system/whatsapp-session/`; exposes `getWhatsAppStatus()` (sync, returns `connected | qr_pending | offline`), `initWhatsAppSession()` (starts or restarts), `sendWhatsAppNotification(to, text)` (sends + logs capability events); handles QR → PNG base64 via `qrcode.toDataURL`; auto-reconnects up to 5 attempts, clears session on logout
+- Created `backend/src/services/notification-router.ts` — `sendFounderNotification(text)` always sends Telegram; if `WHATSAPP_FOUNDER_JID` is set and WhatsApp is connected, duplicates to WhatsApp (failure is non-fatal)
+- Added `channel.whatsapp_founder_interface` to capability registry in `capabilities.ts` — type `channel`, target `shared`, policy `restricted`, health derived live from `getWhatsAppStatus()`; drift warning if `WHATSAPP_FOUNDER_JID` is not set
+- Added `GET /api/whatsapp/status` and `POST /api/whatsapp/connect` endpoints to `backend/src/index.ts` — both local+dashboard-origin guarded
+- Added `WhatsAppState` and `WhatsAppStatus` types to both `backend/src/types/index.ts` and `dashboard/src/types/index.ts`
+- Replaced `sendTelegramNotification` with `sendFounderNotification` at startup (`startOpsMonitor/startFinanceRuntime/startHrRuntime`), task-action dashboard endpoint, and `budget.ts` budget alerts — Telegram calls inside telegram.ts bot handlers unchanged
+- Added **WhatsApp Channel** section to `Setup` tab in `PersonalHQView.tsx` — shows CONNECTED/QR PENDING/OFFLINE badge; if `qr_pending` renders the QR code PNG (auto-polls every 3 s until connected); if `offline` shows `WHATSAPP_FOUNDER_JID` setup instructions; Connect/Reconnect button; fuchsia accent color consistent with channel type
+- Typechecks and builds verified green for both backend and dashboard
+
+### 2026-03-20 — Sessione 60: Skill Execution Context (T100)
+
+- Created `backend/src/services/skill-runner.ts` — `runSkill(skillId, input, context, forceApproval)` validates capability exists, type === 'skill', policy is not `disabled`, `approval_required` requires explicit `forceApproval: true`; builds a structured prompt from `usageInstructions + examples + input`; calls CEO agent via `runAgent`; persists run via `logRun` and returns the run ID; logs `used`/`succeeded`/`failed` capability events on every execution
+- Added `POST /api/skills/:id/run` endpoint to `backend/src/index.ts` — local+dashboard-origin guarded, body: `{ input?, forceApproval? }`, responds `{ ok, skillId, output, runId, durationMs }` or `{ error, requiresApproval: true }` on policy block
+- Added `SkillRunResult` interface to `backend/src/types/index.ts` and `dashboard/src/types/index.ts`
+- Extended `UsageTab` in `dashboard/src/components/CapabilitiesView.tsx` — inline `Run Skill` form with optional input textarea, Run button with spinner, approval-required gate with Confirm & Run secondary action, output block showing text + run ID + duration
+- Added `play` icon to `dashboard/src/components/ui/Icon.tsx`
+- Typechecks and builds verified green for both backend and dashboard
 
 ### 2026-03-20 — Sessione 59: File Export tool (T083)
 

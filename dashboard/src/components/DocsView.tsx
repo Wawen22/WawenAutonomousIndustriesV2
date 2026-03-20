@@ -5,7 +5,7 @@ import { renderMarkdown } from '../lib/renderMarkdown.js'
 import { useKnowledgeBaseManifest } from '../hooks/useKnowledgeBaseManifest.js'
 import type { KnowledgeBaseDocument, KnowledgeBaseManifest } from '../types/index.js'
 
-const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? 'http://localhost:3001'
+const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? ''
 
 const BADGE_LABELS: Record<string, string> = {
   product: 'Product',

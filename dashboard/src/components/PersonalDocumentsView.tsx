@@ -3,7 +3,7 @@ import { format } from 'date-fns'
 import { Icon } from './ui/Icon.js'
 import { usePersonalContext } from '../hooks/usePersonalContext.js'
 
-const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? 'http://localhost:3001'
+const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? ''
 
 function filePathFromRelative(relativePath: string): string {
   return `${BACKEND_URL}/api/file?path=${encodeURIComponent(relativePath)}`

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Badge } from './ui/Badge.js'
 import { Icon } from './ui/Icon.js'
@@ -12,9 +12,10 @@ import type {
   CapabilityHealthState,
   CapabilityRuntimeTarget,
   CapabilityType,
+  SkillRunResult,
 } from '../types/index.js'
 
-const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? 'http://localhost:3001'
+const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? ''
 
 // ─── Labels ────────────────────────────────────────────────────────────────
 
@@ -326,21 +327,80 @@ function OverviewTab({ entry }: { entry: CapabilityCatalogEntry }) {
 
 // ─── Usage tab (skills only) ────────────────────────────────────────────────
 
+type SkillRunState =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | { status: 'done'; result: SkillRunResult }
+  | { status: 'approval_required'; message: string }
+  | { status: 'error'; message: string }
+
 function UsageTab({ entry }: { entry: CapabilityCatalogEntry }) {
-  const { capability } = entry
+  const { capability, policy } = entry
+  const [inputText, setInputText] = useState('')
+  const [runState, setRunState] = useState<SkillRunState>({ status: 'idle' })
+  const outputRef = useRef<HTMLDivElement>(null)
+
+  // Reset when capability changes
+  useEffect(() => {
+    setInputText('')
+    setRunState({ status: 'idle' })
+  }, [capability.id])
+
   if (capability.type !== 'skill') return null
 
-  const hasContent = capability.usageInstructions || (capability.examples && capability.examples.length > 0)
-  if (!hasContent) {
-    return (
-      <div className="rounded-2xl border border-dashed border-white/8 px-4 py-12 text-center">
-        <p className="text-sm text-slate-500">No usage instructions for this skill yet.</p>
-      </div>
-    )
+  const isDisabled = capability.status === 'disabled'
+  const needsApproval = policy.mode === 'approval_required'
+
+  async function handleRun(forceApproval = false) {
+    setRunState({ status: 'running' })
+    try {
+      let input: Record<string, unknown> = {}
+      const trimmed = inputText.trim()
+      if (trimmed) {
+        try {
+          const parsed = JSON.parse(trimmed) as unknown
+          input = typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+            ? parsed as Record<string, unknown>
+            : { prompt: trimmed }
+        } catch {
+          input = { prompt: trimmed }
+        }
+      }
+
+      const res = await fetch(`${BACKEND_URL}/api/skills/${encodeURIComponent(capability.id)}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input, forceApproval }),
+      })
+
+      const payload = await res.json() as Record<string, unknown>
+
+      if (!res.ok) {
+        if (payload['requiresApproval'] === true) {
+          setRunState({ status: 'approval_required', message: String(payload['error'] ?? 'Approval required') })
+          return
+        }
+        throw new Error(String(payload['error'] ?? `HTTP ${res.status}`))
+      }
+
+      const result: SkillRunResult = {
+        skillId: String(payload['skillId'] ?? capability.id),
+        output: String(payload['output'] ?? ''),
+        runId: typeof payload['runId'] === 'string' ? payload['runId'] : null,
+        durationMs: typeof payload['durationMs'] === 'number' ? payload['durationMs'] : 0,
+      }
+      setRunState({ status: 'done', result })
+      setTimeout(() => outputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80)
+    } catch (err) {
+      setRunState({ status: 'error', message: err instanceof Error ? err.message : 'Unknown error' })
+    }
   }
+
+  const hasContent = capability.usageInstructions || (capability.examples && capability.examples.length > 0)
 
   return (
     <div className="space-y-5">
+      {/* Usage instructions */}
       {capability.usageInstructions && (
         <div className="rounded-2xl border border-cyan-500/15 bg-cyan-500/[0.04] p-4">
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-600">How to use</p>
@@ -360,6 +420,116 @@ function UsageTab({ entry }: { entry: CapabilityCatalogEntry }) {
           </ul>
         </div>
       )}
+
+      {!hasContent && (
+        <div className="rounded-2xl border border-dashed border-white/8 px-4 py-6 text-center">
+          <p className="text-sm text-slate-500">No usage instructions for this skill yet.</p>
+        </div>
+      )}
+
+      {/* Run Skill form */}
+      <div className="rounded-2xl border border-cyan-500/15 bg-black/30 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-600">Run Skill</p>
+          {needsApproval && (
+            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400 uppercase tracking-[0.1em]">
+              Approval Required
+            </span>
+          )}
+          {isDisabled && (
+            <span className="rounded-full border border-slate-600/30 bg-slate-700/20 px-2 py-0.5 text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em]">
+              Disabled
+            </span>
+          )}
+        </div>
+
+        <textarea
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          placeholder="Optional input — plain text or JSON object"
+          disabled={isDisabled || runState.status === 'running'}
+          rows={3}
+          className="w-full resize-none rounded-xl border border-white/8 bg-black/40 px-3 py-2.5 font-mono text-xs text-slate-300 placeholder-slate-600 outline-none transition focus:border-cyan-500/30 disabled:opacity-40"
+        />
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => void handleRun(false)}
+            disabled={isDisabled || runState.status === 'running'}
+            className={clsx(
+              'flex items-center gap-2 rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-[0.15em] transition',
+              isDisabled
+                ? 'cursor-not-allowed border border-slate-700/40 bg-slate-800/20 text-slate-600'
+                : runState.status === 'running'
+                  ? 'cursor-not-allowed border border-cyan-500/20 bg-cyan-500/10 text-cyan-400'
+                  : 'border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 hover:border-cyan-500/50 hover:bg-cyan-500/15'
+            )}
+          >
+            {runState.status === 'running' ? (
+              <>
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-cyan-500/30 border-t-cyan-400" />
+                Running…
+              </>
+            ) : (
+              <>
+                <Icon name="play" size={11} />
+                Run Skill
+              </>
+            )}
+          </button>
+
+          {needsApproval && runState.status === 'approval_required' && (
+            <button
+              onClick={() => void handleRun(true)}
+              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-[11px] font-black uppercase tracking-[0.15em] text-amber-300 transition hover:border-amber-500/50 hover:bg-amber-500/15"
+            >
+              Confirm & Run
+            </button>
+          )}
+
+          {(runState.status === 'done' || runState.status === 'error' || runState.status === 'approval_required') && (
+            <button
+              onClick={() => setRunState({ status: 'idle' })}
+              className="text-[10px] text-slate-600 transition hover:text-slate-400 uppercase tracking-[0.12em]"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {/* Output */}
+        <div ref={outputRef}>
+          {runState.status === 'approval_required' && (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-amber-500">Approval Required</p>
+              <p className="mt-1.5 text-xs leading-relaxed text-amber-300/80">{runState.message}</p>
+              <p className="mt-2 text-[10px] text-slate-500">Click "Confirm & Run" above to execute with explicit approval.</p>
+            </div>
+          )}
+
+          {runState.status === 'error' && (
+            <div className="rounded-xl border border-rose-500/20 bg-rose-500/[0.06] px-4 py-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-rose-500">Error</p>
+              <p className="mt-1.5 font-mono text-xs text-rose-300/80">{runState.message}</p>
+            </div>
+          )}
+
+          {runState.status === 'done' && (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-[0.15em] text-emerald-500">Output</p>
+                <div className="flex items-center gap-3">
+                  {runState.result.runId && (
+                    <span className="font-mono text-[10px] text-slate-600">run {runState.result.runId.substring(0, 8)}</span>
+                  )}
+                  <span className="font-mono text-[10px] text-slate-600">{runState.result.durationMs}ms</span>
+                </div>
+              </div>
+              <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-300">{runState.result.output}</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

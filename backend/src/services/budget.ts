@@ -5,7 +5,7 @@
 
 import { log, recordBudgetAlert } from './logger.js'
 import { getMonthlyCost, updateProjectState } from './supabase.js'
-import { sendTelegramNotification } from './telegram.js'
+import { sendFounderNotification } from './notification-router.js'
 import type { EventSeverity } from '../types/index.js'
 
 const BUDGET_USD = parseFloat(process.env['MONTHLY_BUDGET_USD'] ?? '500')
@@ -42,7 +42,7 @@ export async function checkBudget(): Promise<void> {
 
       if (severity === 'warning' || severity === 'critical') {
         const pct = Math.round(ratio * 100)
-        await sendTelegramNotification(
+        await sendFounderNotification(
           `⚠️ *Budget Alert* – ${pct}% used\n$${cost.toFixed(2)} of $${BUDGET_USD.toFixed(2)}`
         )
       }

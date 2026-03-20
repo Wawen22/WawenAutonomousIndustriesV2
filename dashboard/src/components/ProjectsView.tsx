@@ -55,7 +55,7 @@ const STATUS_COLOR: Record<ProjectStatus, string> = {
   paused:    'bg-amber-500',
 }
 
-const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? 'http://localhost:3001'
+const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? ''
 
 type ProjectCategory = 'active' | 'completed' | 'all'
 
