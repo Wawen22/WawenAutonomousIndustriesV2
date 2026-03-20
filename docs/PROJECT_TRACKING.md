@@ -76,17 +76,23 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
-| T083 | File Export tool | ✅ Done | Claude | 2 | Capability event logging on every export + /api/files/exports endpoint |
-| T084 | Skills system | ✅ Done | Claude | 2 | Skill registry enriched with usageInstructions + examples; company skills added; SkillDetailPanel in dashboard |
-| T086 | MCP integration layer | ✅ Done | Codex | 2 | Important emails today + pre-meeting brief quick actions live; editable automation schedule; AssistantHQ tab refactor |
-| T087 | WhatsApp via Baileys or Slack | ✅ Done | Claude | 3 | Merged into T101 |
-| T099 | Capability health depth | ✅ Done | Codex | 2 | Freshness, auth age, drift warnings, reason codes, event-driven enrichment, dashboard health depth panel |
-| T100 | Skill execution context | ✅ Done | Claude | 2 | Skill runner service, POST /api/skills/:id/run, Run button in CapabilitiesView UsageTab |
-| T101 | Multi-channel: WhatsApp via Baileys | ✅ Done | Claude | 3 | WhatsApp channel service, notification router, capability registry, dashboard Setup panel |
-| T102 | WhatsApp incoming messages | ✅ Done | Claude | 1 | `messages.upsert` handler in whatsapp.ts — founder messages routed to CEO Intake (same as Telegram) |
-| T103 | OpenRouter free models | ✅ Done | Claude | 1 | 4 free models added to LiteLLM config + model registry; all agents re-routed to free tier |
-| T104 | CEO Intake pre-routing | ✅ Done | Claude | 1 | `detectFounderShortcutIntent` expanded — status, lista, projects, weekly digest bypass LLM entirely |
-| T105 | Dashboard Models view | ✅ Done | Claude | 2 | GET /api/models + POST /api/models/assign + ModelsView in sidebar (both modes) |
+| T106 | Git push + Vercel auto-deploy post-QA | 🔲 Todo | Claude | 1 | `pushRepoToRemote()` in qa.ts after delivered + Vercel REST API + deploy URL in Telegram |
+| T107 | Security hardening (CORS + bearer token + path traversal) | 🔲 Todo | Claude | 1 | Fix CORS header, add `WAI_DASHBOARD_TOKEN`, fix path resolve in file endpoints |
+| T108 | Invoice email automation | 🔲 Todo | Claude | 1 | On `invoice_project`: generate PDF invoice (HTML→PDF) + send via Resend to client email |
+| T109 | Task deduplication guard | 🔲 Todo | Claude | 2 | Add optimistic lock at CEO entry point: `transitionTaskStatus('pending' → 'in_progress')` before spawning |
+| T110 | Partial retry (QA-only retry) | 🔲 Todo | Claude | 2 | Allow founder to retry only QA step without re-running Architect + Dev General |
+| T111 | MCP GitHub integration | 🔲 Todo | Claude | 2 | Replace CLI git ops with GitHub MCP for repo create, PR, issues |
+| T112 | Browser/screenshot QA tool | 🔲 Todo | Claude | 3 | After deploy, QA agent opens URL + takes screenshot, attaches to report |
+| T083 | File Export tool | ✅ Done | Claude | 2 | — |
+| T084 | Skills system | ✅ Done | Claude | 2 | — |
+| T086 | MCP integration layer | ✅ Done | Codex | 2 | — |
+| T099 | Capability health depth | ✅ Done | Codex | 2 | — |
+| T100 | Skill execution context | ✅ Done | Claude | 2 | — |
+| T101 | Multi-channel: WhatsApp via Baileys | ✅ Done | Claude | 3 | — |
+| T102 | WhatsApp incoming messages | ✅ Done | Claude | 1 | — |
+| T103 | OpenRouter free models | ✅ Done | Claude | 1 | — |
+| T104 | CEO Intake pre-routing | ✅ Done | Claude | 1 | — |
+| T105 | Dashboard Models view | ✅ Done | Claude | 2 | — |
 
 ---
 
@@ -112,10 +118,30 @@ This now implies a platform decision:
 
 ## Immediate Next Steps
 
-1. **Test end-to-end delivery** — creare nuovo cliente + progetto + task via Telegram. Verificare che: modelli free vengano usati (visibili in Runs view), code gen usi gpt-5.4, deliverable `dev-general-1.md` abbia la sezione `## Execution Result` con file toccati e checklist aggiornate, project status passi `active → review → delivered`.
-2. **QA false-positive su repo** — ✅ risolto: `npm install` failure ora è warning, non blocker.
-3. **Models governance dalla dashboard** — aprire la view Models, cambiare il modello di un agente, verificare che `workspace/system/model-assignments.json` si aggiorni e che le chiamate successive usino il nuovo modello.
-4. **Infra**: considerare M8 (migrazione mini PC) e M6 (deploy Hetzner) quando il prodotto è maturo.
+### Sessione prossima — priorità revenue (T106 + T107 + T108)
+
+**T106 — Git push + Vercel auto-deploy** ← START HERE
+- Sblocca la delivery reale: da "codice in workspace" a "link live al cliente"
+- Dettaglio implementazione: `docs/DEPLOYMENT_PLAN.md` → sezione "Auto-Deploy Pipeline"
+- Files da toccare: `backend/src/agents/qa.ts`, `backend/src/agents/software_repo_runtime.ts`
+- Env vars da aggiungere: `VERCEL_TOKEN`, opzionale `NETLIFY_TOKEN`
+
+**T107 — Security hardening**
+- Fix CORS: `index.ts:138` → usare `isAllowedDashboardOrigin()` nell'header invece di `*`
+- Bearer token: `WAI_DASHBOARD_TOKEN` env var, verificato su tutti gli endpoint sensibili
+- Path traversal: `path.resolve()` + `startsWith(workspaceRoot)` su `/api/deliverables` e `/api/file`
+- Dettaglio gap: `docs/SECURITY.md` → sezione "Known Gaps"
+
+**T108 — Invoice email automatica**
+- Quando il founder dice `/invoice mario-rossi/landing`, oltre a cambiare lo status: genera PDF fattura + invia email al cliente via Resend
+- Template HTML → PDF con `puppeteer` o libreria PDF pura
+- `client.email` campo da aggiungere allo schema (o usare metadata progetto)
+
+**Backlog ordinato:**
+4. T109 — Task deduplication guard
+5. T110 — Partial retry (QA-only)
+6. T111 — MCP GitHub
+7. T112 — Browser/screenshot QA
 
 ---
 

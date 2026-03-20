@@ -6,6 +6,62 @@
 
 ---
 
+## Auto-Deploy Pipeline (T106)
+
+This is the missing link between WAI generating code and WAI delivering a live URL to the founder and client.
+
+### Target flow
+
+```
+QA passes
+  → git push origin main  (existing local repo → GitHub remote)
+  → Vercel deploy via API  (or CLI inside Docker container)
+  → Telegram: "🚀 Deploy live: https://xxx.vercel.app"
+  → Project status: delivered
+  → CEO Intake: ready for invoice command
+```
+
+### Implementation plan
+
+**Step 1 — Git push after QA pass** (`qa.ts`)
+- After `updateProjectStatus(projectId, 'delivered')`, call `pushRepoToRemote(repoLocalPath)`
+- `pushRepoToRemote`: runs `git push origin main` (remote already set by Architect via `updateProjectRepo`)
+- Requires `GITHUB_TOKEN` env var (already in `.env`) for HTTPS push: `https://x-access-token:${GITHUB_TOKEN}@github.com/...`
+
+**Step 2 — Vercel deploy via REST API** (`software_repo_runtime.ts`)
+- After push, call `POST https://api.vercel.com/v13/deployments` with project files
+- Auth: `VERCEL_TOKEN` env var + `VERCEL_TEAM_ID` (optional)
+- For static sites (HTML/CSS): deploy directly from files, no build needed
+- For Next.js/React: Vercel auto-detects framework and builds
+- Response includes `url` field → sent to founder
+
+**Step 3 — Netlify fallback for static sites**
+- If no `package.json` in repo → static site → use Netlify Drop API instead
+- `POST https://api.netlify.com/api/v1/sites/{site_id}/deploys` with zip of output files
+- Simpler, faster for pure HTML/CSS landing pages
+
+**Step 4 — Deploy URL in Telegram notification**
+```
+🚀 *Delivery Complete — Landing Page Dentistico*
+
+👤 Client: Mario Rossi | Project: landing-dentistico
+📦 QA: PASSED
+🌐 Live URL: https://landing-dentistico-xxx.vercel.app
+💾 Repo: https://github.com/wawen22/mario-rossi-landing
+💰 Pronto per la fattura: /invoice mario-rossi/landing-dentistico
+```
+
+### Required env vars
+
+| Variable | Purpose |
+|----------|---------|
+| `GITHUB_TOKEN` | Already present — git push via HTTPS |
+| `VERCEL_TOKEN` | New — Vercel deployment API |
+| `VERCEL_TEAM_ID` | New (optional) — if deploying to a team |
+| `NETLIFY_TOKEN` | New (optional) — fallback for static |
+
+---
+
 ## Phase 1: Local Development (Current)
 
 **Status: Active**

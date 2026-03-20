@@ -36,6 +36,46 @@
 
 ---
 
+## Known Gaps — To Fix Before Production
+
+These were identified in the 2026-03-20 security audit:
+
+### 🔴 CORS header too permissive (HIGH)
+
+**File:** `backend/src/index.ts:138`
+
+`Access-Control-Allow-Origin: *` is set globally on all responses. The `isAllowedDashboardOrigin()` whitelist exists but is only checked per-route, *after* the permissive CORS header has already been sent.
+
+**Fix (T107):** Set the `Access-Control-Allow-Origin` header to the value of `isAllowedDashboardOrigin()` directly — respond with the specific origin when allowed, omit the header otherwise.
+
+### 🟡 Auth relies on IP only (MEDIUM)
+
+**File:** `backend/src/index.ts` — all sensitive endpoints
+
+All write endpoints (invoice, skills, models, revenue actions) are gated only on `isLocalRequest()` + dashboard origin check. If the backend is ever reachable from a network (M8, Hetzner, SSRF via a tool), these checks can be bypassed.
+
+**Fix (T107):** Add a shared bearer token (`WAI_DASHBOARD_TOKEN` env var) checked on all sensitive routes. Dashboard passes it in `Authorization: Bearer` header on every API call.
+
+### 🟡 Path traversal — basic only (MEDIUM)
+
+**File:** `backend/src/index.ts:474` (`/api/deliverables`, `/api/file`)
+
+Current sanitization: splits on `/`, filters `..` segments, then re-joins. This does not verify the final resolved path is inside the workspace root.
+
+`software_repo_runtime.ts` already has a correct `ensurePathInsideRepo()` using `path.relative()`. Extend it to the HTTP endpoints.
+
+**Fix (T107):** Use `path.resolve()` + verify `resolvedPath.startsWith(workspaceRoot)` on all file-serving endpoints.
+
+### ✅ Safe: Command injection
+
+Shell commands use `execFile` with array args throughout (`runGit`, `runCommand`). No string interpolation into shell. Safe from injection.
+
+### ✅ Safe: Secrets management
+
+All secrets via env vars only. No hardcoded keys in source (the `sk-wai-master-key` LiteLLM default is development-only and meaningless without a working LITELLM endpoint).
+
+---
+
 ## Network Security
 
 ### LiteLLM Proxy
@@ -45,8 +85,9 @@
 
 ### Backend HTTP API
 
-- CORS configured for `localhost:3000` only (dashboard)
-- Not exposed to internet in local dev
+- Local dev: only `localhost:3000` (dashboard) and `localhost` itself can call sensitive routes
+- **Production (M8/Hetzner):** MUST add bearer token auth before exposing backend to any network — see Known Gaps above
+- CORS: currently `*` — fix required before production (T107)
 
 ### Dashboard
 
