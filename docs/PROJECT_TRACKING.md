@@ -108,12 +108,22 @@ This now implies a platform decision:
 
 ## Immediate Next Steps
 
-1. **Activate WhatsApp**: set `WHATSAPP_FOUNDER_JID=<phone>@s.whatsapp.net` in `.env`, then hit Connect in Assistant HQ → Setup.
-2. **Infra**: considerare M8 (migrazione mini PC) e M6 (deploy Hetzner) quando il prodotto è maturo.
+1. **Incoming messages from WhatsApp** — oggi WAI manda notifiche al founder via WhatsApp ma non legge i messaggi in entrata. Il prossimo step naturale è gestire i messaggi in entrata dallo stesso numero (es. comandi Telegram-style via WhatsApp).
+2. **Telegram bot polling conflict on hot-reload** — risolto con retry automatico (15s × 5), ma la causa profonda è tsx watch che tiene vivo il vecchio polling. In produzione (M6/M8) non sarà un problema.
+3. **Infra**: considerare M8 (migrazione mini PC) e M6 (deploy Hetzner) quando il prodotto è maturo.
 
 ---
 
 ## Recent Changes
+
+### 2026-03-20 — Sessione 62: WhatsApp test flow + Telegram retry (T101 post-merge fixes)
+
+- Fixed `WHATSAPP_FOUNDER_JID` in `.env` — country code `39` mancante (`3890086705` → `393890086705@s.whatsapp.net`); le notifiche WhatsApp ora arrivano correttamente
+- Added `POST /api/whatsapp/test-send` endpoint in `backend/src/index.ts` — chiama `sendFounderNotification()` direttamente per testare entrambi i canali senza dover creare task
+- Added **Send Test** button (green) in `PersonalHQView` WhatsApp Channel panel — visibile solo quando connesso, trigger diretto del test-send endpoint
+- Added **Disconnect** button (red) accanto a Send Test e Reconnect — chiama `POST /api/whatsapp/disconnect` e aggiorna lo stato in tempo reale
+- Fixed Telegram 409 conflict on hot-reload: sostituito il `void bot.start().catch(warn)` con un loop di retry asincrono (15s × 5 tentativi) in `backend/src/index.ts` — dopo il conflitto transitorio dovuto al tsx watch che tiene vivo il vecchio processo, il bot riprende il polling automaticamente senza riavvio manuale
+- Typechecks green per entrambi backend e dashboard
 
 ### 2026-03-20 — Sessione 61: Multi-channel WhatsApp (T101/M13)
 
