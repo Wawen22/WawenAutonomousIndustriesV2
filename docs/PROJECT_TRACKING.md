@@ -83,6 +83,7 @@ This now implies a platform decision:
 | T099 | Capability health depth | ✅ Done | Codex | 2 | Freshness, auth age, drift warnings, reason codes, event-driven enrichment, dashboard health depth panel |
 | T100 | Skill execution context | ✅ Done | Claude | 2 | Skill runner service, POST /api/skills/:id/run, Run button in CapabilitiesView UsageTab |
 | T101 | Multi-channel: WhatsApp via Baileys | ✅ Done | Claude | 3 | WhatsApp channel service, notification router, capability registry, dashboard Setup panel |
+| T102 | WhatsApp incoming messages | ✅ Done | Claude | 1 | `messages.upsert` handler in whatsapp.ts — founder messages routed to CEO Intake (same as Telegram) |
 
 ---
 
@@ -108,13 +109,23 @@ This now implies a platform decision:
 
 ## Immediate Next Steps
 
-1. **Incoming messages from WhatsApp** — oggi WAI manda notifiche al founder via WhatsApp ma non legge i messaggi in entrata. Il prossimo step naturale è gestire i messaggi in entrata dallo stesso numero (es. comandi Telegram-style via WhatsApp).
+1. **Credit optimization + OpenRouter** — WAI usa LiteLLM; integrare OpenRouter per accedere a modelli free (GLM 4.5 Air, Nemotron 3 Super, Step 3.5 Flash, Qwen3 Coder 480B) e ridurre costi API per task non critici.
 2. **Telegram bot polling conflict on hot-reload** — risolto con retry automatico (15s × 5), ma la causa profonda è tsx watch che tiene vivo il vecchio polling. In produzione (M6/M8) non sarà un problema.
 3. **Infra**: considerare M8 (migrazione mini PC) e M6 (deploy Hetzner) quando il prodotto è maturo.
 
 ---
 
 ## Recent Changes
+
+### 2026-03-20 — Sessione 63: WhatsApp incoming messages (T102)
+
+- Added `registerWhatsAppIncomingHandler(socket)` in `backend/src/services/whatsapp.ts` — listens to Baileys `messages.upsert` events (type `notify` only), filters by `WHATSAPP_FOUNDER_JID`, extracts plain text from `message.conversation` or `extendedTextMessage.text`
+- Auth gate: only messages from the exact normalized `WHATSAPP_FOUNDER_JID` are processed — any other sender is silently ignored
+- Text is routed to `runCeoNaturalLanguageHandler` (same CEO Intake used by Telegram bot) with `reply`/`notify` functions both bound to `sendWhatsAppNotification` to the sender JID
+- Handler is registered inside the `connection === 'open'` event block — so it's re-registered on each reconnect
+- Capability event `used` with actor `founder` and source `whatsapp_incoming` logged on every processed message
+- Errors in the CEO handler reply with `❌ Errore interno. Riprova.` back via WhatsApp
+- Typechecks green
 
 ### 2026-03-20 — Sessione 62: WhatsApp test flow + Telegram retry (T101 post-merge fixes)
 

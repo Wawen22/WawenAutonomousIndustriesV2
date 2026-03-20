@@ -1,10 +1,13 @@
 // ============================================================
-// WAI – WhatsApp Channel Service (T101)
+// WAI – WhatsApp Channel Service (T101 / T102)
 // Uses @whiskeysockets/baileys v6 (stable) for local, keyless,
 // persistent sessions. Session stored in workspace/system/whatsapp-session/.
 //
 // Baileys is loaded via dynamic import so a Baileys load failure
 // does NOT crash the backend — the service degrades to 'offline'.
+//
+// T102: incoming messages from WHATSAPP_FOUNDER_JID are routed
+// through the CEO Natural Language handler (same as Telegram).
 // ============================================================
 
 import { mkdir, rm } from 'node:fs/promises'
@@ -21,6 +24,9 @@ import type { WhatsAppStatus } from '../types/index.js'
 let _status: WhatsAppStatus = { state: 'offline' }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _socket: any | null = null
+// T102: track message IDs sent by WAI to avoid re-processing our own replies
+// (needed for "message yourself" chat where fromMe=true for both sides)
+const _sentByWai = new Set<string>()
 let _reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let _reconnectAttempts = 0
 const MAX_RECONNECT_ATTEMPTS = 5
@@ -45,7 +51,14 @@ export async function sendWhatsAppNotification(to: string, text: string): Promis
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    await _socket.sendMessage(to, { text })
+    const result = (await _socket.sendMessage(to, { text })) as { key?: { id?: string } } | undefined
+    // Track our own sent message ID so the incoming handler doesn't re-process it
+    const sentId = result?.key?.id
+    if (sentId) {
+      _sentByWai.add(sentId)
+      // Auto-expire after 2 min to avoid unbounded growth
+      setTimeout(() => { _sentByWai.delete(sentId) }, 2 * 60 * 1000)
+    }
 
     await recordCapabilityEvent({
       capability_id: 'channel.whatsapp_founder_interface',
@@ -158,6 +171,9 @@ export async function initWhatsAppSession(): Promise<void> {
           summary: `WhatsApp session connected: ${phone}`,
           payload: { phone },
         }).catch(() => {})
+
+        // T102: register incoming message handler
+        registerWhatsAppIncomingHandler(socket)
       }
 
       if (connection === 'close') {
@@ -209,6 +225,87 @@ export async function disconnectWhatsApp(): Promise<void> {
     _socket = null
   }
   _status = { state: 'offline' }
+}
+
+// ---------------------------------------------------------------------------
+// T102 – Incoming message handler
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function registerWhatsAppIncomingHandler(socket: any): void {
+  const rawFounderJid = process.env['WHATSAPP_FOUNDER_JID'] ?? ''
+  if (!rawFounderJid) {
+    log.warn('WHATSAPP_FOUNDER_JID not set — incoming WhatsApp messages will not be processed')
+    return
+  }
+
+  // Normalise: accept both "393890086705" and "393890086705@s.whatsapp.net"
+  const founderJid = rawFounderJid.includes('@') ? rawFounderJid : `${rawFounderJid}@s.whatsapp.net`
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+  socket.ev.on('messages.upsert', ({ messages, type }: { messages: Record<string, unknown>[]; type: string }) => {
+    if (type !== 'notify') return
+
+    for (const msg of messages) {
+      const key = msg['key'] as { remoteJid?: string; fromMe?: boolean; id?: string } | undefined
+      if (!key) continue
+
+      // Skip messages WAI itself sent (avoids infinite loop in "message yourself" chat)
+      if (key.id && _sentByWai.has(key.id)) continue
+
+      // Accept:
+      //   - fromMe=false → someone else messaged the bot's number (standard case)
+      //   - fromMe=true  → founder using "Message yourself" chat (remoteJid = founderJid)
+      // Reject any other fromMe=true that isn't the founder JID
+      if (key.fromMe && key.remoteJid !== founderJid) continue
+
+      if (key.remoteJid !== founderJid) continue
+
+      // Extract plain text from different message shapes Baileys may deliver
+      const msgContent = msg['message'] as Record<string, unknown> | undefined
+      const text: string =
+        (msgContent?.['conversation'] as string | undefined) ??
+        ((msgContent?.['extendedTextMessage'] as Record<string, unknown> | undefined)?.['text'] as string | undefined) ??
+        ''
+
+      if (!text.trim()) continue
+
+      log.info({ from: key.remoteJid, textLength: text.length }, 'WhatsApp: incoming message from founder')
+
+      void recordCapabilityEvent({
+        capability_id: 'channel.whatsapp_founder_interface',
+        event_type: 'used',
+        actor_type: 'founder',
+        source: 'whatsapp_incoming',
+        summary: 'Incoming WhatsApp message from founder',
+        payload: { length: text.length },
+      }).catch(() => {})
+
+      const senderJid = key.remoteJid
+
+      // reply: send back to the founder on WhatsApp
+      const reply = async (responseText: string): Promise<void> => {
+        await sendWhatsAppNotification(senderJid, responseText)
+      }
+
+      // notify: also send to WhatsApp (background CEO agent updates)
+      const notify = async (notifyText: string): Promise<void> => {
+        await sendWhatsAppNotification(senderJid, notifyText)
+      }
+
+      void (async () => {
+        try {
+          const { runCeoNaturalLanguageHandler } = await import('../agents/ceo_intake.js')
+          await runCeoNaturalLanguageHandler(senderJid, text, reply, notify)
+        } catch (err) {
+          log.error({ err, from: senderJid }, 'WhatsApp CEO intake handler error')
+          await sendWhatsAppNotification(senderJid, '❌ Errore interno. Riprova.').catch(() => {})
+        }
+      })()
+    }
+  })
+
+  log.info({ founderJid }, 'WhatsApp: incoming message handler registered')
 }
 
 // ---------------------------------------------------------------------------
