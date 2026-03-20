@@ -112,14 +112,44 @@ This now implies a platform decision:
 
 ## Immediate Next Steps
 
-1. **Testare OpenRouter** — restart LiteLLM (`docker compose up litellm -d`), poi mandare un messaggio Telegram per verificare che CEO risponda via nemotron-120b. Se LiteLLM non trova il modello, controllare che OPENROUTER_API_KEY sia nel `.env` del container.
-2. **Governance modelli dalla dashboard** — aprire la view Models in sidebar, cambiare il modello di un agente, verificare che il file `workspace/system/model-assignments.json` si aggiorni e che le chiamate LLM successive usino il nuovo modello.
-3. **Telegram bot polling conflict on hot-reload** — risolto con retry automatico (15s × 5), ma la causa profonda è tsx watch che tiene vivo il vecchio polling. In produzione (M6/M8) non sarà un problema.
+1. **Test end-to-end delivery** — creare nuovo cliente + progetto + task via Telegram. Verificare che: modelli free vengano usati (visibili in Runs view), code gen usi gpt-5.4, deliverable `dev-general-1.md` abbia la sezione `## Execution Result` con file toccati e checklist aggiornate, project status passi `active → review → delivered`.
+2. **QA false-positive su repo** — se QA blocca su `npm install failed` per un progetto static HTML/CSS (nessun package.json), valutare di alzare la soglia: `npm install` failure → warning invece di blocker quando non c'è script `build` nel package.json.
+3. **Models governance dalla dashboard** — aprire la view Models, cambiare il modello di un agente, verificare che `workspace/system/model-assignments.json` si aggiorni e che le chiamate successive usino il nuovo modello.
 4. **Infra**: considerare M8 (migrazione mini PC) e M6 (deploy Hetzner) quando il prodotto è maturo.
 
 ---
 
 ## Recent Changes
+
+### 2026-03-20 — Sessione 65: Bug fixes delivery pipeline + deliverable update + project status reset
+
+**CEO Intake — rule 9 fix ("Lancia il lavoro"):**
+- Fixed ambiguity: "Lancia il lavoro" was interpreted as `retry_task` even when no blocked task existed, causing the CEO to ask for a task ID
+- Updated planning rule 9 in `buildSystemPrompt()`: if project has NO blocked task → use `create_task`; if blocked task exists → use `retry_task`; NEVER ask for a task ID
+
+**software_repo_runtime.ts — modelOverride for code gen:**
+- `executeRepoImplementation` now forces `modelOverride: 'gpt-5.4'` — free models (qwen3-coder, nemotron-120b) truncate large JSON responses for full HTML/CSS files, causing `parseRepoEditPlan` to return null
+- All other agents continue using free models; override is scoped only to the code generation step
+
+**dev_general.ts — deliverable execution result:**
+- Added `appendExecutionResult()` function: after execution (repo or workspace), updates `dev-general-1.md` in-place
+- Checklist items in `## Acceptance Checklist` are updated to `[x]` if the corresponding file was actually touched during execution
+- Appends `## Execution Result` section with: status ✅/⚠️, files written, commands executed, blockers, warnings
+- On re-run, previous execution section is replaced (not appended)
+- Failure is non-fatal (`.catch(() => {})`)
+
+**ceo_intake.ts — project status reset on new work:**
+- In `create_task` handler: if the project is `blocked` or `review`, immediately calls `updateProjectStatus(project.id, 'active')` before creating the task
+- Dashboard shows the project as active instantly without waiting for the Architect to run
+- Import of `updateProjectStatus` added to supabase imports
+
+**docker-compose.yml:**
+- Added `- OPENROUTER_API_KEY=${OPENROUTER_API_KEY}` to litellm service environment (was missing, causing OpenRouter models to fail)
+
+**Supabase schema fixes:**
+- Inserted 4 new OpenRouter models into `models` table (FK required by `runs.model_id_fkey`)
+- Dropped and recreated `models_provider_check` constraint to include `'openrouter'`
+- Updated `agents` table `model_id` values to match new `AGENT_MODEL_DEFAULTS` routing
 
 ### 2026-03-20 — Sessione 64: OpenRouter free models + CEO Intake pre-routing + Models view (T103/T104/T105)
 
