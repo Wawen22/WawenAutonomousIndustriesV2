@@ -115,6 +115,20 @@ This now implies a platform decision:
 
 ## Recent Changes
 
+### 2026-03-20 — Sessione 58: Capabilities UI/UX refactor
+
+- Full rewrite of `dashboard/src/components/CapabilitiesView.tsx` — same data model, completely new layout
+- **Header**: collapsed from 5 stacked zones (~250px) to 3 compact rows — title/refresh · type pill tabs · health status dots
+- **Type filtering**: single pill row in header (All · Skills · Integrations · Plugins · Memory · Channels) — eliminates the redundant dropdown + quick-chips duplication
+- **Runtime filter**: inline pill buttons next to search bar, replacing the separate dropdown
+- **Health filter**: health dots in header are now clickable toggles — click "12 connected" to filter, click again to clear
+- **List items**: from dense cards (title + owner + description + 4 badges + 3 metadata fields) to compact 2-row rows — type dot + label + one meta line + health dot on right
+- **Color system**: each capability type now has one semantic accent color used everywhere: Skill=cyan, Integration=emerald, Plugin=indigo, Memory=amber, Channel=fuchsia
+- **Detail panel**: replaced 6 stacked Panel components (infinite scroll) with tabbed navigation — Overview / Usage (skill only) / Assignments / Policy / Activity
+- All governance editing (policy mode, assignment states, save button) moved into the Policy tab
+- All audit + event history moved into the Activity tab
+- Typecheck and build verified green for dashboard
+
 ### 2026-03-20 — Sessione 57: Skills system (T084)
 
 - Added `usageInstructions?: string` and `examples?: string[]` to `Capability` interface in both backend and dashboard types (T084 first-class skill metadata)
