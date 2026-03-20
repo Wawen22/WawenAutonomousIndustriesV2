@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 import { getModelForAgent } from '../config/models.js'
 import { runAgent } from '../services/llm.js'
 import { log, recordEvent, recordRun } from '../services/logger.js'
+import { getSpecialModelOverride } from '../services/model-routing-policy.js'
 import type { Task, TaskType } from '../types/index.js'
 
 const execFileAsync = promisify(execFile)
@@ -930,22 +931,31 @@ Write COMPLETE, WORKING file contents. No placeholders. No "TODO" comments.
     filesBefore.warnings.length > 0 ? `\nRepo file loading warnings:\n- ${filesBefore.warnings.join('\n- ')}` : '',
   ].filter(Boolean).join('\n')
 
-  // Code generation requires reliable long-form structured JSON output.
-  // Free models (OpenRouter) get truncated on large file contents — use gpt-5.4 explicitly.
-  const editResult = await runAgent(
-    [
-      { role: 'system', content: editSystemPrompt },
-      { role: 'user', content: editUserMessage },
-    ],
-    {
-      agentId,
-      taskId: task.id,
-      taskType,
-      modelOverride: 'gpt-5.4',
-      tools: ['file_system', 'shell'],
-      captureMemory: false,
-    }
-  )
+  const specialOverrideModelId = await getSpecialModelOverride('repo_edit_planning')
+
+  let editResult
+  try {
+    editResult = await runAgent(
+      [
+        { role: 'system', content: editSystemPrompt },
+        { role: 'user', content: editUserMessage },
+      ],
+      {
+        agentId,
+        taskId: task.id,
+        taskType,
+        ...(specialOverrideModelId !== null && { modelOverride: specialOverrideModelId }),
+        tools: ['file_system', 'shell'],
+        captureMemory: false,
+      }
+    )
+  } catch (error) {
+    const overrideLabel = specialOverrideModelId ?? 'inherit-agent-assignment'
+    throw new Error(
+      `Repo edit planning failed for ${agentId} using ${overrideLabel}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error instanceof Error ? error : undefined }
+    )
+  }
 
   const parsedPlan = parseRepoEditPlan(editResult.content)
   if (!parsedPlan) {

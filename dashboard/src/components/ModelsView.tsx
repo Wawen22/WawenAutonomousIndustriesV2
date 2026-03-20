@@ -66,6 +66,7 @@ function ModelRegistryTable({ models }: { models: Record<string, ModelConfig> })
         <tbody>
           {sorted.map((model) => {
             const isFree = model.cost_per_1k_input_tokens === 0 && model.cost_per_1k_output_tokens === 0
+            const isWatchModel = model.id === 'qwen3-coder'
             return (
               <tr key={model.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
                 <td className="px-4 py-2.5">
@@ -76,9 +77,19 @@ function ModelRegistryTable({ models }: { models: Record<string, ModelConfig> })
                         FREE
                       </span>
                     )}
+                    {isWatchModel && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-[0.15em] bg-white/5 text-slate-400 border border-white/10">
+                        WATCH
+                      </span>
+                    )}
                   </div>
                   {model.notes && (
-                    <p className="text-[10px] text-slate-600 mt-0.5 truncate max-w-[220px]">{model.notes}</p>
+                    <p className="text-[10px] text-slate-600 mt-0.5 max-w-[320px] leading-relaxed">{model.notes}</p>
+                  )}
+                  {isWatchModel && (
+                    <p className="text-[10px] text-slate-500 mt-1 max-w-[320px] leading-relaxed">
+                      Reminder: keep out of the default coding path until a better coding candidate is promoted.
+                    </p>
                   )}
                 </td>
                 <td className="px-4 py-2.5">
@@ -235,6 +246,7 @@ export function ModelsView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [pendingChanges, setPendingChanges] = useState<Record<string, string>>({})
+  const [pendingSpecialOverrides, setPendingSpecialOverrides] = useState<Record<string, string | null>>({})
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState<{ ok: boolean; message: string } | null>(null)
 
@@ -247,6 +259,7 @@ export function ModelsView() {
       const json = await res.json() as ModelsResponse
       setData(json)
       setPendingChanges({})
+      setPendingSpecialOverrides({})
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load models')
     } finally {
@@ -269,15 +282,34 @@ export function ModelsView() {
     setSaveResult(null)
   }
 
-  const pendingCount = Object.keys(pendingChanges).filter(
+  function handleChangeSpecialOverride(id: string, modelId: string | null) {
+    setPendingSpecialOverrides((prev) => {
+      const current = data?.special_overrides.find((item) => item.id === id)?.model_id ?? null
+      if (modelId === current) {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      }
+      return { ...prev, [id]: modelId }
+    })
+    setSaveResult(null)
+  }
+
+  const pendingAgentCount = Object.keys(pendingChanges).filter(
     (id) => pendingChanges[id] !== data?.assignments[id]
   ).length
+  const pendingSpecialCount = Object.keys(pendingSpecialOverrides).filter((id) => {
+    const current = data?.special_overrides.find((item) => item.id === id)?.model_id ?? null
+    return pendingSpecialOverrides[id] !== current
+  }).length
+  const pendingCount = pendingAgentCount + pendingSpecialCount
 
   async function handleSave() {
     if (pendingCount === 0) return
     setSaving(true)
     setSaveResult(null)
     let errors = 0
+
     for (const [agentId, modelId] of Object.entries(pendingChanges)) {
       if (modelId === data?.assignments[agentId]) continue
       try {
@@ -291,11 +323,27 @@ export function ModelsView() {
         errors++
       }
     }
+
+    for (const [id, modelId] of Object.entries(pendingSpecialOverrides)) {
+      const current = data?.special_overrides.find((item) => item.id === id)?.model_id ?? null
+      if (modelId === current) continue
+      try {
+        const res = await fetch(`${BACKEND}/api/models/special-override`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, modelId }),
+        })
+        if (!res.ok) errors++
+      } catch {
+        errors++
+      }
+    }
+
     setSaving(false)
     if (errors > 0) {
-      setSaveResult({ ok: false, message: `${errors} assignment(s) failed to save.` })
+      setSaveResult({ ok: false, message: `${errors} model policy change(s) failed to save.` })
     } else {
-      setSaveResult({ ok: true, message: `${pendingCount} assignment(s) saved.` })
+      setSaveResult({ ok: true, message: `${pendingCount} model policy change(s) saved.` })
       await load()
     }
   }
@@ -327,6 +375,55 @@ export function ModelsView() {
 
   return (
     <div className="space-y-6 max-w-5xl">
+
+      <div className="rounded-xl border border-[#00D4FF]/15 bg-[#00D4FF]/[0.04] px-4 py-4">
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#00D4FF]">Routing Policy</p>
+        <div className="mt-3 space-y-2">
+          {data.routing_notes.map((note) => (
+            <p key={note} className="text-[12px] leading-relaxed text-slate-300">{note}</p>
+          ))}
+        </div>
+        {data.special_overrides.length > 0 && (
+          <div className="mt-4 space-y-3">
+            {data.special_overrides.map((override) => (
+              <div key={override.id} className="rounded-lg border border-white/10 bg-black/20 px-3 py-3">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white">{override.scope}</span>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-[0.15em] bg-[#00D4FF]/10 text-[#00D4FF] border border-[#00D4FF]/30">
+                        {override.model_id ?? override.unset_label}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[11px] text-slate-400">{override.reason}</p>
+                    <p className="mt-2 text-[10px] font-mono text-slate-500">
+                      Agents: {override.agents.join(', ')}
+                    </p>
+                  </div>
+                  <div className="min-w-[260px]">
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Founder override</p>
+                    <select
+                      value={pendingSpecialOverrides[override.id] ?? override.model_id ?? '__unset__'}
+                      onChange={(event) => handleChangeSpecialOverride(
+                        override.id,
+                        event.target.value === '__unset__' ? null : event.target.value
+                      )}
+                      className="mt-2 w-full rounded-lg border border-white/10 bg-black/40 px-2.5 py-2 text-[11px] text-slate-200 outline-none transition hover:border-white/20 focus:border-[#00D4FF]/40"
+                    >
+                      <option value="__unset__">{override.unset_label}</option>
+                      {Object.values(data.models).map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.display_name}{model.cost_per_1k_input_tokens === 0 ? ' [FREE]' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Header stats */}
       <div className="grid grid-cols-3 gap-3">
@@ -405,6 +502,9 @@ export function ModelsView() {
           pendingChanges={pendingChanges}
           onChangePending={handleChangePending}
         />
+        <p className="mt-3 text-[11px] text-slate-500">
+          Saving an agent back to its default model removes the override. Normal runs use the assignment shown here immediately. Special policies above either inherit the agent assignment or stay disabled until you explicitly force a model.
+        </p>
       </div>
     </div>
   )

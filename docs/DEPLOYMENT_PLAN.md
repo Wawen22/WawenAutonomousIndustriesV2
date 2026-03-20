@@ -6,50 +6,99 @@
 
 ---
 
-## Auto-Deploy Pipeline (T106)
+## Governed Delivery Pipeline (T106)
 
-This is the missing link between WAI generating code and WAI delivering a live URL to the founder and client.
+The delivery pipeline is **fully governable** — every step can be enabled/disabled globally (via Capability Platform) or per-project (via DeliveryConfig). No hardwired behavior.
 
-### Target flow
+### Delivery Gates — pipeline con step configurabili
 
 ```
 QA passes
-  → git push origin main  (existing local repo → GitHub remote)
-  → Vercel deploy via API  (or CLI inside Docker container)
-  → Telegram: "🚀 Deploy live: https://xxx.vercel.app"
-  → Project status: delivered
-  → CEO Intake: ready for invoice command
+  ↓
+[requireFounderApproval?]  → Telegram "Approvi la delivery di mario-rossi/landing?" → founder risponde sì/no
+  ↓
+[gitPush?]                 → git push origin main → GitHub
+  ↓
+[autoDeploy?]              → Vercel / Netlify deploy → ottieni URL live
+  ↓
+[clientEmailOnDelivery?]   → email al cliente con link + messaggio
+  ↓
+project.status = delivered
+  ↓
+[autoInvoice?]             → genera fattura PDF + email fattura al cliente
 ```
 
-### Implementation plan
+Ogni `[gate?]` è un toggle. Se off: step skippato silenziosamente.
 
-**Step 1 — Git push after QA pass** (`qa.ts`)
-- After `updateProjectStatus(projectId, 'delivered')`, call `pushRepoToRemote(repoLocalPath)`
-- `pushRepoToRemote`: runs `git push origin main` (remote already set by Architect via `updateProjectRepo`)
-- Requires `GITHUB_TOKEN` env var (already in `.env`) for HTTPS push: `https://x-access-token:${GITHUB_TOKEN}@github.com/...`
+### DeliveryConfig — struttura per-progetto
 
-**Step 2 — Vercel deploy via REST API** (`software_repo_runtime.ts`)
-- After push, call `POST https://api.vercel.com/v13/deployments` with project files
-- Auth: `VERCEL_TOKEN` env var + `VERCEL_TEAM_ID` (optional)
-- For static sites (HTML/CSS): deploy directly from files, no build needed
-- For Next.js/React: Vercel auto-detects framework and builds
-- Response includes `url` field → sent to founder
+Ogni progetto ha una `DeliveryConfig` in `project.metadata.delivery_config`:
 
-**Step 3 — Netlify fallback for static sites**
-- If no `package.json` in repo → static site → use Netlify Drop API instead
-- `POST https://api.netlify.com/api/v1/sites/{site_id}/deploys` with zip of output files
-- Simpler, faster for pure HTML/CSS landing pages
-
-**Step 4 — Deploy URL in Telegram notification**
+```typescript
+interface DeliveryConfig {
+  gitPush: boolean              // default: true  — pusha su GitHub dopo QA
+  autoDeploy: boolean           // default: true  — deploya su Vercel/Netlify
+  deployProvider: 'vercel' | 'netlify' | null  // default: 'vercel'
+  requireFounderApproval: boolean  // default: false — richiede OK founder prima di delivery
+  clientEmailOnDelivery: boolean   // default: false — email al cliente con URL
+  autoInvoice: boolean             // default: false — crea fattura automaticamente
+}
 ```
-🚀 *Delivery Complete — Landing Page Dentistico*
 
-👤 Client: Mario Rossi | Project: landing-dentistico
-📦 QA: PASSED
-🌐 Live URL: https://landing-dentistico-xxx.vercel.app
-💾 Repo: https://github.com/wawen22/mario-rossi-landing
-💰 Pronto per la fattura: /invoice mario-rossi/landing-dentistico
+Default globali: `workspace/system/delivery-config.json`
+Override per-progetto: `project.metadata.delivery_config` (merge con defaults)
+
+### Governance — due livelli
+
+**Livello 1 — Globale (Capability Platform esistente)**
+
+| Capability ID | Cosa governa |
+|--------------|--------------|
+| `deployment.git_push` | Abilita/disabilita git push globalmente |
+| `deployment.vercel_deploy` | Abilita/disabilita Vercel deploy globalmente |
+| `deployment.netlify_deploy` | Abilita/disabilita Netlify deploy globalmente |
+| `delivery.client_email` | Abilita/disabilita email cliente globalmente |
+| `delivery.auto_invoice` | Abilita/disabilita fatturazione automatica |
+| `delivery.founder_approval_gate` | Se `approval_required`: ogni progetto richiede OK |
+
+Se una capability globale è `disabled` → override il config per-progetto. Nessun deploy avviene.
+
+**Livello 2 — Per-progetto (DeliveryConfig)**
+
+Ogni progetto può avere config diversa dalla global. Esempio:
+- Progetto interno: `gitPush: true, autoDeploy: false, autoInvoice: false`
+- Cliente pagante: `gitPush: true, autoDeploy: true, clientEmailOnDelivery: true, autoInvoice: true`
+
+### Come controllare
+
+**Da Telegram** (nuovi shortcut CEO Intake):
 ```
+"disabilita deploy per mario-rossi/landing"
+"attiva email cliente per wawen22/app"
+"richiedi mia approvazione per tutti i progetti"
+"disabilita git push globalmente"
+"abilita fatturazione automatica per mario-rossi/landing"
+```
+
+**Da Dashboard** — nuovo tab "Delivery" nel modal ProjectsView:
+- Toggle per ogni gate con badge ON/OFF
+- Dropdown provider (Vercel / Netlify / nessuno)
+- Badge "CUSTOM" se config progetto diversa dal default globale
+- Sezione "Global Defaults" con link alla Capabilities view
+
+### Implementazione (T106)
+
+**Backend — nuovi file:**
+- `backend/src/services/delivery-config.ts` — `getDeliveryConfig(projectId)` merge global+project, `updateProjectDeliveryConfig(projectId, patch)`, `getGlobalDeliveryDefaults()`
+- `backend/src/services/deploy.ts` — `pushToGitHub(repoPath)`, `deployToVercel(repoPath, name)`, `deployToNetlify(repoPath, name)`, ritornano `{ url } | null`
+
+**Backend — modifiche:**
+- `backend/src/agents/qa.ts` — dopo QA pass, chiama `runDeliveryGates(task, deliveryConfig, deployUrl)` che esegue i gates in sequenza
+- `backend/src/agents/ceo_intake.ts` — nuovi comandi `configure_delivery` per progetto
+- `backend/src/index.ts` — `GET/PATCH /api/projects/:id/delivery-config`
+
+**Dashboard:**
+- `dashboard/src/components/ProjectsView.tsx` — nuovo tab "Delivery" nel modal con toggle switches
 
 ### Required env vars
 
@@ -57,8 +106,9 @@ QA passes
 |----------|---------|
 | `GITHUB_TOKEN` | Already present — git push via HTTPS |
 | `VERCEL_TOKEN` | New — Vercel deployment API |
-| `VERCEL_TEAM_ID` | New (optional) — if deploying to a team |
-| `NETLIFY_TOKEN` | New (optional) — fallback for static |
+| `VERCEL_TEAM_ID` | New (optional) — if deploying to a Vercel team |
+| `NETLIFY_TOKEN` | New (optional) — Netlify deploy API |
+| `RESEND_API_KEY` | Already present — client email + invoice email |
 
 ---
 

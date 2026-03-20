@@ -248,6 +248,17 @@ export type ProjectType =
 
 export type RepoProvider = 'github' | 'gitlab' | 'bitbucket' | 'other'
 
+export type DeliveryDeployProvider = 'vercel' | 'netlify' | null
+
+export interface DeliveryConfig {
+  gitPush: boolean
+  autoDeploy: boolean
+  deployProvider: DeliveryDeployProvider
+  requireFounderApproval: boolean
+  clientEmailOnDelivery: boolean
+  autoInvoice: boolean
+}
+
 export type ProjectStatus =
   | 'discovery'
   | 'active'

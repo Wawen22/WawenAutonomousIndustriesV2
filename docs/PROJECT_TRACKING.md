@@ -55,6 +55,8 @@ This now implies a platform decision:
 - Write and update project briefs
 - Launch autonomous work through CEO routing
 - Run software, consulting, marketing, and SaaS delivery chains
+- Govern per-project delivery gates from Telegram or dashboard (`gitPush`, `autoDeploy`, provider, founder approval, client email, auto invoice)
+- Push approved repos to GitHub and publish governed deploys to Vercel or Netlify when enabled
 - Track blocked tasks, pending review, invoicing, and payments
 - Inspect shared capabilities for company runtime, including assignments by runtime/team/agent
 - Adjust selected capability policy fields and assignment state from the shared `Capabilities` dashboard view
@@ -76,8 +78,8 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
-| T106 | Git push + Vercel auto-deploy post-QA | 🔲 Todo | Claude | 1 | `pushRepoToRemote()` in qa.ts after delivered + Vercel REST API + deploy URL in Telegram |
-| T107 | Security hardening (CORS + bearer token + path traversal) | 🔲 Todo | Claude | 1 | Fix CORS header, add `WAI_DASHBOARD_TOKEN`, fix path resolve in file endpoints |
+| T106 | Governed Delivery Pipeline | ✅ Done | Codex | 1 | — |
+| T107 | Security hardening (CORS + bearer token + path traversal) | ✅ Done | Codex | 1 | — |
 | T108 | Invoice email automation | 🔲 Todo | Claude | 1 | On `invoice_project`: generate PDF invoice (HTML→PDF) + send via Resend to client email |
 | T109 | Task deduplication guard | 🔲 Todo | Claude | 2 | Add optimistic lock at CEO entry point: `transitionTaskStatus('pending' → 'in_progress')` before spawning |
 | T110 | Partial retry (QA-only retry) | 🔲 Todo | Claude | 2 | Allow founder to retry only QA step without re-running Architect + Dev General |
@@ -100,6 +102,9 @@ This now implies a platform decision:
 
 | ID | Title | Status | Impact |
 |----|-------|--------|--------|
+| T106 | Governed Delivery Pipeline | ✅ Done | Per-project delivery config, governed QA delivery gates, deploy services, dashboard Delivery tab, and capability-governed push/deploy/email/invoice path are now live |
+| T107 | Security hardening | ✅ Done | Dashboard API now uses origin-aware CORS, optional bearer auth for sensitive routes, and hardened workspace path resolution for file-serving endpoints |
+| T113 | Model routing alignment + LLM diagnostics | ✅ Done | Model assignments from the Models view are authoritative for normal runs, special workflow overrides are founder-governed, and LLM transport failures now retry with clearer diagnostics |
 | T085 | CEO personal task routing | ✅ Done | Personal mode can create docs, send reports, do research, build digests |
 | T093 | Capability platform contracts | ✅ Done | Backend now has shared contracts for capability catalog, assignments, policy, health, and audit summary |
 | T094 | Capability registry API MVP | ✅ Done | Read-only backend registry now exposes current capabilities for dashboard consumption |
@@ -118,34 +123,59 @@ This now implies a platform decision:
 
 ## Immediate Next Steps
 
-### Sessione prossima — priorità revenue (T106 + T107 + T108)
-
-**T106 — Git push + Vercel auto-deploy** ← START HERE
-- Sblocca la delivery reale: da "codice in workspace" a "link live al cliente"
-- Dettaglio implementazione: `docs/DEPLOYMENT_PLAN.md` → sezione "Auto-Deploy Pipeline"
-- Files da toccare: `backend/src/agents/qa.ts`, `backend/src/agents/software_repo_runtime.ts`
-- Env vars da aggiungere: `VERCEL_TOKEN`, opzionale `NETLIFY_TOKEN`
-
-**T107 — Security hardening**
-- Fix CORS: `index.ts:138` → usare `isAllowedDashboardOrigin()` nell'header invece di `*`
-- Bearer token: `WAI_DASHBOARD_TOKEN` env var, verificato su tutti gli endpoint sensibili
-- Path traversal: `path.resolve()` + `startsWith(workspaceRoot)` su `/api/deliverables` e `/api/file`
-- Dettaglio gap: `docs/SECURITY.md` → sezione "Known Gaps"
+### Sessione prossima — priorità revenue (T108 + T109)
 
 **T108 — Invoice email automatica**
 - Quando il founder dice `/invoice mario-rossi/landing`, oltre a cambiare lo status: genera PDF fattura + invia email al cliente via Resend
 - Template HTML → PDF con `puppeteer` o libreria PDF pura
 - `client.email` campo da aggiungere allo schema (o usare metadata progetto)
 
+**T109 — Task deduplication guard**
+- Mettere optimistic lock già all’ingresso CEO (`pending` → `in_progress`) prima di spawn/delegation
+- Evitare collisioni multi-agent sullo stesso progetto/repo
+
 **Backlog ordinato:**
-4. T109 — Task deduplication guard
-5. T110 — Partial retry (QA-only)
-6. T111 — MCP GitHub
-7. T112 — Browser/screenshot QA
+3. T110 — Partial retry (QA-only)
+4. T111 — MCP GitHub
+5. T112 — Browser/screenshot QA
 
 ---
 
 ## Recent Changes
+
+### 2026-03-20 — Sessione 66: Governed Delivery Pipeline + security hardening (T106/T107)
+
+**Governed delivery pipeline live:**
+- Added `backend/src/services/delivery-config.ts` with global defaults in `workspace/system/delivery-config.json`, per-project merge against `project.metadata.delivery_config`, and update helpers
+- Added `backend/src/services/deploy.ts` with governed `pushToGitHub()`, Vercel deploy, and Netlify deploy services; missing tokens are warning-only and never block the pipeline
+- `qa.ts` now runs governed delivery gates after QA pass: founder approval hold, git push, provider deploy, client email, auto invoice, and final delivery summary
+- Founder `/approve` now resumes pending delivery gates instead of only closing the blocked QA task; `/reject` clears review state and moves the project back to `review`
+- Added `configure_delivery` to CEO Intake so Neb can change per-project delivery policy from natural language
+- Added `GET /api/delivery/defaults` and `GET/PATCH /api/projects/:id/delivery-config`
+- Added delivery/deploy capabilities to the shared capability registry so push/deploy/email/invoice can be disabled globally from Capabilities
+- Projects modal now has a `Delivery` tab with toggle controls, provider dropdown, `CUSTOM` badge, save action, and latest `deployUrl`
+
+**Security hardening:**
+- Replaced wildcard CORS with whitelist-driven origin reflection via `isAllowedDashboardOrigin()`
+- Added optional bearer auth via `WAI_DASHBOARD_TOKEN` on sensitive dashboard/backend routes while preserving local founder access
+- Hardened `/api/deliverables`, `/api/file`, and repo file serving with resolved-path containment checks under `workspace/`
+- Backend and dashboard typechecks verified green
+
+### 2026-03-20 — Sessione 67: Model routing alignment + LLM diagnostics (T113)
+
+- Made the Models view/runtime assignment authoritative for normal agent runs by moving `getModelForAgent()` precedence to: explicit override → runtime override → agent assignment/default → task-type fallback
+- Removed drift between the static agent registry and the model routing defaults so config surfaces no longer disagree about `dev_general_*`, `architect`, `qa`, and other agents
+- Model assignment saves now clear redundant overrides when the selected model matches the agent default, and best-effort sync the effective model into the `agents` table for dashboard consistency
+- `/api/models` now explains current routing policy and exposes founder-governed special workflow overrides instead of hardcoded model forcing; the cross-model fallback is now disabled by default unless explicitly configured
+- Added retry-once behavior for transient LLM transport failures such as `Premature close`, with clearer error messages that include model, attempt, and failure class
+- Repo-aware edit planning now inherits the agent assignment by default and only forces a model when Neb configures a special override from the Models view; the old hardcoded `gpt-5.4` fallback path is gone, and errors now bubble up with stage context instead of a bare transport string
+
+### 2026-03-20 — Sessione 68: Coding model default swap + upstream rate-limit diagnostics
+
+- Switched the coding-path defaults from `qwen3-coder` to `nemotron-120b` for `dev_saas_*`, `architect`, `dev_general_*`, and `qa` so the main delivery path no longer depends on the unstable OpenRouter free Qwen route
+- Startup model assignment restore now also syncs non-overridden agent defaults back into Supabase, keeping dashboard agent cards aligned with the runtime routing defaults
+- Upstream LLM failures now log clearer diagnostics for provider-side issues, including explicit `rate_limit` classification, HTTP status code, and provider name when available
+- Kept `qwen3-coder` in the registry for manual checks only, with lightweight reminders in LiteLLM config and the Models dashboard to revisit it later against stronger coding candidates such as future GLM 4.7 / 5 options
 
 ### 2026-03-20 — Sessione 65: Bug fixes delivery pipeline + deliverable update + project status reset + QA npm fix
 

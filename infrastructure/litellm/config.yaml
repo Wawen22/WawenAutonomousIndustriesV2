@@ -35,6 +35,8 @@ model_list:
       model: openrouter/stepfun/step-3.5-flash:free
       api_key: os.environ/OPENROUTER_API_KEY
 
+  # Keep Qwen only for manual checks until a better coding default is chosen.
+  # Re-evaluate against future GLM 4.7 / GLM 5 coding-capable models.
   - model_name: qwen3-coder
     litellm_params:
       model: openrouter/qwen/qwen3-coder:free

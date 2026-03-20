@@ -46,9 +46,10 @@ import {
   formatInvoiceProjectMessage,
   formatMarkProjectPaidMessage,
 } from '../services/founder_revenue_actions.js'
+import { sanitizeDeliveryConfigPatch, updateProjectDeliveryConfig } from '../services/delivery-config.js'
 import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import { runCeoAgent } from './ceo.js'
-import type { Client, Payment, Project, ProjectType, SystemEvent, Task } from '../types/index.js'
+import type { Client, DeliveryConfig, Payment, Project, ProjectType, SystemEvent, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Conversation state (in-memory, per chatId, TTL 10 min)
@@ -130,6 +131,7 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - send_report        → params: subject, body, to?, html?
 - invoice_project    → params: client_slug, project_slug, amount_usd?
 - mark_project_paid  → params: client_slug, project_slug, amount_usd
+- configure_delivery → params: client_slug, project_slug, config_patch
 
 Valid project types: ${PROJECT_TYPES.join(', ')}
 
@@ -158,6 +160,7 @@ ${clientContext}
 19. Use drive_read_file when Neb asks to open/read the content of a Drive document or file.
 20. Use drive_recent_files when Neb asks for recent/recently modified files in Google Drive.
 21. Use daily_founder_brief when Neb asks for a daily founder briefing combining inbox, calendar, and recent Drive activity.
+22. When Neb asks to enable/disable governed delivery steps for a specific project (git push, auto deploy, deploy provider, founder approval, client email, auto invoice), use configure_delivery with client_slug, project_slug, and a config_patch object. Example patch: { "autoDeploy": false }.
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -356,6 +359,17 @@ function slugify(str: string): string {
 function getString(params: Record<string, unknown>, key: string): string | undefined {
   const v = params[key]
   return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined
+}
+
+function formatDeliveryConfigSummary(config: DeliveryConfig): string {
+  return [
+    `- Git Push: ${config.gitPush ? 'ON' : 'OFF'}`,
+    `- Auto Deploy: ${config.autoDeploy ? 'ON' : 'OFF'}`,
+    `- Deploy Provider: ${config.deployProvider ?? 'none'}`,
+    `- Founder Approval: ${config.requireFounderApproval ? 'ON' : 'OFF'}`,
+    `- Client Email: ${config.clientEmailOnDelivery ? 'ON' : 'OFF'}`,
+    `- Auto Invoice: ${config.autoInvoice ? 'ON' : 'OFF'}`,
+  ].join('\n')
 }
 
 function getNumber(params: Record<string, unknown>, key: string): number | undefined {
@@ -1819,6 +1833,44 @@ async function executeAction(
       })
 
       return formatMarkProjectPaidMessage(result)
+    }
+
+    // ── configure_delivery ───────────────────────────────────────────────
+    case 'configure_delivery': {
+      const clientSlug = getString(params, 'client_slug')
+      const projectSlug = getString(params, 'project_slug')
+      const configPatch = sanitizeDeliveryConfigPatch(params['config_patch'])
+
+      if (!clientSlug) throw new Error('client_slug mancante per configure_delivery')
+      if (!projectSlug) throw new Error('project_slug mancante per configure_delivery')
+      if (Object.keys(configPatch).length === 0) {
+        throw new Error('config_patch mancante o non valido per configure_delivery')
+      }
+
+      const client = await getClientBySlug(clientSlug)
+      if (!client) throw new Error(`Cliente \`${clientSlug}\` non trovato`)
+
+      const project = await getProjectBySlug(client.id, projectSlug)
+      if (!project) throw new Error(`Progetto \`${projectSlug}\` non trovato per ${client.name}`)
+
+      const nextConfig = await updateProjectDeliveryConfig(project.id, configPatch)
+
+      await recordEvent('founder_command', {
+        payload: {
+          command: 'nl_configure_delivery',
+          source: 'natural_language',
+          client_slug: clientSlug,
+          project_slug: projectSlug,
+          project_id: project.id,
+          config_patch: configPatch,
+        },
+      })
+
+      return [
+        `✅ Delivery config aggiornata per *${project.name}*`,
+        ``,
+        formatDeliveryConfigSummary(nextConfig),
+      ].join('\n')
     }
 
     default:

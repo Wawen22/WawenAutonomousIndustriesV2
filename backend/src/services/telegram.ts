@@ -38,7 +38,6 @@ import {
   getProjectState,
   getProjectsByClient,
   getRecentEvents,
-  updateAgentModel,
   updateProjectRepo,
   updateProjectWorkspacePath,
 } from './supabase.js'
@@ -49,7 +48,7 @@ import {
   getProjectWorkspacePath,
   getRelativeProjectPath,
 } from './workspace.js'
-import { setModelOverride } from '../config/models.js'
+import { assignModelToAgent } from './model-assignments.js'
 import { buildSystemStatusReport } from './status_report.js'
 import { runCeoAgent } from '../agents/ceo.js'
 import { runCeoNaturalLanguageHandler } from '../agents/ceo_intake.js'
@@ -873,11 +872,10 @@ function registerHandlers(bot: Bot): void {
     const modelId = parts[2]!
 
     try {
-      setModelOverride(agentId, modelId)
-      await updateAgentModel(agentId, modelId)
+      await assignModelToAgent(agentId, modelId)
       await recordEvent('model_changed', {
         agentId,
-        payload: { model_id: modelId, changed_by: 'founder' },
+        payload: { model_id: modelId, changed_by: 'founder', source: 'telegram_command' },
       })
       await ctx.reply(`✅ Model for \`${agentId}\` set to \`${modelId}\``, { parse_mode: 'Markdown' })
     } catch (err) {

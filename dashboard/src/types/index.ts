@@ -75,6 +75,17 @@ export type ProjectType =
 
 export type RepoProvider = 'github' | 'gitlab' | 'bitbucket' | 'other'
 
+export type DeliveryDeployProvider = 'vercel' | 'netlify' | null
+
+export interface DeliveryConfig {
+  gitPush: boolean
+  autoDeploy: boolean
+  deployProvider: DeliveryDeployProvider
+  requireFounderApproval: boolean
+  clientEmailOnDelivery: boolean
+  autoInvoice: boolean
+}
+
 export type ProjectStatus =
   | 'discovery'
   | 'active'
@@ -337,6 +348,15 @@ export interface ModelsResponse {
   defaults: Record<string, string>
   overrides: Record<string, string>
   assignments: Record<string, string>
+  routing_notes: string[]
+  special_overrides: Array<{
+    id: string
+    scope: string
+    agents: string[]
+    model_id: string | null
+    reason: string
+    unset_label: string
+  }>
 }
 
 export type CapabilityType =

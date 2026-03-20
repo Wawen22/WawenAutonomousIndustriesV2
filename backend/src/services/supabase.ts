@@ -319,6 +319,18 @@ export async function getClientBySlug(slug: string): Promise<Client | null> {
   return data as Client
 }
 
+export async function getClientById(id: string): Promise<Client | null> {
+  const { data, error } = await getSupabaseClient()
+    .from('clients')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (error?.code === 'PGRST116') return null
+  if (error) throw new Error(`Failed to get client ${id}: ${error.message}`)
+  return data as Client
+}
+
 // ---------------------------------------------------------------------------
 // Project Queries
 // ---------------------------------------------------------------------------
@@ -442,6 +454,27 @@ export async function updateProjectRepo(id: string, input: UpdateProjectRepoInpu
     .eq('id', id)
 
   if (error) throw new Error(`Failed to update project repo: ${error.message}`)
+}
+
+export async function updateProjectMetadata(id: string, metadata: Record<string, unknown>): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('projects')
+    .update({ metadata })
+    .eq('id', id)
+
+  if (error) throw new Error(`Failed to update project metadata: ${error.message}`)
+}
+
+export async function updateTaskMetadata(taskId: string, metadata: Record<string, unknown>): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('tasks')
+    .update({
+      metadata,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', taskId)
+
+  if (error) throw new Error(`Failed to update task metadata: ${error.message}`)
 }
 
 // ---------------------------------------------------------------------------

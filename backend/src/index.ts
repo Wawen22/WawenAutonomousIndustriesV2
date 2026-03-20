@@ -5,7 +5,7 @@
 import { createServer, IncomingMessage, ServerResponse } from 'node:http'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve as resolvePath } from 'node:path'
 import { log, recordEvent } from './services/logger.js'
 import { recordCapabilityEvent } from './services/logger.js'
 import {
@@ -54,6 +54,12 @@ import {
   getCapabilityRegistrySnapshot,
 } from './services/capabilities.js'
 import {
+  getDeliveryConfig,
+  getGlobalDeliveryDefaults,
+  sanitizeDeliveryConfigPatch,
+  updateProjectDeliveryConfig,
+} from './services/delivery-config.js'
+import {
   updateCapabilityGovernance,
   type CapabilityGovernanceUpdateInput,
 } from './services/capability-governance.js'
@@ -70,6 +76,10 @@ import {
   getPersistedModelOverrides,
   restorePersistedModelAssignments,
 } from './services/model-assignments.js'
+import {
+  getSpecialModelOverrides,
+  updateSpecialModelOverride,
+} from './services/model-routing-policy.js'
 import type {
   CapabilityAssignmentState,
   CapabilityAssignmentTargetType,
@@ -92,6 +102,24 @@ function isAllowedDashboardOrigin(origin: string | undefined): boolean {
   if (!origin) return true
   // Accept any localhost/127.0.0.1 port — Vite may start on a different port when 3000 is taken
   return origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')
+}
+
+function isAuthorizedRequest(req: IncomingMessage): boolean {
+  if (isLocalRequest(req)) return true
+  const header = req.headers.authorization?.trim()
+  const token = process.env['WAI_DASHBOARD_TOKEN']?.trim()
+  if (!header || !token) return false
+  return header === `Bearer ${token}`
+}
+
+function isAuthorizedDashboardRequest(req: IncomingMessage): boolean {
+  return isAuthorizedRequest(req) && isAllowedDashboardOrigin(req.headers.origin)
+}
+
+function isPathWithinRoot(rootPath: string, candidatePath: string): boolean {
+  const resolvedRoot = resolvePath(rootPath)
+  const resolvedCandidate = resolvePath(candidatePath)
+  return resolvedCandidate === resolvedRoot || resolvedCandidate.startsWith(`${resolvedRoot}/`)
 }
 
 function getRequestBaseUrl(req: IncomingMessage): string {
@@ -134,10 +162,13 @@ async function main(): Promise<void> {
 
   // --- HTTP server: health + API ---
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    // CORS for dashboard on localhost:3000
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    const allowedOrigin = isAllowedDashboardOrigin(req.headers.origin) ? req.headers.origin : undefined
+    if (allowedOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', allowedOrigin)
+      res.setHeader('Vary', 'Origin')
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204)
@@ -232,7 +263,7 @@ async function main(): Promise<void> {
     if (skillRunMatch && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -286,7 +317,7 @@ async function main(): Promise<void> {
     if (capabilityGovernanceMatch && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -460,6 +491,97 @@ async function main(): Promise<void> {
       return
     }
 
+    if (url.pathname === '/api/delivery/defaults' && req.method === 'GET') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const defaults = await getGlobalDeliveryDefaults()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(defaults))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Delivery defaults API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    const projectDeliveryConfigMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/delivery-config$/)
+    if (projectDeliveryConfigMatch && req.method === 'GET') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const projectId = decodeURIComponent(projectDeliveryConfigMatch[1] ?? '').trim()
+          if (!projectId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing project id' }))
+            return
+          }
+
+          const config = await getDeliveryConfig(projectId)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(config))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          const statusCode = /not found/i.test(message) ? 404 : 500
+          log.error({ err }, 'Project delivery config GET API error')
+          res.writeHead(statusCode, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (projectDeliveryConfigMatch && req.method === 'PATCH') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const projectId = decodeURIComponent(projectDeliveryConfigMatch[1] ?? '').trim()
+          if (!projectId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing project id' }))
+            return
+          }
+
+          const body = await readJsonBody(req)
+          const patch = sanitizeDeliveryConfigPatch(body)
+          if (Object.keys(patch).length === 0) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'No valid delivery config fields provided' }))
+            return
+          }
+
+          const config = await updateProjectDeliveryConfig(projectId, patch)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(config))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          const statusCode = /not found/i.test(message) ? 404 : 500
+          log.error({ err }, 'Project delivery config PATCH API error')
+          res.writeHead(statusCode, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
     // GET /api/deliverables?path=workspace/client/project
     if (url.pathname === '/api/deliverables' && req.method === 'GET') {
       const relPath = url.searchParams.get('path')
@@ -480,7 +602,13 @@ async function main(): Promise<void> {
         return
       }
 
-      const projectDir = join(getWorkspaceRoot(), ...parts)
+      const workspaceRoot = getWorkspaceRoot()
+      const projectDir = resolvePath(workspaceRoot, ...parts)
+      if (!isPathWithinRoot(workspaceRoot, projectDir)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'forbidden' }))
+        return
+      }
       const deliverableDir = join(projectDir, 'deliverables')
       const outputDir = join(projectDir, 'output')
       const repoDir = join(projectDir, 'repo')
@@ -576,7 +704,13 @@ async function main(): Promise<void> {
         return
       }
 
-      const absPath = join(getWorkspaceRoot(), ...parts)
+      const workspaceRoot = getWorkspaceRoot()
+      const absPath = resolvePath(workspaceRoot, ...parts)
+      if (!isPathWithinRoot(workspaceRoot, absPath)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'forbidden' }))
+        return
+      }
 
       void (async () => {
         try {
@@ -636,7 +770,13 @@ async function main(): Promise<void> {
         return
       }
 
-      const absPath = join(getWorkspaceRoot(), ...parts.slice(1)) // strip "workspace" prefix — getWorkspaceRoot already is workspace/
+      const workspaceRoot = getWorkspaceRoot()
+      const absPath = resolvePath(workspaceRoot, ...parts.slice(1)) // strip "workspace" prefix — workspaceRoot already points at workspace/
+      if (!isPathWithinRoot(workspaceRoot, absPath)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'forbidden' }))
+        return
+      }
 
       void (async () => {
         try {
@@ -696,7 +836,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/founder/task-action' && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -746,7 +886,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/founder/revenue-action' && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -826,7 +966,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/personal/context' && req.method === 'GET') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -848,7 +988,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/personal/context' && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -884,7 +1024,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/personal/assistant/quick-action' && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -924,7 +1064,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/personal/automation/status' && req.method === 'GET') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -946,7 +1086,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/personal/automation/config' && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -979,7 +1119,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/personal/automation/run' && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -1001,7 +1141,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/mcp/status' && req.method === 'GET') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -1023,7 +1163,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/mcp/google-workspace/runtime' && req.method === 'GET') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -1045,7 +1185,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/mcp/google-workspace/auth/start' && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -1104,7 +1244,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/mcp/google-workspace/tool' && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -1144,7 +1284,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/files/exports' && req.method === 'GET') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -1245,7 +1385,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/whatsapp/status' && req.method === 'GET') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -1268,7 +1408,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/whatsapp/disconnect' && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -1292,7 +1432,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/whatsapp/connect' && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -1316,7 +1456,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/whatsapp/test-send' && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -1352,11 +1492,19 @@ async function main(): Promise<void> {
           }
 
           res.writeHead(200, { 'Content-Type': 'application/json' })
+          const specialOverrides = await getSpecialModelOverrides()
           res.end(JSON.stringify({
             models: MODELS,
             defaults: AGENT_MODEL_DEFAULTS,
             overrides: effectiveOverrides,
             assignments,
+            routing_notes: [
+              'Assignments saved from the Models view become the runtime default for normal agent runs immediately.',
+              'Choosing the default model for an agent clears its persisted override instead of creating redundant config.',
+              'Special workflow overrides are founder-governed here: if unset, the workflow inherits the agent assignment.',
+              'Primary-model failure fallback is disabled by default; WAI only uses a second model if you explicitly configure one here.',
+            ],
+            special_overrides: specialOverrides,
           }))
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error'
@@ -1372,7 +1520,7 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/models/assign' && req.method === 'POST') {
       void (async () => {
         try {
-          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+          if (!isAuthorizedDashboardRequest(req)) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Forbidden' }))
             return
@@ -1399,6 +1547,49 @@ async function main(): Promise<void> {
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error'
           log.error({ err }, 'Models assign API error')
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/models/special-override' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const body = await readJsonBody(req)
+          const overrideId = typeof (body as Record<string, unknown>)['id'] === 'string'
+            ? (body as Record<string, unknown>)['id'] as string
+            : null
+          const modelIdValue = (body as Record<string, unknown>)['modelId']
+          const modelId = typeof modelIdValue === 'string'
+            ? modelIdValue
+            : modelIdValue === null
+              ? null
+              : null
+
+          if (!overrideId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'id is required' }))
+            return
+          }
+
+          const specialOverride = await updateSpecialModelOverride(
+            overrideId as 'repo_edit_planning',
+            modelId,
+          )
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, special_override: specialOverride }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Models special override API error')
           res.writeHead(400, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: message }))
         }

@@ -21,7 +21,7 @@ import {
 import { getClientColor } from '../lib/clientColors.js'
 import { getAgentColor } from '../lib/agentColors.js'
 import { renderMarkdown } from '../lib/renderMarkdown.js'
-import type { Project, ProjectStatus, ProjectType, Agent } from '../types/index.js'
+import type { Agent, DeliveryConfig, DeliveryDeployProvider, Project, ProjectStatus, ProjectType } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Constants & Mappings
@@ -68,6 +68,25 @@ interface DeliverableFile {
   modified_at: string
   size_bytes: number
   dir: 'deliverable' | 'output' | 'repo'
+}
+
+type ProjectCommandTab = 'agent' | 'project' | 'delivery'
+
+function deliveryProviderLabel(provider: DeliveryDeployProvider): string {
+  if (provider === 'vercel') return 'Vercel'
+  if (provider === 'netlify') return 'Netlify'
+  return 'None'
+}
+
+function deliveryConfigEquals(a: DeliveryConfig | null, b: DeliveryConfig | null): boolean {
+  if (!a || !b) return false
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+function isBooleanSettingKey(
+  key: keyof DeliveryConfig
+): key is 'gitPush' | 'autoDeploy' | 'requireFounderApproval' | 'clientEmailOnDelivery' | 'autoInvoice' {
+  return key !== 'deployProvider'
 }
 
 function useDeliverables(workspacePath: string | null) {
@@ -180,6 +199,224 @@ function FileTable({ items, workspacePath }: { items: DeliverableFile[]; workspa
   )
 }
 
+function DeliveryTabContent({ project }: { project: Project }) {
+  const [defaults, setDefaults] = useState<DeliveryConfig | null>(null)
+  const [config, setConfig] = useState<DeliveryConfig | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load(): Promise<void> {
+      setLoading(true)
+      setError(null)
+      setMessage(null)
+
+      try {
+        const [defaultsResponse, configResponse] = await Promise.all([
+          fetch(`${BACKEND_URL}/api/delivery/defaults`),
+          fetch(`${BACKEND_URL}/api/projects/${encodeURIComponent(project.id)}/delivery-config`),
+        ])
+
+        if (!defaultsResponse.ok || !configResponse.ok) {
+          throw new Error(`HTTP ${!defaultsResponse.ok ? defaultsResponse.status : configResponse.status}`)
+        }
+
+        const [defaultsJson, configJson] = await Promise.all([
+          defaultsResponse.json() as Promise<DeliveryConfig>,
+          configResponse.json() as Promise<DeliveryConfig>,
+        ])
+
+        if (cancelled) return
+        setDefaults(defaultsJson)
+        setConfig(configJson)
+      } catch (err) {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : 'Error')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void load()
+    return () => { cancelled = true }
+  }, [project.id])
+
+  const isCustom = !deliveryConfigEquals(config, defaults)
+  const deployUrl = typeof project.metadata['deployUrl'] === 'string' ? project.metadata['deployUrl'] : null
+
+  function setBooleanField(key: keyof DeliveryConfig): void {
+    if (!config || !isBooleanSettingKey(key)) return
+    setConfig({
+      ...config,
+      [key]: !config[key],
+    })
+  }
+
+  async function saveConfig(): Promise<void> {
+    if (!config) return
+    setSaving(true)
+    setError(null)
+    setMessage(null)
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/projects/${encodeURIComponent(project.id)}/delivery-config`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(config),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const nextConfig = await response.json() as DeliveryConfig
+      setConfig(nextConfig)
+      setMessage('Saved')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const toggleRows: Array<{ key: keyof DeliveryConfig; label: string; hint: string }> = [
+    { key: 'gitPush', label: 'Git Push', hint: 'Push to GitHub after QA pass' },
+    { key: 'autoDeploy', label: 'Auto Deploy', hint: 'Publish live build after push' },
+    { key: 'requireFounderApproval', label: 'Require Approval', hint: 'Pause delivery until founder approves' },
+    { key: 'clientEmailOnDelivery', label: 'Client Email', hint: 'Send delivery email via Resend' },
+    { key: 'autoInvoice', label: 'Auto Invoice', hint: 'Trigger invoice creation after delivery' },
+  ]
+
+  if (loading) {
+    return (
+      <div className="py-20 flex flex-col items-center gap-4 opacity-30">
+        <div className="w-8 h-8 border-2 border-amber-300/20 border-t-amber-300 rounded-full animate-spin" />
+        <span className="text-[10px] font-black uppercase tracking-[0.3em]">Syncing Delivery Policy...</span>
+      </div>
+    )
+  }
+
+  if (!config || !defaults) {
+    return <div className="py-12 text-center text-rose-400 font-mono text-xs">{error ?? 'Delivery config unavailable'}</div>
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-5 rounded-3xl border border-white/10 bg-black/30">
+        <div>
+          <div className="flex items-center gap-3">
+            <h4 className="text-sm font-black uppercase tracking-[0.18em] text-white">Governed Delivery</h4>
+            {isCustom && <span className="px-2 py-1 rounded-full border border-amber-300/30 bg-amber-300/10 text-[9px] font-black uppercase tracking-[0.2em] text-amber-200">Custom</span>}
+          </div>
+          <p className="mt-2 text-[11px] text-slate-400">Per-project delivery gates override the global defaults only for this project.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {message && <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300">{message}</span>}
+          {error && <span className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-300">{error}</span>}
+          <button
+            onClick={() => void saveConfig()}
+            disabled={saving}
+            className="px-4 py-2 rounded-xl bg-amber-300 text-black text-[10px] font-black uppercase tracking-[0.2em] transition hover:brightness-110 disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_0.7fr] gap-6">
+        <div className="space-y-4">
+          {toggleRows.map((row) => {
+            if (!isBooleanSettingKey(row.key)) return null
+            const value = config[row.key]
+            const defaultValue = defaults[row.key]
+            return (
+              <div key={row.key} className="flex items-center justify-between gap-4 p-4 rounded-2xl border border-white/5 bg-white/[0.02]">
+                <div>
+                  <p className="text-[12px] font-black uppercase tracking-[0.16em] text-white">{row.label}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">{row.hint}</p>
+                  <p className="mt-1 text-[10px] font-mono text-slate-600">Default: {defaultValue ? 'ON' : 'OFF'}</p>
+                </div>
+                <button
+                  onClick={() => setBooleanField(row.key)}
+                  className={clsx(
+                    'relative h-8 w-16 rounded-full border transition-all',
+                    value
+                      ? 'border-emerald-300/30 bg-emerald-300/20'
+                      : 'border-white/10 bg-black/40'
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      'absolute top-1 h-6 w-6 rounded-full transition-all',
+                      value ? 'left-9 bg-emerald-300' : 'left-1 bg-slate-500'
+                    )}
+                  />
+                  <span className={clsx('absolute inset-0 flex items-center justify-center text-[9px] font-black uppercase tracking-[0.2em]', value ? 'text-emerald-100' : 'text-slate-500')}>
+                    {value ? 'ON' : 'OFF'}
+                  </span>
+                </button>
+              </div>
+            )
+          })}
+
+          <div className="p-4 rounded-2xl border border-white/5 bg-white/[0.02]">
+            <p className="text-[12px] font-black uppercase tracking-[0.16em] text-white">Deploy Provider</p>
+            <p className="mt-1 text-[11px] text-slate-500">Default: {deliveryProviderLabel(defaults.deployProvider)}</p>
+            <select
+              value={config.deployProvider ?? 'none'}
+              onChange={(event) => setConfig({
+                ...config,
+                deployProvider: event.target.value === 'none' ? null : event.target.value as DeliveryDeployProvider,
+              })}
+              className="mt-3 w-full rounded-xl border border-white/10 bg-black/50 px-3 py-2 text-[12px] font-bold text-white focus:border-amber-300/40 focus:outline-none"
+            >
+              <option value="vercel">Vercel</option>
+              <option value="netlify">Netlify</option>
+              <option value="none">None</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="p-5 rounded-3xl border border-white/10 bg-black/30">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Current Effective Config</p>
+            <div className="mt-4 space-y-3 text-[11px] font-mono text-slate-300">
+              <div className="flex justify-between gap-4"><span>Git Push</span><span>{config.gitPush ? 'ON' : 'OFF'}</span></div>
+              <div className="flex justify-between gap-4"><span>Auto Deploy</span><span>{config.autoDeploy ? 'ON' : 'OFF'}</span></div>
+              <div className="flex justify-between gap-4"><span>Provider</span><span>{deliveryProviderLabel(config.deployProvider)}</span></div>
+              <div className="flex justify-between gap-4"><span>Founder Approval</span><span>{config.requireFounderApproval ? 'ON' : 'OFF'}</span></div>
+              <div className="flex justify-between gap-4"><span>Client Email</span><span>{config.clientEmailOnDelivery ? 'ON' : 'OFF'}</span></div>
+              <div className="flex justify-between gap-4"><span>Auto Invoice</span><span>{config.autoInvoice ? 'ON' : 'OFF'}</span></div>
+            </div>
+          </div>
+
+          <div className="p-5 rounded-3xl border border-white/10 bg-black/30">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Latest Deployment</p>
+            {deployUrl ? (
+              <a
+                href={deployUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-4 block break-all text-[12px] font-bold text-[#00D4FF] hover:underline"
+              >
+                {deployUrl}
+              </a>
+            ) : (
+              <p className="mt-4 text-[11px] text-slate-500">No deploy URL stored in project metadata yet.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Project Command Center (Modal)
 // ---------------------------------------------------------------------------
@@ -198,7 +435,7 @@ function ProjectCommandCenter({
   onAgentClick: (a: Agent) => void;
 }) {
   const { files, loading } = useDeliverables(project.workspace_path)
-  const [tab, setTab] = useState<'agent' | 'project'>('agent')
+  const [tab, setTab] = useState<ProjectCommandTab>('agent')
   const agentFiles = files.filter(f => f.dir === 'deliverable')
   const projectFiles = files.filter(f => f.dir === 'output' || f.dir === 'repo')
   const progress = STATUS_LEVEL[project.status] ?? 0
@@ -283,11 +520,14 @@ function ProjectCommandCenter({
               <div className="flex gap-2 p-1 bg-black/40 border border-white/10 rounded-2xl">
                 <button onClick={() => setTab('agent')} className={clsx("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", tab === 'agent' ? "bg-[#00D4FF] text-black shadow-[0_0_20px_rgba(0,212,255,0.3)]" : "text-slate-500 hover:text-slate-300")}>Neural Output Clusters</button>
                 <button onClick={() => setTab('project')} className={clsx("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", tab === 'project' ? "bg-violet-500 text-white shadow-[0_0_15px_rgba(139,92,246,0.3)]" : "text-slate-500 hover:text-slate-300")}>System Source Tree</button>
+                <button onClick={() => setTab('delivery')} className={clsx("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", tab === 'delivery' ? "bg-amber-300 text-black shadow-[0_0_20px_rgba(252,211,77,0.28)]" : "text-slate-500 hover:text-slate-300")}>Delivery</button>
               </div>
               <span className="text-[10px] font-mono text-slate-700 uppercase font-bold tracking-tighter">Root: {project.workspace_path}</span>
             </div>
             <div className="flex-1 overflow-y-auto p-8 pt-4 custom-scrollbar">
-              {loading ? (
+              {tab === 'delivery' ? (
+                <DeliveryTabContent project={project} />
+              ) : loading ? (
                 <div className="py-20 flex flex-col items-center gap-4 opacity-30">
                   <div className="w-8 h-8 border-2 border-[#00D4FF]/20 border-t-[#00D4FF] rounded-full animate-spin" />
                   <span className="text-[10px] font-black uppercase tracking-[0.3em]">Accessing Filesystem...</span>

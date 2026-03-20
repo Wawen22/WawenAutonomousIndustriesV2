@@ -16,6 +16,19 @@ export interface LiteLLMClientConfig {
   apiKey: string
 }
 
+export type ModelRoutingSource =
+  | 'explicit_override'
+  | 'runtime_override'
+  | 'agent_assignment'
+  | 'task_type_fallback'
+  | 'global_fallback'
+
+export interface ModelRoutingDecision {
+  model: ModelConfig
+  source: ModelRoutingSource
+  reason: string
+}
+
 export function getLiteLLMConfig(): LiteLLMClientConfig {
   const baseURL = process.env['LITELLM_BASE_URL'] ?? 'http://litellm:4000/v1'
   const apiKey = process.env['LITELLM_API_KEY'] ?? 'sk-wai-master-key'
@@ -73,7 +86,7 @@ export const MODELS: Record<string, ModelConfig & { litellm_model_name: string }
     cost_per_1k_output_tokens: 0,
     context_window: 128000,
     is_active: true,
-    notes: 'Free via OpenRouter — CEO, PM, finance, complex tasks',
+    notes: 'Free via OpenRouter — CEO, PM, finance, complex tasks, temporary coding default',
   },
   'step-flash': {
     id: 'step-flash',
@@ -95,13 +108,13 @@ export const MODELS: Record<string, ModelConfig & { litellm_model_name: string }
     cost_per_1k_output_tokens: 0,
     context_window: 128000,
     is_active: true,
-    notes: 'Free via OpenRouter — all dev, QA, architect agents',
+    notes: 'Free via OpenRouter — keep only for manual tests; revisit when GLM 4.7/5 coding options are validated',
   },
 }
 
 // ---------------------------------------------------------------------------
 // Default model per agent ID
-// Override via Supabase agents.model_id or Neb's /assign_model command
+// Override via Models view persisted runtime assignments or Neb's /assign_model command.
 // ---------------------------------------------------------------------------
 
 export const AGENT_MODEL_DEFAULTS: Record<string, string> = {
@@ -111,14 +124,14 @@ export const AGENT_MODEL_DEFAULTS: Record<string, string> = {
   // Team SaaS
   pm_saas: 'nemotron-120b',
   dev_lead_saas: 'nemotron-120b',
-  dev_saas_1: 'qwen3-coder',
-  dev_saas_2: 'qwen3-coder',
+  dev_saas_1: 'nemotron-120b',
+  dev_saas_2: 'nemotron-120b',
 
-  // Team Dev — coding → qwen3-coder
-  architect: 'qwen3-coder',
-  dev_general_1: 'qwen3-coder',
-  dev_general_2: 'qwen3-coder',
-  qa: 'qwen3-coder',
+  // Team Dev — coding → nemotron-120b
+  architect: 'nemotron-120b',
+  dev_general_1: 'nemotron-120b',
+  dev_general_2: 'nemotron-120b',
+  qa: 'nemotron-120b',
 
   // Team Consulting — analysis → nemotron-120b
   consulting_lead: 'nemotron-120b',
@@ -136,8 +149,8 @@ export const AGENT_MODEL_DEFAULTS: Record<string, string> = {
 }
 
 // ---------------------------------------------------------------------------
-// Task type → model preference
-// Used when agent default is overrideable by task complexity
+// Task type → model fallback
+// Used only when an agent has no assignment/default.
 // ---------------------------------------------------------------------------
 
 const COMPLEX_TASK_TYPES = new Set<TaskType>([
@@ -160,7 +173,7 @@ const SIMPLE_TASK_TYPES = new Set<TaskType>([
 
 // ---------------------------------------------------------------------------
 // Runtime model overrides (from /assign_model command)
-// Stored in memory; also persisted to Supabase agents.model_id
+// Stored in memory; also persisted to workspace/system/model-assignments.json.
 // ---------------------------------------------------------------------------
 
 const runtimeOverrides = new Map<string, string>()
@@ -185,42 +198,74 @@ export function clearModelOverride(agentId: string): void {
 // This is the SINGLE point where model selection happens.
 // ---------------------------------------------------------------------------
 
-export function getModelForAgent(ctx: ModelRoutingContext): ModelConfig {
+export function resolveModelForAgent(ctx: ModelRoutingContext): ModelRoutingDecision {
   const { agentId, taskType, requiresComplex, override } = ctx
 
   // 1. Explicit override (from Neb command)
   if (override) {
     const model = MODELS[override]
     if (!model) throw new Error(`Unknown override model: ${override}`)
-    return model
+    return {
+      model,
+      source: 'explicit_override',
+      reason: `Explicit override requested for ${agentId}: ${override}`,
+    }
   }
 
   // 2. Runtime override (from /assign_model)
   const runtimeOverride = runtimeOverrides.get(agentId)
   if (runtimeOverride) {
     const model = MODELS[runtimeOverride]
-    if (model && model.is_active) return model
-  }
-
-  // 3. Task type routing
-  if (taskType) {
-    if (COMPLEX_TASK_TYPES.has(taskType) || requiresComplex === true) {
-      return MODELS['nemotron-120b']!
-    }
-    if (SIMPLE_TASK_TYPES.has(taskType)) {
-      return MODELS['step-flash']!
+    if (model && model.is_active) {
+      return {
+        model,
+        source: 'runtime_override',
+        reason: `Runtime override active for ${agentId}: ${runtimeOverride}`,
+      }
     }
   }
 
-  // 4. Agent default
+  // 3. Agent assignment/default
   const defaultModelId = AGENT_MODEL_DEFAULTS[agentId]
   if (defaultModelId) {
     const model = MODELS[defaultModelId]
-    if (model && model.is_active) return model
+    if (model && model.is_active) {
+      return {
+        model,
+        source: 'agent_assignment',
+        reason: `Agent assignment/default for ${agentId}: ${defaultModelId}`,
+      }
+    }
   }
 
-  // 5. Fallback
-  return MODELS['step-flash']!
+  // 4. Task type fallback
+  if (taskType) {
+    if (COMPLEX_TASK_TYPES.has(taskType) || requiresComplex === true) {
+      return {
+        model: MODELS['nemotron-120b']!,
+        source: 'task_type_fallback',
+        reason: `Task ${taskType} requires complex reasoning`,
+      }
+    }
+    if (SIMPLE_TASK_TYPES.has(taskType)) {
+      return {
+        model: MODELS['step-flash']!,
+        source: 'task_type_fallback',
+        reason: `Task ${taskType} routed to low-cost/simple fallback`,
+      }
+    }
+  }
+
+  // 5. Global fallback
+  return {
+    model: MODELS['step-flash']!,
+    source: 'global_fallback',
+    reason: `No assignment or task-type fallback found for ${agentId}`,
+  }
+}
+
+export function getModelForAgent(ctx: ModelRoutingContext): ModelConfig {
+  return resolveModelForAgent(ctx).model
 }
 
 // ---------------------------------------------------------------------------

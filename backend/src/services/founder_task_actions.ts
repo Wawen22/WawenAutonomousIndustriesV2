@@ -3,6 +3,8 @@ import {
   getChildTasks,
   getSupabaseClient,
   getTaskByReference,
+  updateProjectStatus,
+  updateTaskRequiresHumanReview,
   updateTaskStatus,
 } from './supabase.js'
 import { getPendingDependencyIds, getBlockedDependencyIds } from '../agents/software_delivery_utils.js'
@@ -17,7 +19,7 @@ import { runContentCreatorAgent } from '../agents/content_creator.js'
 import { runSocialManagerAgent } from '../agents/social_manager.js'
 import { runArchitectAgent } from '../agents/architect.js'
 import { runDevGeneralAgent } from '../agents/dev_general.js'
-import { runQaAgent } from '../agents/qa.js'
+import { resumeApprovedDeliveryGates, runQaAgent } from '../agents/qa.js'
 import { runOpsAgent } from '../agents/ops.js'
 import { runFinanceAgent } from '../agents/finance.js'
 import { runHrAgent } from '../agents/hr.js'
@@ -174,6 +176,7 @@ async function retryBlockedTask(
   }
 
   await updateTaskMetadata(task.id, metadata, 'todo')
+  await updateTaskRequiresHumanReview(task.id, false)
 
   await recordEvent('task_unblocked', {
     taskId: task.id,
@@ -223,6 +226,7 @@ async function retryBlockedTask(
 async function approveTask(
   task: Task,
   source: string,
+  notify: (message: string) => Promise<void>,
   reason?: string
 ): Promise<FounderTaskActionResult> {
   if (task.status === 'done') {
@@ -234,6 +238,7 @@ async function approveTask(
 
   const actionReason = normalizeReason(reason)
   await updateTaskStatus(task.id, 'done')
+  await updateTaskRequiresHumanReview(task.id, false)
   await updateTaskMetadata(task.id, buildActionMetadata(task, 'approve', source, actionReason))
 
   await recordEvent('human_approved', {
@@ -246,6 +251,21 @@ async function approveTask(
       ...(actionReason ? { reason: actionReason } : {}),
     },
   })
+
+  if (task.metadata['pending_delivery_approval'] === true) {
+    void resumeApprovedDeliveryGates(task, notify).catch((err: unknown) => {
+      log.error({ err, taskId: task.id }, 'Approved delivery gates failed to resume')
+      void notify(
+        [
+          `❌ *Delivery Resume Failed*`,
+          ``,
+          `Task: \`${task.id.slice(0, 8)}\``,
+          `Title: ${task.title}`,
+          `Error: ${err instanceof Error ? err.message : String(err)}`,
+        ].join('\n')
+      )
+    })
+  }
 
   return {
     action: 'approve',
@@ -263,6 +283,7 @@ async function rejectTask(
 ): Promise<FounderTaskActionResult> {
   const actionReason = normalizeReason(reason) ?? 'No reason provided'
   await updateTaskStatus(task.id, 'cancelled')
+  await updateTaskRequiresHumanReview(task.id, false)
   await updateTaskMetadata(task.id, buildActionMetadata(task, 'reject', source, actionReason))
 
   await recordEvent('human_rejected', {
@@ -275,6 +296,10 @@ async function rejectTask(
       previous_status: task.status,
     },
   })
+
+  if (task.metadata['pending_delivery_approval'] === true && task.project_id) {
+    await updateProjectStatus(task.project_id, 'review').catch(() => {})
+  }
 
   return {
     action: 'reject',
@@ -303,7 +328,7 @@ export async function executeFounderTaskAction(
     case 'retry':
       return retryBlockedTask(task, options.source, options.notify, options.reason)
     case 'approve':
-      return approveTask(task, options.source, options.reason)
+      return approveTask(task, options.source, options.notify, options.reason)
     case 'reject':
       return rejectTask(task, options.source, options.reason)
     default:

@@ -8,10 +8,21 @@ import OpenAI from 'openai'
 import { getModelForAgent, getModelById, estimateCost } from '../config/models.js'
 import { log, recordRun } from './logger.js'
 import { createAgentMemory, formatMemoriesForPrompt, recallAgentMemories } from './memory.js'
+import { getSpecialModelOverride } from './model-routing-policy.js'
 import type { ModelRoutingContext, RunOutcome, TaskType } from '../types/index.js'
 
 const DEFAULT_RUN_TIMEOUT_MS = 300_000 // 5 min default; file generation uses 6 min override
 const MEMORY_WARNING_COOLDOWN_MS = 300_000
+const RETRYABLE_LLM_ERROR_PATTERNS = [
+  'premature close',
+  'socket hang up',
+  'econnreset',
+  'terminated',
+  'fetch failed',
+  'connection closed',
+  'stream ended',
+  'other side closed',
+]
 let lastMemoryWarningAt = 0
 
 function getRunTimeoutMs(): number {
@@ -76,8 +87,6 @@ export interface RunResult {
 // Funzione principale: esegui una chiamata LLM e logga il run
 // ---------------------------------------------------------------------------
 
-const FALLBACK_MODEL_ID = 'gpt-5.4'
-
 // ---------------------------------------------------------------------------
 // callLLM — uses streaming so the connection stays alive during long responses.
 // Without streaming, a silent 4-5 min generation causes proxy/network timeouts
@@ -114,6 +123,173 @@ async function callLLM(
   }
 
   return { content, tokensInput, tokensOutput }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+function extractStatusCode(error: unknown, rawMessage: string): number | null {
+  if (typeof error === 'object' && error !== null) {
+    const maybeStatus = Reflect.get(error, 'status')
+    if (typeof maybeStatus === 'number' && Number.isFinite(maybeStatus)) {
+      return maybeStatus
+    }
+    if (typeof maybeStatus === 'string') {
+      const parsed = Number.parseInt(maybeStatus, 10)
+      if (Number.isFinite(parsed)) return parsed
+    }
+  }
+
+  const match = rawMessage.match(/\b(?:status(?: code)?|code)\D{0,8}(\d{3})\b/i)
+  if (!match) return null
+
+  const parsed = Number.parseInt(match[1] ?? '', 10)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function extractProviderName(rawMessage: string): string | null {
+  const match = rawMessage.match(/provider_name["']?\s*[:=]\s*["']([^"']+)["']/i)
+  return match?.[1]?.trim() || null
+}
+
+function classifyLlmError(error: unknown): {
+  rawMessage: string
+  retryable: boolean
+  label: 'transport' | 'timeout' | 'provider' | 'rate_limit' | 'auth'
+  statusCode: number | null
+  providerName: string | null
+} {
+  const rawMessage = error instanceof Error ? error.message : String(error)
+  const lowered = rawMessage.toLowerCase()
+  const statusCode = extractStatusCode(error, rawMessage)
+  const providerName = extractProviderName(rawMessage)
+  const isTimeout =
+    lowered.includes('timeout') ||
+    lowered.includes('timed out') ||
+    lowered.includes('abort')
+
+  if (isTimeout) {
+    return {
+      rawMessage,
+      retryable: false,
+      label: 'timeout',
+      statusCode,
+      providerName,
+    }
+  }
+
+  const isRateLimited =
+    statusCode === 429 ||
+    lowered.includes('rate limit') ||
+    lowered.includes('rate-limit') ||
+    lowered.includes('rate limited') ||
+    lowered.includes('too many requests')
+
+  if (isRateLimited) {
+    return {
+      rawMessage,
+      retryable: false,
+      label: 'rate_limit',
+      statusCode,
+      providerName,
+    }
+  }
+
+  if (statusCode === 401 || statusCode === 403 || lowered.includes('unauthorized') || lowered.includes('forbidden')) {
+    return {
+      rawMessage,
+      retryable: false,
+      label: 'auth',
+      statusCode,
+      providerName,
+    }
+  }
+
+  const retryable = RETRYABLE_LLM_ERROR_PATTERNS.some((pattern) => lowered.includes(pattern))
+  return {
+    rawMessage,
+    retryable,
+    label: retryable ? 'transport' : 'provider',
+    statusCode,
+    providerName,
+  }
+}
+
+function formatLlmAttemptError(
+  modelId: string,
+  error: unknown,
+  attempt: number,
+  maxAttempts: number
+): string {
+  const classification = classifyLlmError(error)
+  const details = [
+    classification.providerName ? `provider ${classification.providerName}` : null,
+    classification.statusCode ? `status ${String(classification.statusCode)}` : null,
+    `attempt ${String(attempt)}/${String(maxAttempts)}`,
+  ].filter(Boolean).join(', ')
+
+  return `LLM ${classification.label} error on ${modelId} (${details}): ${classification.rawMessage}`
+}
+
+async function callLLMWithRetries(
+  client: OpenAI,
+  modelId: string,
+  messages: ChatMessage[],
+  signal: AbortSignal,
+  context: { agentId: string; taskId?: string; maxAttempts?: number }
+): Promise<{ content: string; tokensInput: number; tokensOutput: number }> {
+  const maxAttempts = context.maxAttempts ?? 2
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await callLLM(client, modelId, messages, signal)
+    } catch (error) {
+      const classification = classifyLlmError(error)
+      const formattedError = formatLlmAttemptError(modelId, error, attempt, maxAttempts)
+
+      if (signal.aborted || !classification.retryable || attempt >= maxAttempts) {
+        if (!signal.aborted && !classification.retryable) {
+          log.warn(
+            {
+              agentId: context.agentId,
+              taskId: context.taskId,
+              modelId,
+              statusCode: classification.statusCode,
+              providerName: classification.providerName,
+              errorClass: classification.label,
+              error: classification.rawMessage,
+            },
+            classification.label === 'rate_limit'
+              ? 'LLM provider rejected the request due to upstream rate limiting'
+              : 'LLM provider rejected the request'
+          )
+        }
+
+        throw new Error(formattedError, {
+          cause: error instanceof Error ? error : undefined,
+        })
+      }
+
+      log.warn(
+        {
+          agentId: context.agentId,
+          taskId: context.taskId,
+          modelId,
+          attempt,
+          maxAttempts,
+          error: classification.rawMessage,
+        },
+        'Transient LLM transport error detected; retrying same model'
+      )
+
+      await sleep(Math.min(1_500, attempt * 400))
+    }
+  }
+
+  throw new Error(`LLM retry loop exhausted unexpectedly for ${modelId}`)
 }
 
 function buildMemoryQuery(messages: ChatMessage[]): string {
@@ -199,17 +375,34 @@ export async function runAgent(
 
   try {
     try {
-      const result = await callLLM(client, model.id, preparedMessages, abortController.signal)
+      const result = await callLLMWithRetries(client, model.id, preparedMessages, abortController.signal, {
+        agentId: opts.agentId,
+        ...(opts.taskId !== undefined && { taskId: opts.taskId }),
+      })
       content = result.content
       tokensInput = result.tokensInput
       tokensOutput = result.tokensOutput
     } catch (primaryErr) {
-      // If the primary model is not gpt-5.4, attempt a fallback
-      if (model.id !== FALLBACK_MODEL_ID && !abortController.signal.aborted) {
+      const configuredFallbackModelId = await getSpecialModelOverride('llm_primary_failure_fallback')
+      const primaryFailure = classifyLlmError(primaryErr)
+
+      if (
+        configuredFallbackModelId &&
+        configuredFallbackModelId !== model.id &&
+        !abortController.signal.aborted
+      ) {
         const primaryErrMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
         log.warn(
-          { agentId: opts.agentId, primaryModel: model.id, error: primaryErrMsg },
-          `LLM primary model failed, retrying with ${FALLBACK_MODEL_ID}`
+          {
+            agentId: opts.agentId,
+            primaryModel: model.id,
+            fallbackModel: configuredFallbackModelId,
+            error: primaryErrMsg,
+            errorClass: primaryFailure.label,
+            statusCode: primaryFailure.statusCode,
+            providerName: primaryFailure.providerName,
+          },
+          `LLM primary model failed, retrying with configured fallback ${configuredFallbackModelId}`
         )
 
         // Log the failed primary attempt
@@ -223,16 +416,34 @@ export async function runAgent(
           tokens_output: 0,
           tools_used: opts.tools ?? [],
           outcome: 'failure',
-          error_message: `Primary model failed, fell back to ${FALLBACK_MODEL_ID}: ${primaryErrMsg}`,
+          error_message: `Primary model failed, fell back to configured model ${configuredFallbackModelId}: ${primaryErrMsg}`,
           duration_ms: Date.now() - startMs,
         })
 
-        const fallbackResult = await callLLM(client, FALLBACK_MODEL_ID, preparedMessages, abortController.signal)
+        const fallbackResult = await callLLMWithRetries(client, configuredFallbackModelId, preparedMessages, abortController.signal, {
+          agentId: opts.agentId,
+          ...(opts.taskId !== undefined && { taskId: opts.taskId }),
+        })
         content = fallbackResult.content
         tokensInput = fallbackResult.tokensInput
         tokensOutput = fallbackResult.tokensOutput
-        usedModelId = FALLBACK_MODEL_ID
+        usedModelId = configuredFallbackModelId
       } else {
+        log.warn(
+          {
+            agentId: opts.agentId,
+            taskId: opts.taskId,
+            primaryModel: model.id,
+            fallbackModel: configuredFallbackModelId ?? null,
+            error: primaryFailure.rawMessage,
+            errorClass: primaryFailure.label,
+            statusCode: primaryFailure.statusCode,
+            providerName: primaryFailure.providerName,
+          },
+          primaryFailure.label === 'rate_limit'
+            ? 'LLM primary model hit upstream rate limiting and no configured cross-model fallback is active'
+            : 'LLM primary model failed and no configured cross-model fallback is active'
+        )
         throw primaryErr
       }
     }

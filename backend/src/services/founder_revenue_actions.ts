@@ -47,7 +47,7 @@ export async function executeInvoiceProject(
   clientSlug: string,
   projectSlug: string,
   amountUsd: number | undefined,
-  source: 'telegram' | 'natural_language' | 'dashboard'
+  source: 'telegram' | 'natural_language' | 'dashboard' | 'auto'
 ): Promise<InvoiceProjectResult> {
   const { client, project } = await resolveClientProject(clientSlug, projectSlug)
 
