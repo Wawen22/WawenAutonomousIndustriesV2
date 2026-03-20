@@ -25,7 +25,7 @@ WAI has two practical surfaces:
 ## Quick Start
 
 ```bash
-# 1. Start LiteLLM
+# 1. Start/Restart LiteLLM
 sg docker -c "docker compose up litellm -d"
 
 # 2. Start backend

@@ -51,6 +51,52 @@ export const MODELS: Record<string, ModelConfig & { litellm_model_name: string }
     is_active: true,
     notes: 'Fast, low-latency operations, marketing, support, routing',
   },
+
+  // --- OpenRouter free models ---
+  'glm-4.5-air': {
+    id: 'glm-4.5-air',
+    provider: 'openrouter',
+    display_name: 'GLM 4.5 Air (Free)',
+    litellm_model_name: 'glm-4.5-air',
+    cost_per_1k_input_tokens: 0,
+    cost_per_1k_output_tokens: 0,
+    context_window: 128000,
+    is_active: true,
+    notes: 'Free via OpenRouter — content, social, marketing, ops, HR',
+  },
+  'nemotron-120b': {
+    id: 'nemotron-120b',
+    provider: 'openrouter',
+    display_name: 'Nemotron 3 Super 120B (Free)',
+    litellm_model_name: 'nemotron-120b',
+    cost_per_1k_input_tokens: 0,
+    cost_per_1k_output_tokens: 0,
+    context_window: 128000,
+    is_active: true,
+    notes: 'Free via OpenRouter — CEO, PM, finance, complex tasks',
+  },
+  'step-flash': {
+    id: 'step-flash',
+    provider: 'openrouter',
+    display_name: 'Step 3.5 Flash (Free)',
+    litellm_model_name: 'step-flash',
+    cost_per_1k_input_tokens: 0,
+    cost_per_1k_output_tokens: 0,
+    context_window: 32000,
+    is_active: true,
+    notes: 'Free via OpenRouter — ultra-fast routing and simple tasks',
+  },
+  'qwen3-coder': {
+    id: 'qwen3-coder',
+    provider: 'openrouter',
+    display_name: 'Qwen3 Coder (Free)',
+    litellm_model_name: 'qwen3-coder',
+    cost_per_1k_input_tokens: 0,
+    cost_per_1k_output_tokens: 0,
+    context_window: 128000,
+    is_active: true,
+    notes: 'Free via OpenRouter — all dev, QA, architect agents',
+  },
 }
 
 // ---------------------------------------------------------------------------
@@ -58,35 +104,35 @@ export const MODELS: Record<string, ModelConfig & { litellm_model_name: string }
 // Override via Supabase agents.model_id or Neb's /assign_model command
 // ---------------------------------------------------------------------------
 
-const AGENT_MODEL_DEFAULTS: Record<string, string> = {
-  // Executive
-  ceo: 'gpt-5.4',
+export const AGENT_MODEL_DEFAULTS: Record<string, string> = {
+  // Executive — complex reasoning → nemotron-120b
+  ceo: 'nemotron-120b',
 
   // Team SaaS
-  pm_saas: 'gpt-5.4',
-  dev_lead_saas: 'gpt-5.4',
-  dev_saas_1: 'gpt-5.4',
-  dev_saas_2: 'gemini-2.5-flash',
+  pm_saas: 'nemotron-120b',
+  dev_lead_saas: 'nemotron-120b',
+  dev_saas_1: 'qwen3-coder',
+  dev_saas_2: 'qwen3-coder',
 
-  // Team Dev
-  architect: 'gpt-5.4',
-  dev_general_1: 'gpt-5.4',
-  dev_general_2: 'gpt-5.4',
-  qa: 'gpt-5.4',
+  // Team Dev — coding → qwen3-coder
+  architect: 'qwen3-coder',
+  dev_general_1: 'qwen3-coder',
+  dev_general_2: 'qwen3-coder',
+  qa: 'qwen3-coder',
 
-  // Team Consulting
-  consulting_lead: 'gpt-5.4',
-  analyst: 'gpt-5.4',
+  // Team Consulting — analysis → nemotron-120b
+  consulting_lead: 'nemotron-120b',
+  analyst: 'nemotron-120b',
 
-  // Team Marketing
-  marketing_strategist: 'gpt-5.4',
-  content_creator: 'gemini-2.5-flash',
-  social_manager: 'gemini-2.5-flash',
+  // Team Marketing — content → glm-4.5-air
+  marketing_strategist: 'glm-4.5-air',
+  content_creator: 'glm-4.5-air',
+  social_manager: 'glm-4.5-air',
 
   // Team Ops/Finance/HR
-  ops: 'gemini-2.5-flash',
-  finance: 'gpt-5.4',
-  hr: 'gemini-2.5-flash',
+  ops: 'glm-4.5-air',
+  finance: 'nemotron-120b',
+  hr: 'glm-4.5-air',
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +164,10 @@ const SIMPLE_TASK_TYPES = new Set<TaskType>([
 // ---------------------------------------------------------------------------
 
 const runtimeOverrides = new Map<string, string>()
+
+export function getModelOverrides(): Record<string, string> {
+  return Object.fromEntries(runtimeOverrides.entries())
+}
 
 export function setModelOverride(agentId: string, modelId: string): void {
   if (!(modelId in MODELS)) {
@@ -155,10 +205,10 @@ export function getModelForAgent(ctx: ModelRoutingContext): ModelConfig {
   // 3. Task type routing
   if (taskType) {
     if (COMPLEX_TASK_TYPES.has(taskType) || requiresComplex === true) {
-      return MODELS['gpt-5.4']!
+      return MODELS['nemotron-120b']!
     }
     if (SIMPLE_TASK_TYPES.has(taskType)) {
-      return MODELS['gemini-2.5-flash']!
+      return MODELS['step-flash']!
     }
   }
 
@@ -170,7 +220,7 @@ export function getModelForAgent(ctx: ModelRoutingContext): ModelConfig {
   }
 
   // 5. Fallback
-  return MODELS['gemini-2.5-flash']!
+  return MODELS['step-flash']!
 }
 
 // ---------------------------------------------------------------------------

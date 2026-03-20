@@ -84,6 +84,9 @@ This now implies a platform decision:
 | T100 | Skill execution context | ✅ Done | Claude | 2 | Skill runner service, POST /api/skills/:id/run, Run button in CapabilitiesView UsageTab |
 | T101 | Multi-channel: WhatsApp via Baileys | ✅ Done | Claude | 3 | WhatsApp channel service, notification router, capability registry, dashboard Setup panel |
 | T102 | WhatsApp incoming messages | ✅ Done | Claude | 1 | `messages.upsert` handler in whatsapp.ts — founder messages routed to CEO Intake (same as Telegram) |
+| T103 | OpenRouter free models | ✅ Done | Claude | 1 | 4 free models added to LiteLLM config + model registry; all agents re-routed to free tier |
+| T104 | CEO Intake pre-routing | ✅ Done | Claude | 1 | `detectFounderShortcutIntent` expanded — status, lista, projects, weekly digest bypass LLM entirely |
+| T105 | Dashboard Models view | ✅ Done | Claude | 2 | GET /api/models + POST /api/models/assign + ModelsView in sidebar (both modes) |
 
 ---
 
@@ -109,13 +112,40 @@ This now implies a platform decision:
 
 ## Immediate Next Steps
 
-1. **Credit optimization + OpenRouter** — WAI usa LiteLLM; integrare OpenRouter per accedere a modelli free (GLM 4.5 Air, Nemotron 3 Super, Step 3.5 Flash, Qwen3 Coder 480B) e ridurre costi API per task non critici.
-2. **Telegram bot polling conflict on hot-reload** — risolto con retry automatico (15s × 5), ma la causa profonda è tsx watch che tiene vivo il vecchio polling. In produzione (M6/M8) non sarà un problema.
-3. **Infra**: considerare M8 (migrazione mini PC) e M6 (deploy Hetzner) quando il prodotto è maturo.
+1. **Testare OpenRouter** — restart LiteLLM (`docker compose up litellm -d`), poi mandare un messaggio Telegram per verificare che CEO risponda via nemotron-120b. Se LiteLLM non trova il modello, controllare che OPENROUTER_API_KEY sia nel `.env` del container.
+2. **Governance modelli dalla dashboard** — aprire la view Models in sidebar, cambiare il modello di un agente, verificare che il file `workspace/system/model-assignments.json` si aggiorni e che le chiamate LLM successive usino il nuovo modello.
+3. **Telegram bot polling conflict on hot-reload** — risolto con retry automatico (15s × 5), ma la causa profonda è tsx watch che tiene vivo il vecchio polling. In produzione (M6/M8) non sarà un problema.
+4. **Infra**: considerare M8 (migrazione mini PC) e M6 (deploy Hetzner) quando il prodotto è maturo.
 
 ---
 
 ## Recent Changes
+
+### 2026-03-20 — Sessione 64: OpenRouter free models + CEO Intake pre-routing + Models view (T103/T104/T105)
+
+**T103 — OpenRouter models:**
+- Added 4 free models to `infrastructure/litellm/config.yaml` under `openrouter/` prefix: `glm-4.5-air`, `nemotron-120b`, `step-flash`, `qwen3-coder`
+- Added `'openrouter'` to `ModelProvider` type in `backend/src/types/index.ts`
+- Added all 4 models to `MODELS` registry in `backend/src/config/models.ts` (cost = 0, is_active = true)
+- Updated `AGENT_MODEL_DEFAULTS`: CEO/PM/finance/consulting → nemotron-120b; all dev/QA/architect → qwen3-coder; content/social/ops/HR → glm-4.5-air
+- `COMPLEX_TASK_TYPES` → nemotron-120b; `SIMPLE_TASK_TYPES` → step-flash; fallback → step-flash
+- Exported `AGENT_MODEL_DEFAULTS` and added `getModelOverrides()` helper
+
+**T104 — CEO Intake pre-routing:**
+- Expanded `detectFounderShortcutIntent` in `backend/src/agents/ceo_intake.ts`
+- New zero-LLM shortcuts: `status`/`stato`/`report` → status_report; `clienti`/`lista clienti` → list_clients; `progetti`/`lista progetti` → list_projects; `weekly digest`/`recap settimanale` → weekly_digest
+- All existing shortcuts (daily brief, Drive, Gmail, calendar) preserved
+- Result: for direct one-word commands, no LLM call is made at all
+
+**T105 — Models governance view:**
+- Created `backend/src/services/model-assignments.ts` — persists agent model overrides to `workspace/system/model-assignments.json`; restores on startup via `restorePersistedModelAssignments()`
+- Added `GET /api/models` → returns registry + defaults + overrides + effective assignments
+- Added `POST /api/models/assign` → `{ agentId, modelId }` → persists + updates in-memory routing
+- Added `ModelsResponse` and enriched `ModelConfig` types to `dashboard/src/types/index.ts`
+- Created `dashboard/src/components/ModelsView.tsx` — registry table with FREE badge + provider pills, agent assignment table with dropdowns, Save button, override indicators
+- Added `'models'` icon to `Icon.tsx` (stacked-rows SVG)
+- Wired `models` view into Sidebar (both Company CORE section and Personal section) and App.tsx
+- Typechecks green for both backend and dashboard
 
 ### 2026-03-20 — Sessione 63: WhatsApp incoming messages (T102)
 

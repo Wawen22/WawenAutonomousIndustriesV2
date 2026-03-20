@@ -6,7 +6,7 @@ export type IconName =
   | 'chevron-left' | 'chevron-right'
   | 'check' | 'x' | 'clock' | 'zap' | 'arrow-right' | 'info' | 'alert'
   | 'cpu' | 'dollar' | 'trending-up' | 'refresh' | 'folder' | 'building' | 'book'
-  | 'play'
+  | 'play' | 'models'
 
 interface IconProps {
   name: IconName
@@ -231,6 +231,14 @@ export function Icon({ name, size = 16, className }: IconProps) {
       return (
         <svg {...p}>
           <polygon points="5 3 19 12 5 21 5 3" />
+        </svg>
+      )
+    case 'models':
+      return (
+        <svg {...p}>
+          <rect x="2" y="3" width="20" height="4" rx="1" />
+          <rect x="2" y="10" width="20" height="4" rx="1" />
+          <rect x="2" y="17" width="20" height="4" rx="1" />
         </svg>
       )
     default:

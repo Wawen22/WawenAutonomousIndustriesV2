@@ -46,7 +46,7 @@ export interface Agent {
 
 // --- Models ---
 
-export type ModelProvider = 'azure' | 'google' | 'openai' | 'local'
+export type ModelProvider = 'azure' | 'google' | 'openai' | 'openrouter' | 'local'
 
 export interface ModelConfig {
   id: string

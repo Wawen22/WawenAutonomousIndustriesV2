@@ -64,6 +64,12 @@ import {
   disconnectWhatsApp,
 } from './services/whatsapp.js'
 import { sendFounderNotification } from './services/notification-router.js'
+import { MODELS, AGENT_MODEL_DEFAULTS, getModelOverrides } from './config/models.js'
+import {
+  assignModelToAgent,
+  getPersistedModelOverrides,
+  restorePersistedModelAssignments,
+} from './services/model-assignments.js'
 import type {
   CapabilityAssignmentState,
   CapabilityAssignmentTargetType,
@@ -1330,6 +1336,76 @@ async function main(): Promise<void> {
       return
     }
 
+    // GET /api/models — T105 model registry + current assignments
+    if (url.pathname === '/api/models' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const persistedOverrides = await getPersistedModelOverrides()
+          const runtimeOverrides = getModelOverrides()
+          // Merge: runtime takes precedence over persisted (they should be in sync, but safety first)
+          const effectiveOverrides = { ...persistedOverrides, ...runtimeOverrides }
+
+          // Compute current assignment for every known agent
+          const assignments: Record<string, string> = {}
+          for (const agentId of Object.keys(AGENT_MODEL_DEFAULTS)) {
+            assignments[agentId] = effectiveOverrides[agentId] ?? AGENT_MODEL_DEFAULTS[agentId] ?? 'step-flash'
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            models: MODELS,
+            defaults: AGENT_MODEL_DEFAULTS,
+            overrides: effectiveOverrides,
+            assignments,
+          }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Models API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    // POST /api/models/assign — T105 persist model override for an agent
+    if (url.pathname === '/api/models/assign' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const body = await readJsonBody(req)
+          const agentId = typeof (body as Record<string, unknown>)['agentId'] === 'string'
+            ? (body as Record<string, unknown>)['agentId'] as string
+            : null
+          const modelId = typeof (body as Record<string, unknown>)['modelId'] === 'string'
+            ? (body as Record<string, unknown>)['modelId'] as string
+            : null
+
+          if (!agentId || !modelId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'agentId and modelId are required' }))
+            return
+          }
+
+          await assignModelToAgent(agentId, modelId)
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, agentId, modelId }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Models assign API error')
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
     res.writeHead(404)
     res.end()
   })
@@ -1364,6 +1440,14 @@ async function main(): Promise<void> {
     log.info({ count: getAllAgentIds().length }, 'Agents marked online')
   } catch (err) {
     log.warn({ err }, 'Failed to update agent statuses (DB may not be ready yet)')
+  }
+
+  // --- Restore persisted model assignment overrides ---
+  try {
+    await restorePersistedModelAssignments()
+    log.info('Model assignment overrides restored')
+  } catch (err) {
+    log.warn({ err }, 'Failed to restore model assignments (non-fatal)')
   }
 
   // --- Start Telegram bot (with retry for 409 hot-reload conflicts) ---

@@ -324,10 +324,19 @@ export interface ModelConfig {
   id: string
   provider: string
   display_name: string
+  litellm_model_name?: string
   cost_per_1k_input_tokens: number
   cost_per_1k_output_tokens: number
   context_window: number
   is_active: boolean
+  notes?: string
+}
+
+export interface ModelsResponse {
+  models: Record<string, ModelConfig>
+  defaults: Record<string, string>
+  overrides: Record<string, string>
+  assignments: Record<string, string>
 }
 
 export type CapabilityType =

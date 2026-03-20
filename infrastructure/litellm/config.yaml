@@ -19,6 +19,27 @@ model_list:
       model: gemini/gemini-2.5-flash
       api_key: os.environ/GOOGLE_AI_API_KEY
 
+  # --- OpenRouter free models ---
+  - model_name: glm-4.5-air
+    litellm_params:
+      model: openrouter/z-ai/glm-4.5-air:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: nemotron-120b
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: step-flash
+    litellm_params:
+      model: openrouter/stepfun/step-3.5-flash:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: qwen3-coder
+    litellm_params:
+      model: openrouter/qwen/qwen3-coder:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
 # =============================================================
 # Router settings
 # =============================================================

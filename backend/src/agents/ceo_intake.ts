@@ -196,6 +196,43 @@ function detectFounderShortcutIntent(text: string): IntentResponse | null {
     return null
   }
 
+  // --- Status report ---
+  if (/^(status|stato|report|system status|stato sistema|status report|wai status|mostra status|dimmi lo status)$/i.test(normalized)) {
+    return {
+      action: 'reply',
+      message: 'Genero il report di sistema.',
+      commands: [{ type: 'status_report', params: {} }],
+    }
+  }
+
+  // --- Lista clienti ---
+  if (/^(clienti|lista clienti|list clients|elenco clienti|mostra clienti|show clients|clients)$/i.test(normalized)) {
+    return {
+      action: 'reply',
+      message: 'Ecco i clienti WAI.',
+      commands: [{ type: 'list_clients', params: {} }],
+    }
+  }
+
+  // --- Lista progetti ---
+  if (/^(progetti|lista progetti|list projects|elenco progetti|mostra progetti|show projects|projects|all projects|tutti i progetti)$/i.test(normalized)) {
+    return {
+      action: 'reply',
+      message: 'Ecco i progetti WAI.',
+      commands: [{ type: 'list_projects', params: {} }],
+    }
+  }
+
+  // --- Weekly digest ---
+  if (/(weekly digest|digest settimanale|recap settimanale|weekly recap|riepilogo settimanale)/i.test(normalized)) {
+    return {
+      action: 'execute',
+      message: 'Genero il weekly digest.',
+      commands: [{ type: 'weekly_digest', params: {} }],
+    }
+  }
+
+  // --- Daily brief ---
   if (/(daily founder brief|brief giornaliero|brief quotidiano|daily brief)/i.test(normalized)) {
     return {
       action: 'execute',
@@ -204,6 +241,7 @@ function detectFounderShortcutIntent(text: string): IntentResponse | null {
     }
   }
 
+  // --- Drive: file recenti ---
   if (
     /(file recenti|recent files|recenti su google drive|recenti di google drive|ultimi file.*google drive|google drive.*file recenti)/i.test(normalized) &&
     /google drive|drive/i.test(normalized)
@@ -215,14 +253,16 @@ function detectFounderShortcutIntent(text: string): IntentResponse | null {
     }
   }
 
+  // --- Gmail: ultima email ---
   if (/(ultima email|latest email|last email|leggi l'ultima email|leggi ultima mail|ultima mail)/i.test(normalized)) {
     return {
       action: 'execute',
-      message: 'Recupero l’ultima email.',
+      message: 'Recupero l\u2019ultima email.',
       commands: [{ type: 'gmail_latest_message', params: {} }],
     }
   }
 
+  // --- Gmail: inbox summary ---
   if (/(inbox|email ricevute|riassumimi le email|summary inbox|summarize inbox)/i.test(normalized)) {
     return {
       action: 'execute',
@@ -231,14 +271,16 @@ function detectFounderShortcutIntent(text: string): IntentResponse | null {
     }
   }
 
+  // --- Calendar ---
   if (/(agenda di oggi|calendar today|today agenda|today calendar|eventi di oggi|riunioni di oggi)/i.test(normalized)) {
     return {
       action: 'execute',
-      message: 'Recupero l’agenda di oggi.',
+      message: 'Recupero l\u2019agenda di oggi.',
       commands: [{ type: 'calendar_today', params: {} }],
     }
   }
 
+  // --- Drive: read file ---
   const driveReadMatch = text.match(/(?:leggi|apri|read|open)\s+(?:il\s+file\s+)?(.+?)\s+(?:su\s+google\s+drive|su\s+drive)$/i)
   if (driveReadMatch?.[1]?.trim()) {
     return {
@@ -248,6 +290,7 @@ function detectFounderShortcutIntent(text: string): IntentResponse | null {
     }
   }
 
+  // --- Drive: find file ---
   const driveFindMatch = text.match(/(?:trova|cerca|find|search)\s+(?:su\s+google\s+drive\s+)?(?:il\s+file\s+)?(.+?)(?:\s+su\s+google\s+drive|\s+su\s+drive)?$/i)
   if (driveFindMatch?.[1]?.trim() && /google drive|drive/i.test(normalized)) {
     return {
