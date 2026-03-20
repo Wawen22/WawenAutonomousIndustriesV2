@@ -76,7 +76,7 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
-| T083 | File Export tool | 🔄 In Progress | Codex | 2 | Add deeper founder/dashboard linking and cleaner output access |
+| T083 | File Export tool | ✅ Done | Claude | 2 | Capability event logging, /api/files/exports endpoint, Exports tab in Assistant HQ |
 | T084 | Skills system | ✅ Done | Claude | 2 | Skill registry enriched; company skills added; SkillDetailPanel live in dashboard |
 | T086 | MCP integration layer | ✅ Done | Codex | 2 | Important emails today + pre-meeting brief quick actions live; editable automation schedule; AssistantHQ tab refactor |
 | T087 | WhatsApp via Baileys or Slack | ⬜ Todo | Claude | 3 | Evaluate only after capability foundation is stable |
@@ -107,13 +107,21 @@ This now implies a platform decision:
 
 ## Immediate Next Steps
 
-1. Consider T083 File Export tool: deeper founder/dashboard linking and cleaner output access.
+1. Consider WhatsApp/Slack channel (T087) now that capability foundation and file export are stable.
 2. Consider WhatsApp/Slack channel (T087) only after capability foundation is stable.
 3. Consider expanding company-side skill execution: skills currently have rich metadata and assignments but execution still flows through CEO delegation — a skill runner / execution context could make them more autonomous.
 
 ---
 
 ## Recent Changes
+
+### 2026-03-20 — Sessione 59: File Export tool (T083)
+
+- `executeFileExport` in `tool-executor.ts` now logs a `used` capability event to `integration.local_workspace_filesystem` on every export, with filename, relative path, format, mode, and size_bytes in the payload — events appear in the Capabilities Activity tab
+- Added `GET /api/files/exports` endpoint: scans all `workspace/*/output/` and `workspace/personal/*/output/` dirs, returns sorted list of exported files with name, relativePath, sizeBytes, createdAt, type (md/txt/json/csv/html/other), and context (personal/company) — supports `?limit=` param, default 50
+- Added `ExportedFile`, `ExportedFileType`, `ExportedFileContext`, `ExportsResponse` types to `dashboard/src/types/index.ts`
+- Added **Exports** tab to `PersonalHQView` (Assistant HQ): shows the full list of workspace exports with type pill, context badge, size, timestamp, and a Copy Path button; lazy-loads when tab is opened, Refresh button for manual re-scan
+- Typechecks and builds verified green for both backend and dashboard
 
 ### 2026-03-20 — Sessione 58: Capabilities UI/UX refactor
 

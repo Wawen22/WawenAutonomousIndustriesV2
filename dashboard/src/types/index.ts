@@ -250,6 +250,23 @@ export interface PersonalAutomationStatus {
   dailyFounderBrief: DailyFounderBriefAutomationStatus
 }
 
+export type ExportedFileType = 'md' | 'txt' | 'json' | 'csv' | 'html' | 'other'
+export type ExportedFileContext = 'personal' | 'company'
+
+export interface ExportedFile {
+  name: string
+  relativePath: string
+  sizeBytes: number
+  createdAt: string
+  type: ExportedFileType
+  context: ExportedFileContext
+}
+
+export interface ExportsResponse {
+  exports: ExportedFile[]
+  total: number
+}
+
 export interface PersonalContext {
   profile: PersonalProfile
   workspacePath: string

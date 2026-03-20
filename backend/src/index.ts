@@ -1071,6 +1071,107 @@ async function main(): Promise<void> {
       return
     }
 
+    // GET /api/files/exports — recent exported files across all workspace output dirs
+    if (url.pathname === '/api/files/exports' && req.method === 'GET') {
+      void (async () => {
+        try {
+          if (!isLocalRequest(req) || !isAllowedDashboardOrigin(req.headers.origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const EXPORT_EXTS = new Set(['.md', '.txt', '.json', '.csv', '.html'])
+          const workspaceRoot = getWorkspaceRoot()
+
+          type ExportedFile = {
+            name: string
+            relativePath: string
+            sizeBytes: number
+            createdAt: string
+            type: 'md' | 'txt' | 'json' | 'csv' | 'html' | 'other'
+            context: 'personal' | 'company'
+          }
+
+          // Derive file type label from extension
+          function fileType(name: string): ExportedFile['type'] {
+            const ext = name.lastIndexOf('.') >= 0 ? name.slice(name.lastIndexOf('.')).toLowerCase() : ''
+            const known: Record<string, ExportedFile['type']> = { '.md': 'md', '.txt': 'txt', '.json': 'json', '.csv': 'csv', '.html': 'html' }
+            return known[ext] ?? 'other'
+          }
+
+          // Scan a single output/ dir and collect files
+          async function scanOutputDir(
+            dir: string,
+            relBase: string,
+            context: ExportedFile['context'],
+          ): Promise<ExportedFile[]> {
+            if (!existsSync(dir)) return []
+            const entries = await readdir(dir, { withFileTypes: true })
+            const files = entries.filter((e) => {
+              if (!e.isFile()) return false
+              const ext = e.name.lastIndexOf('.') >= 0 ? e.name.slice(e.name.lastIndexOf('.')).toLowerCase() : ''
+              return EXPORT_EXTS.has(ext)
+            })
+            return Promise.all(
+              files.map(async (e) => {
+                const fileStat = await stat(join(dir, e.name))
+                return {
+                  name: e.name,
+                  relativePath: `${relBase}/${e.name}`.replace(/\\/g, '/'),
+                  sizeBytes: fileStat.size,
+                  createdAt: fileStat.mtime.toISOString(),
+                  type: fileType(e.name),
+                  context,
+                } satisfies ExportedFile
+              })
+            )
+          }
+
+          // Discover all output dirs: personal and company
+          const results: ExportedFile[] = []
+
+          // personal: workspace/personal/<owner>/output/
+          const personalRoot = join(workspaceRoot, 'personal')
+          if (existsSync(personalRoot)) {
+            const owners = await readdir(personalRoot, { withFileTypes: true })
+            for (const owner of owners.filter((e) => e.isDirectory())) {
+              const outputDir = join(personalRoot, owner.name, 'output')
+              const files = await scanOutputDir(outputDir, `workspace/personal/${owner.name}/output`, 'personal')
+              results.push(...files)
+            }
+          }
+
+          // company: workspace/<client>/<project>/output/
+          if (existsSync(workspaceRoot)) {
+            const topEntries = await readdir(workspaceRoot, { withFileTypes: true })
+            for (const clientDir of topEntries.filter((e) => e.isDirectory() && e.name !== 'personal' && e.name !== 'system')) {
+              const clientPath = join(workspaceRoot, clientDir.name)
+              const projectEntries = await readdir(clientPath, { withFileTypes: true })
+              for (const projectDir of projectEntries.filter((e) => e.isDirectory())) {
+                const outputDir = join(clientPath, projectDir.name, 'output')
+                const files = await scanOutputDir(outputDir, `workspace/${clientDir.name}/${projectDir.name}/output`, 'company')
+                results.push(...files)
+              }
+            }
+          }
+
+          results.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          const limitParam = url.searchParams.get('limit')
+          const limit = limitParam ? Math.max(1, Math.min(200, parseInt(limitParam, 10))) : 50
+          const paged = results.slice(0, limit)
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ exports: paged, total: results.length }))
+        } catch (err) {
+          log.error({ err }, 'Files exports API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
     res.writeHead(404)
     res.end()
   })

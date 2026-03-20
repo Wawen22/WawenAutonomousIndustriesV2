@@ -21,6 +21,7 @@ import {
 import { getClientBySlug, getProjectBySlug } from './supabase.js'
 import { getToolsForAgent, validateToolEnvVars } from '../tools/index.js'
 import { ensurePersonalProfile } from './personal-context.js'
+import { recordCapabilityEvent } from './logger.js'
 
 export type ExecutableToolId = 'file_export' | 'email' | 'web_search'
 
@@ -152,6 +153,21 @@ async function executeFileExport(
   const absolutePath = join(absoluteDir, filename)
   const relativePath = `${relativeDir}/${filename}`.replace(/\\/g, '/')
   await writeFile(absolutePath, input.content, 'utf-8')
+
+  await recordCapabilityEvent({
+    capability_id: 'integration.local_workspace_filesystem',
+    event_type: 'used',
+    actor_type: 'agent',
+    source: 'tool-executor:file_export',
+    summary: `File exported: ${relativePath}`,
+    payload: {
+      filename,
+      relative_path: relativePath,
+      format: input.format ?? 'md',
+      mode: input.mode ?? 'personal',
+      size_bytes: Buffer.byteLength(input.content, 'utf-8'),
+    },
+  })
 
   return {
     toolId: 'file_export',
