@@ -21,6 +21,7 @@ import {
   getProjectsByClient,
   getRecentEvents,
   getTasksByStatus,
+  updateProjectStatus,
   updateProjectWorkspacePath,
 } from '../services/supabase.js'
 import {
@@ -1550,6 +1551,12 @@ async function executeAction(
 
           projectId = project.id
           scopeLabel = ` | *${clientObj.name}* / *${project.name}*`
+
+          // Reset stuck project status when launching new work
+          if (project.status === 'blocked' || project.status === 'review') {
+            await updateProjectStatus(project.id, 'active').catch(() => { /* non-fatal */ })
+          }
+
           taskMetadata = {
             project_id: project.id,
             project_name: project.name,

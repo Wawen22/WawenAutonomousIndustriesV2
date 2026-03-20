@@ -4,7 +4,7 @@
 // producono deliverable tecnici e attivano il gate QA.
 // ============================================================
 
-import { mkdir, writeFile } from 'fs/promises'
+import { mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 
 import { runAgent } from '../services/llm.js'
@@ -137,6 +137,96 @@ function implementationToMarkdown(
   ]
 
   return lines.join('\n')
+}
+
+async function appendExecutionResult(
+  filePath: string,
+  output: DevGeneralOutput,
+  touchedFiles: string[],
+  blockers: string[],
+  warnings: string[],
+  summary: string,
+  commandsExecuted: number
+): Promise<void> {
+  let existing = ''
+  try {
+    existing = await readFile(filePath, 'utf-8')
+  } catch {
+    return
+  }
+
+  // Strip any previously appended execution result section
+  const markerIndex = existing.indexOf('\n---\n\n## Execution Result')
+  if (markerIndex !== -1) {
+    existing = existing.slice(0, markerIndex)
+  }
+
+  const touchedSet = new Set(
+    touchedFiles.map((f) => f.replace(/^.*[\\/]/, '').toLowerCase())
+  )
+
+  // Re-render checklist: mark [x] if a touched file matches the item text
+  const updatedChecklist = output.acceptanceChecklist.map((item) => {
+    const itemLower = item.toLowerCase()
+    const done = touchedFiles.some((f) => {
+      const base = f.replace(/^.*[\\/]/, '').toLowerCase()
+      return itemLower.includes(base) || base.includes(itemLower.split(' ')[0]!)
+    })
+    return done ? `- [x] ${item}` : `- [ ] ${item}`
+  })
+
+  void touchedSet
+
+  // Replace the old Acceptance Checklist section with updated one
+  const checklistSection =
+    `## Acceptance Checklist\n\n${updatedChecklist.join('\n')}\n`
+  const updatedExisting = existing.replace(
+    /## Acceptance Checklist\n\n(- \[[ x]\] .+\n)+/,
+    checklistSection
+  )
+
+  const today = new Date().toISOString().split('T')[0]!
+  const resultLines: string[] = [
+    ``,
+    `---`,
+    ``,
+    `## Execution Result`,
+    ``,
+    `**Date:** ${today}`,
+    `**Status:** ${blockers.length > 0 ? '⚠️ BLOCKED' : '✅ COMPLETED'}`,
+    `**Commands executed:** ${commandsExecuted}`,
+    ``,
+    `### Files Written`,
+    ``,
+    touchedFiles.length > 0
+      ? touchedFiles.map((f) => `- \`${f}\``).join('\n')
+      : '- *(no files written)*',
+    ``,
+  ]
+
+  if (summary) {
+    resultLines.push(`### Summary`, ``, summary, ``)
+  }
+
+  if (blockers.length > 0) {
+    resultLines.push(
+      `### Blockers`,
+      ``,
+      ...blockers.map((b) => `- ⛔ ${b}`),
+      ``
+    )
+  }
+
+  if (warnings.length > 0) {
+    resultLines.push(
+      `### Warnings`,
+      ``,
+      ...warnings.map((w) => `- ⚠️ ${w}`),
+      ``
+    )
+  }
+
+  await writeFile(filePath, updatedExisting + resultLines.join('\n'), 'utf-8')
 }
 
 async function processDevGeneralFollowUps(
@@ -478,6 +568,19 @@ Constraints:
           `Blocking issues: ${String(repoBlockingIssues.length)}`,
         ])
       }
+    }
+
+    // Update the deliverable brief with actual execution results
+    if (artifactPath) {
+      await appendExecutionResult(
+        artifactPath,
+        implementation,
+        repoTouchedFiles,
+        repoBlockingIssues,
+        repoWarnings,
+        repoExecutionSummary,
+        repoCommandsExecuted
+      ).catch(() => { /* non-fatal */ })
     }
 
     await recordEvent('task_completed', {
