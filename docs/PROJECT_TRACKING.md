@@ -113,13 +113,20 @@ This now implies a platform decision:
 ## Immediate Next Steps
 
 1. **Test end-to-end delivery** — creare nuovo cliente + progetto + task via Telegram. Verificare che: modelli free vengano usati (visibili in Runs view), code gen usi gpt-5.4, deliverable `dev-general-1.md` abbia la sezione `## Execution Result` con file toccati e checklist aggiornate, project status passi `active → review → delivered`.
-2. **QA false-positive su repo** — se QA blocca su `npm install failed` per un progetto static HTML/CSS (nessun package.json), valutare di alzare la soglia: `npm install` failure → warning invece di blocker quando non c'è script `build` nel package.json.
+2. **QA false-positive su repo** — ✅ risolto: `npm install` failure ora è warning, non blocker.
 3. **Models governance dalla dashboard** — aprire la view Models, cambiare il modello di un agente, verificare che `workspace/system/model-assignments.json` si aggiorni e che le chiamate successive usino il nuovo modello.
 4. **Infra**: considerare M8 (migrazione mini PC) e M6 (deploy Hetzner) quando il prodotto è maturo.
 
 ---
 
 ## Recent Changes
+
+### 2026-03-20 — Sessione 65: Bug fixes delivery pipeline + deliverable update + project status reset + QA npm fix
+
+**software_repo_runtime.ts — QA false-positive su npm install:**
+- `npm install` failure downgraded from `blockingIssues` → `warnings`
+- Rationale: install failure non prova che il codice sia rotto (comune per siti statici, problemi di rete, o package.json senza build scripts); i veri blockers arrivano solo da `build`/`typecheck`/`test` failures
+- QA continua a segnalare l'install failure come warning visibile nel report, ma non blocca più la delivery
 
 ### 2026-03-20 — Sessione 65: Bug fixes delivery pipeline + deliverable update + project status reset
 

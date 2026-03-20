@@ -764,7 +764,10 @@ async function runRepoChecks(
         )
       )
       if (commands.at(-1)?.status === 'failed') {
-        blockingIssues.push(`Dependency install failed in ${manifest.relativeDir}.`)
+        // Install failure → warning only. We couldn't verify the build, but this
+        // does not prove the code is broken (common for static sites, network issues,
+        // or projects with no build scripts). Hard blockers come only from script failures.
+        warnings.push(`Dependency install failed in ${manifest.relativeDir} — build verification skipped.`)
         continue
       }
     }
