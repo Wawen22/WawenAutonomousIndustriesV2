@@ -17,6 +17,7 @@ import type {
   CapabilityAuditSummary,
 } from '../types/index.js'
 import { applyCapabilityGovernanceOverrides } from './capability-governance.js'
+import { isGitHubConfigured } from './github.js'
 import { getGoogleWorkspaceMcpRuntimeStatus } from './google-workspace-mcp.js'
 import { getMcpBridgeStatus, type McpConnectorStatus } from './mcp-bridge.js'
 import { getPersonalAutomationStatus } from './personal-automation.js'
@@ -1115,6 +1116,41 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
       audit: baseAudit({
         capabilityId: 'deployment.git_push',
         summary: 'Global delivery gate for pushing approved project repos to GitHub.',
+      }),
+    },
+    {
+      capability: baseCapability({
+        id: 'integration.github',
+        type: 'integration',
+        label: 'GitHub Integration',
+        description: 'Automatic GitHub repo creation, PR and issue management via REST API. Used by Architect to set up remote repos on project init.',
+        owner: 'Dev Team',
+        runtimeTarget: 'company',
+        status: isGitHubConfigured() ? 'active' : 'disabled',
+        tags: ['github', 'git', 'delivery', 'repo'],
+        dependsOn: [],
+      }),
+      assignments: [
+        runtimeAssignment('integration.github', 'company', 'Company Runtime', 'company'),
+        agentAssignment('integration.github', 'architect', 'company', 'Architect auto-creates GitHub repos on project init when GITHUB_TOKEN + GITHUB_OWNER are configured.'),
+      ],
+      policy: basePolicy({
+        capabilityId: 'integration.github',
+        mode: 'restricted',
+        allowedTools: ['github_api'],
+        envRequirements: ['GITHUB_TOKEN', 'GITHUB_OWNER'],
+        notes: 'Requires GITHUB_TOKEN and GITHUB_OWNER. When configured, Architect automatically creates a private GitHub repo and pushes the initial commit.',
+      }),
+      health: healthFromEnv(
+        'integration.github',
+        generatedAt,
+        isGitHubConfigured() ? 'Connected' : 'Missing Config',
+        ['GITHUB_TOKEN', 'GITHUB_OWNER'],
+        'GitHub token and owner are configured for automatic repo creation and delivery.',
+      ),
+      audit: baseAudit({
+        capabilityId: 'integration.github',
+        summary: 'GitHub REST API integration for repo create, PR, and issue management.',
       }),
     },
     {
