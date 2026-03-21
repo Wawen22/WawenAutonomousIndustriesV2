@@ -4,7 +4,7 @@
 // ============================================================
 
 import { runAgent } from '../services/llm.js'
-import { createTask, updateTaskStatus } from '../services/supabase.js'
+import { createTask, transitionTaskStatus, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
 import { loadAllWorkspaceContext, resolveSoftwareWorkspacePath } from './software_delivery_utils.js'
 import { runPmSaasAgent } from './pm_saas.js'
@@ -177,8 +177,12 @@ Description: ${task.description}${projectContext}${workspaceContext}
 
 Analyze and delegate to the most appropriate agent.`
 
-  // Mark parent task in_progress before calling the LLM
-  await updateTaskStatus(task.id, 'in_progress')
+  // T109 — atomic CAS: only one CEO agent can claim this task
+  const claimed = await transitionTaskStatus(task.id, 'todo', 'in_progress')
+  if (!claimed) {
+    log.warn({ taskId: task.id }, 'CEO runCeoAgent: task already claimed by another agent, aborting')
+    return
+  }
 
   let delegation: DelegationDecision | null = null
 
