@@ -184,6 +184,7 @@ export type EventType =
   | 'founder_command'
   | 'project_delivered'
   | 'revenue_recorded'
+  | 'invoice_email_sent'
   | 'payment_received'
   | 'ops_alert'
   | 'finance_report_generated'
