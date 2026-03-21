@@ -5,7 +5,7 @@
 // ============================================================
 
 import { log } from './logger.js'
-import { sendTelegramNotification } from './telegram.js'
+import { sendTelegramNotification, sendTelegramPhoto } from './telegram.js'
 import { getWhatsAppStatus, sendWhatsAppNotification } from './whatsapp.js'
 
 /**
@@ -30,4 +30,16 @@ export async function sendFounderNotification(message: string): Promise<void> {
     // WhatsApp failure is non-fatal — Telegram was already sent
     log.warn({ err }, 'WhatsApp notification failed (Telegram already delivered)')
   }
+}
+
+/**
+ * Send a photo notification to the founder.
+ * Currently only Telegram supports photo files.
+ */
+export async function sendFounderPhoto(photoPath: string, caption?: string): Promise<void> {
+  // Primary: Telegram
+  await sendTelegramPhoto(photoPath, caption)
+
+  // Secondary: WhatsApp (WhatsApp implementation for files would require Baileys media upload)
+  // For now we skip WhatsApp for photos to keep it simple unless needed.
 }

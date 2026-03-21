@@ -1294,6 +1294,41 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
     },
     {
       capability: baseCapability({
+        id: 'tool.playwright_screenshot',
+        type: 'integration',
+        label: 'Browser Screenshot Tool',
+        description: 'Automated headless browser capture via Playwright. Used by QA to take a visual snapshot of live deploys.',
+        owner: 'Dev Team',
+        runtimeTarget: 'company',
+        riskLevel: 'low',
+        tags: ['browser', 'screenshot', 'playwright', 'qa'],
+      }),
+      assignments: [
+        runtimeAssignment('tool.playwright_screenshot', 'company', 'Company Runtime', 'company'),
+        agentAssignment('tool.playwright_screenshot', 'qa', 'company', 'QA uses this to take screenshots of live deployments for the report.'),
+      ],
+      policy: basePolicy({
+        capabilityId: 'tool.playwright_screenshot',
+        mode: 'restricted',
+        allowedTools: ['playwright'],
+        notes: 'Headless Chromium screenshot utility.',
+      }),
+      health: baseHealth({
+        capabilityId: 'tool.playwright_screenshot',
+        state: 'connected',
+        label: 'Connected',
+        message: 'Playwright (Chromium) is available in the backend runtime.',
+        checkedAt: generatedAt,
+        freshness: 'fresh',
+        reasonCode: 'playwright_available',
+      }),
+      audit: baseAudit({
+        capabilityId: 'tool.playwright_screenshot',
+        summary: 'Added to provide visual feedback in the QA delivery report.',
+      }),
+    },
+    {
+      capability: baseCapability({
         id: 'channel.dashboard_control_plane',
         type: 'channel',
         label: 'Dashboard Control Plane',

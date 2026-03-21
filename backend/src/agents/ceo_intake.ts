@@ -5,7 +5,7 @@
 // con un unico messaggio riassuntivo.
 // ============================================================
 
-import { readFile, writeFile } from 'fs/promises'
+import { mkdir, readFile, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { runAgent } from '../services/llm.js'
@@ -49,6 +49,8 @@ import {
   formatMarkProjectPaidMessage,
 } from '../services/founder_revenue_actions.js'
 import { sanitizeDeliveryConfigPatch, updateProjectDeliveryConfig } from '../services/delivery-config.js'
+import { captureScreenshot } from '../services/screenshot.js'
+import { sendFounderPhoto } from '../services/notification-router.js'
 import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import { runCeoAgent } from './ceo.js'
 import { runQaAgent } from './qa.js'
@@ -136,6 +138,7 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - invoice_project    → params: client_slug, project_slug, amount_usd?
 - mark_project_paid  → params: client_slug, project_slug, amount_usd
 - configure_delivery → params: client_slug, project_slug, config_patch
+- capture_screenshot → params: url, caption?
 
 Valid project types: ${PROJECT_TYPES.join(', ')}
 
@@ -166,6 +169,7 @@ ${clientContext}
 21. Use daily_founder_brief when Neb asks for a daily founder briefing combining inbox, calendar, and recent Drive activity.
 22. When Neb asks to enable/disable governed delivery steps for a specific project (git push, auto deploy, deploy provider, founder approval, client email, auto invoice), use configure_delivery with client_slug, project_slug, and a config_patch object. Example patch: { "autoDeploy": false }.
 23. Use retry_qa when Neb explicitly asks to redo/retry only QA (e.g. "rifai il QA", "retry qa <id>", "ri-lancia solo QA"). This skips Architect and Dev General and runs only the final QA gate.
+24. Use capture_screenshot when Neb asks to take a visual snapshot of a URL (e.g. "fai uno screenshot di google.it", "screen di https://...").
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -203,6 +207,18 @@ function detectFounderShortcutIntent(text: string): IntentResponse | null {
   const normalized = text.trim().toLowerCase()
   if (!normalized) {
     return null
+  }
+
+  // --- Screenshot ---
+  const screenshotMatch = text.match(/^(?:fai uno\s+)?(?:screenshot|screen|snapshot)\s+(?:di\s+)?(https?:\/\/[^\s]+|[a-z0-9.-]+\.[a-z]{2,}[^\s]*)$/i)
+  if (screenshotMatch?.[1]) {
+    let url = screenshotMatch[1].trim()
+    if (!url.startsWith('http')) url = `https://${url}`
+    return {
+      action: 'execute',
+      message: `Catturo uno screenshot di ${url}.`,
+      commands: [{ type: 'capture_screenshot', params: { url } }],
+    }
   }
 
   // --- Status report ---
@@ -1899,6 +1915,39 @@ async function executeAction(
       return formatMarkProjectPaidMessage(result)
     }
 
+    // ── capture_screenshot ───────────────────────────────────────────────
+    case 'capture_screenshot': {
+      const url = getString(params, 'url')
+      const caption = getString(params, 'caption')
+
+      if (!url) throw new Error('url mancante per capture_screenshot')
+
+      const personalContext = await getPersonalContext()
+      const outputDir = personalContext.outputPath
+      await mkdir(outputDir, { recursive: true })
+
+      const screenshotPath = join(outputDir, 'screenshot.png')
+      const result = await captureScreenshot(url, screenshotPath)
+
+      if (!result.ok) {
+        throw new Error(`Screenshot fallito: ${result.error}`)
+      }
+
+      await recordEvent('founder_command', {
+        payload: {
+          command: 'nl_capture_screenshot',
+          source: 'natural_language',
+          url,
+          path: screenshotPath,
+        },
+      })
+
+      // Send the photo via Telegram
+      await sendFounderPhoto(screenshotPath, caption || `📸 Screenshot di ${url}`)
+
+      return `📸 Screenshot di ${url} catturato e inviato.`
+    }
+
     // ── configure_delivery ───────────────────────────────────────────────
     case 'configure_delivery': {
       const clientSlug = getString(params, 'client_slug')
@@ -2017,7 +2066,10 @@ export async function runCeoNaturalLanguageHandler(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         log.error({ err, command: command.type }, 'CEO Intake: shortcut action execution error')
-        summaries.push(`❌ Errore in \`${command.type}\`: ${msg}`)
+        const cleanMsg = msg
+          .replace(/[`*#_]/g, '')
+          .slice(0, 500)
+        summaries.push(`❌ Errore in \`${command.type}\`: ${cleanMsg}${msg.length > 500 ? '...' : ''}`)
         failed = true
         break
       }
@@ -2102,7 +2154,10 @@ export async function runCeoNaturalLanguageHandler(
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
           log.error({ err, command: command.type }, 'CEO Intake: action execution error')
-          summaries.push(`❌ Errore in \`${command.type}\`: ${msg}`)
+          const cleanMsg = msg
+          .replace(/[`*#_]/g, '')
+          .slice(0, 500)
+        summaries.push(`❌ Errore in \`${command.type}\`: ${cleanMsg}${msg.length > 500 ? '...' : ''}`)
           failed = true
           break // stop sequence on error
         }

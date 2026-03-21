@@ -5,7 +5,7 @@
 
 import { mkdir, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
-import { Bot, Context } from 'grammy'
+import { Bot, Context, InputFile } from 'grammy'
 import { isAbsolute, join } from 'path'
 import {
   addGitRemoteOrigin,
@@ -1322,3 +1322,22 @@ export async function sendTelegramNotification(message: string): Promise<void> {
     log.error({ err }, 'Failed to send Telegram notification')
   }
 }
+
+export async function sendTelegramPhoto(photoPath: string, caption?: string): Promise<void> {
+  const chatId = process.env['TELEGRAM_FOUNDER_CHAT_ID']
+  if (!chatId) {
+    log.warn('TELEGRAM_FOUNDER_CHAT_ID not set, skipping photo notification')
+    return
+  }
+
+  try {
+    const bot = getTelegramBot()
+    await bot.api.sendPhoto(chatId, new InputFile(photoPath), {
+      ...(caption ? { caption } : {}),
+      parse_mode: 'Markdown',
+    })
+  } catch (err) {
+    log.error({ err, photoPath }, 'Failed to send Telegram photo')
+  }
+}
+

@@ -5,7 +5,7 @@
 // ============================================================
 
 import { mkdir, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { basename, join } from 'path'
 
 import { runAgent } from '../services/llm.js'
 import {
@@ -23,6 +23,7 @@ import { getCapabilityById } from '../services/capabilities.js'
 import { getDeliveryConfig } from '../services/delivery-config.js'
 import { deployToNetlify, deployToVercel, pushToGitHub } from '../services/deploy.js'
 import { sendEmail } from '../services/email.js'
+import { captureScreenshot } from '../services/screenshot.js'
 import { executeInvoiceProject } from '../services/founder_revenue_actions.js'
 import {
   loadRepoContext,
@@ -125,7 +126,8 @@ function qaReportToMarkdown(
   projectName: string,
   repoSummary?: string,
   repoWarnings: string[] = [],
-  repoBlockingIssues: string[] = []
+  repoBlockingIssues: string[] = [],
+  screenshotPath?: string
 ): string {
   const today = new Date().toISOString().split('T')[0]!
   const lines: string[] = [
@@ -155,6 +157,14 @@ function qaReportToMarkdown(
     output.releaseNotes,
     ``,
   ]
+
+  if (screenshotPath) {
+    // Relative path for markdown if possible, but absolute path for founder/system is also fine
+    // Since this is in workspace/{client}/{project}/deliverables/qa_report.md
+    // and screenshot is in the same folder:
+    const relScreenshot = basename(screenshotPath)
+    lines.push(`## Visual QA`, ``, `![Live Screenshot](${relScreenshot})`, ``)
+  }
 
   if (output.risks.length > 0) {
     lines.push(`## Risks`, ``, ...output.risks.map((item) => `- ${item}`), ``)
@@ -771,10 +781,59 @@ Constraints:
     }
 
     let deliveryResult: DeliveryGateResult | null = null
+    let screenshotPath: string | undefined = undefined
+
     if (finalRecommendation === 'pass') {
       const deliveryConfig = projectId ? await getDeliveryConfig(projectId) : null
       if (deliveryConfig) {
         deliveryResult = await runDeliveryGates(task, deliveryConfig, notify)
+      }
+    }
+
+    // T112 – Screenshot capture if deployUrl is available
+    if (deliveryResult?.deployUrl && workspaceAbsPath) {
+      const deliverableDir = join(workspaceAbsPath, 'deliverables')
+      const targetScreenshotPath = join(deliverableDir, 'screenshot.png')
+
+      const screenshotResult = await captureScreenshot(deliveryResult.deployUrl, targetScreenshotPath)
+      if (screenshotResult.ok && screenshotResult.path) {
+        screenshotPath = screenshotResult.path
+        await recordCapabilityEvent({
+          capability_id: 'tool.playwright_screenshot',
+          event_type: 'used',
+          actor_type: 'agent',
+          actor_id: 'qa',
+          source: 'qa_agent_run',
+          summary: `Captured visual snapshot of ${deliveryResult.deployUrl}`,
+          payload: { task_id: task.id, url: deliveryResult.deployUrl, path: screenshotPath },
+        })
+
+        // Re-write QA report with screenshot included
+        if (qaReportPath) {
+          await writeFile(
+            qaReportPath,
+            qaReportToMarkdown(
+              {
+                ...qaReport,
+                blockingIssues: mergedBlockingIssues,
+                releaseRecommendation: finalRecommendation,
+              },
+              task,
+              clientName,
+              projectName,
+              repoSummary || undefined,
+              mergedWarnings,
+              repoAssessment?.blockingIssues ?? [],
+              screenshotPath
+            ),
+            'utf-8'
+          )
+        }
+
+        await appendProjectProgress(workspaceAbsPath, 'Visual QA captured', [
+          `Screenshot: deliverables/screenshot.png`,
+          `URL: ${deliveryResult.deployUrl}`,
+        ])
       }
     }
 
@@ -783,6 +842,7 @@ Constraints:
       taskId: task.id,
       payload: {
         qa_report_path: qaReportPath,
+        screenshot_path: screenshotPath,
         release_recommendation: finalRecommendation,
         llm_release_recommendation: qaReport.releaseRecommendation,
         blocking_issues_count: mergedBlockingIssues.length,
@@ -844,6 +904,7 @@ Constraints:
         : '',
       deliveryResult && !deliveryResult.approvalPending ? `\n🚚 Delivery gates:\n${deliveryResult.summaryLines.join('\n')}` : '',
       qaReportPath ? `\n💾 Saved: \`${qaReportPath}\`` : '',
+      screenshotPath ? `🖼️ Screenshot: \`screenshot.png\`` : '',
       `\n📍 Project status: *${projectStatus}*`,
       founderHint,
     ].filter((line) => line !== '').join('\n')
