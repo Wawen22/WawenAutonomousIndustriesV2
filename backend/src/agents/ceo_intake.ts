@@ -15,6 +15,7 @@ import {
   createTask,
   getClientBySlug,
   getClients,
+  getInProgressTasksByProject,
   getPayments,
   getProjects,
   getProjectBySlug,
@@ -1604,6 +1605,15 @@ async function executeAction(
           }
         } catch {
           // best-effort
+        }
+      }
+
+      // T109 — deduplication guard: block if project already has an active task
+      if (projectId) {
+        const activeTasks = await getInProgressTasksByProject(projectId)
+        if (activeTasks.length > 0) {
+          const active = activeTasks[0]!
+          return `⚠️ *Task non creato* — il progetto ha già un task in lavorazione (\`${active.id.slice(0, 8)}\`): *${active.title}*\n\nAspetta che finisca o usa \`retry_task\` se è bloccato.`
         }
       }
 
