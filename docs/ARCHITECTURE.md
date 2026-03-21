@@ -470,6 +470,7 @@ wai/
 │   ├── services/
 │   │   ├── supabase.ts                 # DB client + typed query helpers
 │   │   ├── capabilities.ts             # Capability registry, assignments, policy, health, audit snapshot
+│   │   ├── screenshot.ts               # Browser screenshot service (Playwright)
 │   │   ├── personal-context.ts         # Founder profile + personal workspace context
 │   │   ├── memory.ts                   # Agent memory store + pgvector recall
 │   │   ├── telegram.ts                 # grammy bot handler + slash commands

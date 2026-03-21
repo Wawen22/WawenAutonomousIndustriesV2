@@ -149,9 +149,36 @@ Leggi l'ultima email ricevuta
 Mostrami l'agenda di oggi
 Mostrami i file recenti su Google Drive
 Genera il daily founder brief di oggi
+Fai uno screenshot di https://ansa.it
 ```
 
 If the request is unambiguous, WAI executes directly. If a required identifier is missing or ambiguous, WAI asks one focused question.
+
+---
+
+## Visual QA & Screenshots
+
+WAI can "see" live websites using a headless browser (Playwright).
+
+### 1. Automatic Visual QA
+When the **QA Agent** approves a software delivery that includes a `deployUrl` (e.g., via Vercel or Netlify), it automatically:
+- Navigates to the live URL.
+- Captures a screenshot of the homepage.
+- Saves it as `screenshot.png` in the project's `deliverables/` folder.
+- Embeds the image directly into the `qa_report.md`.
+
+### 2. Manual Screenshots (On-Demand)
+You can ask WAI to take a screenshot of any public URL at any time via Telegram.
+
+**Natural Language examples:**
+- *"Fai uno screenshot di google.it"*
+- *"Snapshot di https://github.com"*
+- *"Fammi vedere come appare il sito ansa.it"*
+
+**Outcome:**
+- WAI captures the image.
+- Sends the image file directly to you on Telegram.
+- Saves the file in your personal workspace: `workspace/personal/neb/output/screenshot.png`.
 
 ---
 
