@@ -30,7 +30,11 @@ function getToken(): string | null {
 }
 
 function getOwner(): string | null {
-  return process.env['GITHUB_OWNER']?.trim() ?? null
+  return (
+    process.env['GITHUB_ORG']?.trim() ||
+    process.env['GITHUB_OWNER']?.trim() ||
+    null
+  )
 }
 
 export function isGitHubConfigured(): boolean {
@@ -87,8 +91,12 @@ export async function createGitHubRepo(
   if (!owner) throw new Error('GITHUB_OWNER not configured')
 
   const repoName = sanitizeRepoName(projectName)
+  const isOrg = Boolean(process.env['GITHUB_ORG']?.trim())
+  const path = isOrg
+    ? `/orgs/${encodeURIComponent(owner)}/repos`
+    : '/user/repos'
 
-  const repo = await githubFetch<GitHubApiRepo>('/user/repos', {
+  const repo = await githubFetch<GitHubApiRepo>(path, {
     method: 'POST',
     body: JSON.stringify({
       name: repoName,
