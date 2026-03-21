@@ -5,6 +5,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 
 import { getModelForAgent } from '../config/models.js'
+import { createGitHubRepo, isGitHubConfigured } from '../services/github.js'
 import { runAgent } from '../services/llm.js'
 import { log, recordEvent, recordRun } from '../services/logger.js'
 import { getSpecialModelOverride } from '../services/model-routing-policy.js'
@@ -1610,6 +1611,7 @@ export interface WorkspaceRepoInitResult {
   alreadyExisted: boolean
   committed: boolean
   warnings: string[]
+  repoUrl?: string
 }
 
 export async function initWorkspaceRepo(options: {
@@ -1677,7 +1679,31 @@ export async function initWorkspaceRepo(options: {
     )
   }
 
-  return { repoPath, alreadyExisted: false, committed, warnings }
+  // Optionally create a GitHub remote repo and push initial commit
+  let repoUrl: string | undefined
+  if (committed && isGitHubConfigured()) {
+    try {
+      const ghRepo = await createGitHubRepo(projectName, { description: `WAI — ${projectName}` })
+      const token = process.env['GITHUB_TOKEN']!.trim()
+      const tokenizedUrl = `https://x-access-token:${token}@github.com/${ghRepo.fullName}.git`
+      await runGit(repoPath, ['remote', 'add', 'origin', tokenizedUrl])
+      await runGit(repoPath, ['push', '-u', 'origin', 'main'])
+      repoUrl = ghRepo.htmlUrl
+      log.info({ repoPath, repoUrl }, 'initWorkspaceRepo: GitHub remote created and initial commit pushed')
+    } catch (err) {
+      warnings.push(
+        `GitHub remote setup failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
+  }
+
+  return {
+    repoPath,
+    alreadyExisted: false,
+    committed,
+    warnings,
+    ...(repoUrl ? { repoUrl } : {}),
+  }
 }
 
 export async function assessRepoForQa(options: {
