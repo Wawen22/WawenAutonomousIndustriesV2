@@ -242,6 +242,18 @@ export async function getTasksByStatus(status: TaskStatus): Promise<Task[]> {
   return data as Task[]
 }
 
+export async function getInProgressTasksByProject(projectId: string): Promise<Task[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('tasks')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('status', 'in_progress')
+    .order('created_at')
+
+  if (error) throw new Error(`Failed to get in-progress tasks for project ${projectId}: ${error.message}`)
+  return data as Task[]
+}
+
 export async function getChildTasks(parentTaskId: string): Promise<Task[]> {
   const { data, error } = await getSupabaseClient()
     .from('tasks')
