@@ -83,7 +83,7 @@ This now implies a platform decision:
 | T108 | Invoice email automation | ✅ Done | Claude | 1 | — |
 | T109 | Task deduplication guard | ✅ Done | Claude | 2 | — |
 | T110 | Partial retry (QA-only retry) | ✅ Done | Claude | 2 | — |
-| T111 | MCP GitHub integration | 🔲 Todo | Claude | 2 | Replace CLI git ops with GitHub MCP for repo create, PR, issues |
+| T111 | MCP GitHub integration | ✅ Done | Claude | 2 | — |
 | T112 | Browser/screenshot QA tool | 🔲 Todo | Claude | 3 | After deploy, QA agent opens URL + takes screenshot, attaches to report |
 | T083 | File Export tool | ✅ Done | Claude | 2 | — |
 | T084 | Skills system | ✅ Done | Claude | 2 | — |
@@ -107,6 +107,7 @@ This now implies a platform decision:
 | T108 | Invoice email automation | ✅ Done | On `invoice_project`: HTML invoice email sent to client via Resend; invoice number `INV-YYYYMMDD-<slug>`; non-fatal if no client email; `invoice_email_sent` event logged |
 | T109 | Task deduplication guard | ✅ Done | Atomic CAS pickup in CEO agent + `create_task` guard in CEO Intake blocks duplicate agent spawning on same project |
 | T110 | QA-only partial retry | ✅ Done | `retry qa <task_ref>` and `/retry-qa <task_ref>` now skip Architect + Dev General and re-run only the QA gate on the existing task |
+| T111 | MCP GitHub integration | ✅ Done | `backend/src/services/github.ts` added with `createGitHubRepo`, `createPullRequest`, `createIssue`. `initWorkspaceRepo` auto-creates a GitHub remote and pushes initial commit when `GITHUB_TOKEN` + `GITHUB_OWNER` are set. `integration.github` registered in the capability registry |
 | T113 | Model routing alignment + LLM diagnostics | ✅ Done | Model assignments from the Models view are authoritative for normal runs, special workflow overrides are founder-governed, and LLM transport failures now retry with clearer diagnostics |
 | T085 | CEO personal task routing | ✅ Done | Personal mode can create docs, send reports, do research, build digests |
 | T093 | Capability platform contracts | ✅ Done | Backend now has shared contracts for capability catalog, assignments, policy, health, and audit summary |
@@ -163,6 +164,16 @@ This now implies a platform decision:
 - Added optional bearer auth via `WAI_DASHBOARD_TOKEN` on sensitive dashboard/backend routes while preserving local founder access
 - Hardened `/api/deliverables`, `/api/file`, and repo file serving with resolved-path containment checks under `workspace/`
 - Backend and dashboard typechecks verified green
+
+### 2026-03-21 — T111: GitHub integration
+
+- Created `backend/src/services/github.ts`: `createGitHubRepo()`, `createPullRequest()`, `createIssue()`, `isGitHubConfigured()` — plain fetch to GitHub REST API, no Octokit dependency
+- `initWorkspaceRepo` in `software_repo_runtime.ts`: after initial git commit, if `GITHUB_TOKEN` + `GITHUB_OWNER` are set, auto-creates a private GitHub repo, sets origin remote (tokenized URL), and pushes; failure is non-fatal (warning added)
+- `WorkspaceRepoInitResult` now carries `repoUrl?: string` from the auto-init
+- `architect.ts`: on new-project auto-init, stores `repo_url` + `repo_provider: 'github'` in Supabase project; propagates `repo_url` into child task metadata so QA and delivery gates can use it directly
+- `integration.github` capability registered in `capabilities.ts` — shows `connected` / `disabled` depending on env vars
+- Add `GITHUB_OWNER` env var to enable (existing `GITHUB_TOKEN` already required for push)
+- Typechecks green
 
 ### 2026-03-21 — T110: QA-only partial retry
 
