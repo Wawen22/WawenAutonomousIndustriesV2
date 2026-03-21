@@ -80,8 +80,8 @@ This now implies a platform decision:
 |----|-------|--------|-------|----------|-----------|
 | T106 | Governed Delivery Pipeline | ✅ Done | Codex | 1 | — |
 | T107 | Security hardening (CORS + bearer token + path traversal) | ✅ Done | Codex | 1 | — |
-| T108 | Invoice email automation | 🔲 Todo | Claude | 1 | On `invoice_project`: generate PDF invoice (HTML→PDF) + send via Resend to client email |
-| T109 | Task deduplication guard | 🔲 Todo | Claude | 2 | Add optimistic lock at CEO entry point: `transitionTaskStatus('pending' → 'in_progress')` before spawning |
+| T108 | Invoice email automation | ✅ Done | Claude | 1 | — |
+| T109 | Task deduplication guard | ✅ Done | Claude | 2 | — |
 | T110 | Partial retry (QA-only retry) | 🔲 Todo | Claude | 2 | Allow founder to retry only QA step without re-running Architect + Dev General |
 | T111 | MCP GitHub integration | 🔲 Todo | Claude | 2 | Replace CLI git ops with GitHub MCP for repo create, PR, issues |
 | T112 | Browser/screenshot QA tool | 🔲 Todo | Claude | 3 | After deploy, QA agent opens URL + takes screenshot, attaches to report |
@@ -104,6 +104,8 @@ This now implies a platform decision:
 |----|-------|--------|--------|
 | T106 | Governed Delivery Pipeline | ✅ Done | Per-project delivery config, governed QA delivery gates, deploy services, dashboard Delivery tab, and capability-governed push/deploy/email/invoice path are now live |
 | T107 | Security hardening | ✅ Done | Dashboard API now uses origin-aware CORS, optional bearer auth for sensitive routes, and hardened workspace path resolution for file-serving endpoints |
+| T108 | Invoice email automation | ✅ Done | On `invoice_project`: HTML invoice email sent to client via Resend; invoice number `INV-YYYYMMDD-<slug>`; non-fatal if no client email; `invoice_email_sent` event logged |
+| T109 | Task deduplication guard | ✅ Done | Atomic CAS pickup in CEO agent + `create_task` guard in CEO Intake blocks duplicate agent spawning on same project |
 | T113 | Model routing alignment + LLM diagnostics | ✅ Done | Model assignments from the Models view are authoritative for normal runs, special workflow overrides are founder-governed, and LLM transport failures now retry with clearer diagnostics |
 | T085 | CEO personal task routing | ✅ Done | Personal mode can create docs, send reports, do research, build digests |
 | T093 | Capability platform contracts | ✅ Done | Backend now has shared contracts for capability catalog, assignments, policy, health, and audit summary |
@@ -160,6 +162,19 @@ This now implies a platform decision:
 - Added optional bearer auth via `WAI_DASHBOARD_TOKEN` on sensitive dashboard/backend routes while preserving local founder access
 - Hardened `/api/deliverables`, `/api/file`, and repo file serving with resolved-path containment checks under `workspace/`
 - Backend and dashboard typechecks verified green
+
+### 2026-03-21 — T108 + T109: Invoice email + Task deduplication
+
+**T108 — Invoice email:**
+- `executeInvoiceProject` ora genera e invia una HTML invoice email al cliente via Resend immediatamente dopo aver marcato il progetto come `invoiced`
+- Invoice number format: `INV-YYYYMMDD-<PROJECT_PREFIX>`
+- Se `client.email` è null: email skippata silenziosamente (warning loggato), pipeline non bloccata
+- Evento `invoice_email_sent` emesso nella tabella `events` in caso di successo
+- `formatInvoiceProjectMessage` ora mostra lo stato di consegna email nella conferma Telegram
+
+**T109 — Task deduplication:**
+- `ceo_intake.ts` `create_task`: controlla `getInProgressTasksByProject` prima di creare — ritorna warning chiaro se il progetto ha già un task attivo
+- `ceo.ts` `runCeoAgent`: sostituisce `updateTaskStatus` con `transitionTaskStatus('todo' → 'in_progress')` — CAS atomico impedisce a due CEO agent concorrenti di reclamare lo stesso task
 
 ### 2026-03-20 — Sessione 67: Model routing alignment + LLM diagnostics (T113)
 
