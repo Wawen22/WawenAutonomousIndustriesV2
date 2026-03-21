@@ -207,6 +207,7 @@ export async function runArchitectAgent(
 
   // Auto-init git repo when workspace exists but no repo is linked yet
   let effectiveRepoLocalPath = repoLocalPath
+  let effectiveRepoUrl = repoUrl
   const repoInitWarnings: string[] = []
   if (!repoLocalPath && workspaceAbsPath && projectId) {
     try {
@@ -218,10 +219,22 @@ export async function runArchitectAgent(
       effectiveRepoLocalPath = initResult.repoPath
       repoInitWarnings.push(...initResult.warnings)
 
+      if (initResult.repoUrl) {
+        effectiveRepoUrl = initResult.repoUrl
+      }
+
       if (!initResult.alreadyExisted) {
-        await updateProjectRepo(projectId, { repo_local_path: initResult.repoPath })
+        await updateProjectRepo(projectId, {
+          repo_local_path: initResult.repoPath,
+          ...(initResult.repoUrl ? { repo_url: initResult.repoUrl, repo_provider: 'github' } : {}),
+        })
         log.info(
-          { taskId: task.id, repoPath: initResult.repoPath, committed: initResult.committed },
+          {
+            taskId: task.id,
+            repoPath: initResult.repoPath,
+            committed: initResult.committed,
+            repoUrl: initResult.repoUrl,
+          },
           'Architect: auto-initialized workspace repo'
         )
       }
@@ -355,8 +368,9 @@ Constraints:
       implementation_phases: architecturePlan.implementationPhases,
       quality_gates: architecturePlan.qualityGates,
       architecture_risks: architecturePlan.risks,
-      // Propagate effective repo path (may be auto-initialized)
+      // Propagate effective repo path and URL (may be auto-initialized)
       ...(effectiveRepoLocalPath ? { repo_local_path: effectiveRepoLocalPath } : {}),
+      ...(effectiveRepoUrl ? { repo_url: effectiveRepoUrl } : {}),
     }
 
     const orderedImplementationTasks = [...architecturePlan.implementationTasks].sort((a, b) =>
