@@ -85,6 +85,7 @@ This now implies a platform decision:
 | T110 | Partial retry (QA-only retry) | ✅ Done | Claude | 2 | — |
 | T111 | MCP GitHub integration | ✅ Done | Claude | 2 | — |
 | T112 | Browser/screenshot QA tool | ✅ Done | Claude | 3 | — |
+| T113 | Web Scraper / Deep Reader | ✅ Done | Claude | 2 | — |
 | T083 | File Export tool | ✅ Done | Claude | 2 | — |
 | T084 | Skills system | ✅ Done | Claude | 2 | — |
 | T086 | MCP integration layer | ✅ Done | Codex | 2 | — |

@@ -50,6 +50,7 @@ import {
 } from '../services/founder_revenue_actions.js'
 import { sanitizeDeliveryConfigPatch, updateProjectDeliveryConfig } from '../services/delivery-config.js'
 import { captureScreenshot } from '../services/screenshot.js'
+import { scrapeUrl } from '../services/scraper.js'
 import { sendFounderPhoto } from '../services/notification-router.js'
 import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import { runCeoAgent } from './ceo.js'
@@ -139,6 +140,7 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - mark_project_paid  → params: client_slug, project_slug, amount_usd
 - configure_delivery → params: client_slug, project_slug, config_patch
 - capture_screenshot → params: url, caption?
+- read_url           → params: url
 
 Valid project types: ${PROJECT_TYPES.join(', ')}
 
@@ -170,6 +172,7 @@ ${clientContext}
 22. When Neb asks to enable/disable governed delivery steps for a specific project (git push, auto deploy, deploy provider, founder approval, client email, auto invoice), use configure_delivery with client_slug, project_slug, and a config_patch object. Example patch: { "autoDeploy": false }.
 23. Use retry_qa when Neb explicitly asks to redo/retry only QA (e.g. "rifai il QA", "retry qa <id>", "ri-lancia solo QA"). This skips Architect and Dev General and runs only the final QA gate.
 24. Use capture_screenshot when Neb asks to take a visual snapshot of a URL (e.g. "fai uno screenshot di google.it", "screen di https://...").
+25. Use read_url when Neb asks to read, analyze, or summarize a specific web page (e.g. "leggi questo articolo https://...", "riassumi questa pagina: ...").
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -207,6 +210,18 @@ function detectFounderShortcutIntent(text: string): IntentResponse | null {
   const normalized = text.trim().toLowerCase()
   if (!normalized) {
     return null
+  }
+
+  // --- Read URL ---
+  const readUrlMatch = text.match(/^(?:leggi|analizza|riassumi|read|summarize)\s+(https?:\/\/[^\s]+|[a-z0-9.-]+\.[a-z]{2,}[^\s]*)$/i)
+  if (readUrlMatch?.[1]) {
+    let url = readUrlMatch[1].trim()
+    if (!url.startsWith('http')) url = `https://${url}`
+    return {
+      action: 'execute',
+      message: `Leggo e analizzo il contenuto di ${url}.`,
+      commands: [{ type: 'read_url', params: { url } }],
+    }
   }
 
   // --- Screenshot ---
@@ -599,6 +614,17 @@ function truncateReplyText(value: string, maxChars = 7000): string {
   }
 
   return `${value.slice(0, maxChars).trimEnd()}\n\n[truncated]`
+}
+
+/**
+ * T112/T113: Cleans up error messages to prevent breaking Telegram Markdown.
+ * Removes ANSI escape codes, removes problematic markdown symbols, and truncates length.
+ */
+function sanitizeErrorForTelegram(msg: string): string {
+  return msg
+    .replace(/\u001b\[[0-9;]*m/g, '') // Remove ANSI escape codes
+    .replace(/[`*#_\[\]()]/g, '')     // Remove characters that trigger markdown entities
+    .slice(0, 500)                    // Limit length
 }
 
 function formatLocalRfc3339(date: Date): string {
@@ -1948,6 +1974,43 @@ async function executeAction(
       return `📸 Screenshot di ${url} catturato e inviato.`
     }
 
+    // ── read_url ─────────────────────────────────────────────────────────
+    case 'read_url': {
+      const url = getString(params, 'url')
+      if (!url) throw new Error('url mancante per read_url')
+
+      const scrapeResult = await scrapeUrl(url)
+      if (!scrapeResult.ok) {
+        throw new Error(`Lettura URL fallita: ${scrapeResult.error}`)
+      }
+
+      const title = scrapeResult.title || `Deep Read — ${url}`
+      const filename = `read-${slugify(title.slice(0, 50))}-${Date.now()}.md`
+
+      const exportResult = await executeTool('file_export', {
+        title,
+        filename,
+        format: 'md',
+        content: scrapeResult.markdown || '',
+        mode: 'personal',
+      }, {
+        agentId: 'ceo',
+      })
+
+      await recordEvent('founder_command', {
+        payload: {
+          command: 'nl_read_url',
+          source: 'natural_language',
+          url,
+          title: scrapeResult.title,
+          path: exportResult.relativePath,
+        },
+      })
+
+      const excerpt = scrapeResult.excerpt ? `\n\n> ${scrapeResult.excerpt}` : ''
+      return `📖 *${title}* ${excerpt}\n\nContenuto estratto e salvato in \`${exportResult.relativePath}\`.`.trim()
+    }
+
     // ── configure_delivery ───────────────────────────────────────────────
     case 'configure_delivery': {
       const clientSlug = getString(params, 'client_slug')
@@ -2066,9 +2129,7 @@ export async function runCeoNaturalLanguageHandler(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         log.error({ err, command: command.type }, 'CEO Intake: shortcut action execution error')
-        const cleanMsg = msg
-          .replace(/[`*#_]/g, '')
-          .slice(0, 500)
+        const cleanMsg = sanitizeErrorForTelegram(msg)
         summaries.push(`❌ Errore in \`${command.type}\`: ${cleanMsg}${msg.length > 500 ? '...' : ''}`)
         failed = true
         break
@@ -2154,9 +2215,7 @@ export async function runCeoNaturalLanguageHandler(
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
           log.error({ err, command: command.type }, 'CEO Intake: action execution error')
-          const cleanMsg = msg
-          .replace(/[`*#_]/g, '')
-          .slice(0, 500)
+          const cleanMsg = sanitizeErrorForTelegram(msg)
         summaries.push(`❌ Errore in \`${command.type}\`: ${cleanMsg}${msg.length > 500 ? '...' : ''}`)
           failed = true
           break // stop sequence on error

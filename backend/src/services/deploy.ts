@@ -291,7 +291,7 @@ export async function deployToNetlify(repoLocalPath: string, projectName: string
           Authorization: `Bearer ${netlifyToken}`,
           'Content-Type': 'application/octet-stream',
         },
-        body: file.content,
+        body: file.content as any,
       })
 
       if (!response.ok) {

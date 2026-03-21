@@ -1329,6 +1329,43 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
     },
     {
       capability: baseCapability({
+        id: 'tool.browser_read',
+        type: 'integration',
+        label: 'Deep Web Reader',
+        description: 'Extracts clean text/markdown from any URL using Playwright and Readability. Allows agents to "read" specific web pages.',
+        owner: 'Product / CEO',
+        runtimeTarget: 'company',
+        riskLevel: 'low',
+        tags: ['browser', 'scraping', 'research', 'readability'],
+      }),
+      assignments: [
+        runtimeAssignment('tool.browser_read', 'company', 'Company Runtime', 'company'),
+        agentAssignment('tool.browser_read', 'ceo', 'company', 'CEO can read URLs to answer founder questions.'),
+        agentAssignment('tool.browser_read', 'analyst', 'company', 'Analyst uses this for deep research into specific sources.'),
+        agentAssignment('tool.browser_read', 'marketing_strategist', 'company', 'Marketing reads competitor sites and industry news.'),
+      ],
+      policy: basePolicy({
+        capabilityId: 'tool.browser_read',
+        mode: 'restricted',
+        allowedTools: ['playwright', 'readability'],
+        notes: 'Strictly text extraction, no interaction/form submission.',
+      }),
+      health: baseHealth({
+        capabilityId: 'tool.browser_read',
+        state: 'connected',
+        label: 'Connected',
+        message: 'Playwright and Readability are available.',
+        checkedAt: generatedAt,
+        freshness: 'fresh',
+        reasonCode: 'scraper_available',
+      }),
+      audit: baseAudit({
+        capabilityId: 'tool.browser_read',
+        summary: 'Gives WAI the ability to ingest knowledge from specific web pages.',
+      }),
+    },
+    {
+      capability: baseCapability({
         id: 'channel.dashboard_control_plane',
         type: 'channel',
         label: 'Dashboard Control Plane',

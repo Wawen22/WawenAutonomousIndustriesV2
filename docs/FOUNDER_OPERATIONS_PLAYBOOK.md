@@ -182,6 +182,23 @@ You can ask WAI to take a screenshot of any public URL at any time via Telegram.
 
 ---
 
+## Deep Web Reader (Scraping)
+
+WAI can "read" and extract clean content from web pages using Playwright and Mozilla Readability.
+
+**Natural Language examples:**
+- *"Leggi questo articolo: https://..."*
+- *"Analizza la pagina ansa.it"*
+- *"Riassumi il contenuto di wikipedia.org/wiki/..."*
+
+**Outcome:**
+- WAI navigates to the URL and extracts the main article text (removing ads, navbars, and noise).
+- Converts the content into clean Markdown.
+- Saves the result as a new file in your personal workspace: `workspace/personal/neb/output/read-*.md`.
+- Provides a summary and a link to the file on Telegram.
+
+---
+
 ## Detailed Founder Reference
 
 ### `/new_client`
