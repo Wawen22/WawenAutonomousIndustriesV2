@@ -21,6 +21,7 @@ import {
   getProjectBySlug,
   getProjectsByClient,
   getRecentEvents,
+  getTaskByReference,
   getTasksByStatus,
   updateProjectStatus,
   updateProjectWorkspacePath,
@@ -50,6 +51,7 @@ import {
 import { sanitizeDeliveryConfigPatch, updateProjectDeliveryConfig } from '../services/delivery-config.js'
 import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import { runCeoAgent } from './ceo.js'
+import { runQaAgent } from './qa.js'
 import type { Client, DeliveryConfig, Payment, Project, ProjectType, SystemEvent, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -126,6 +128,7 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - drive_recent_files → params: days?, limit?, file_type?
 - daily_founder_brief → params: inbox_query?, drive_days?
 - retry_task         → params: task_ref, reason?
+- retry_qa           → params: task_ref  (re-runs ONLY the QA gate — skips Architect + Dev General)
 - approve_task       → params: task_ref, reason?
 - reject_task        → params: task_ref, reason?
 - create_document    → params: title, content, filename?, format?, client_slug?, project_slug?, mode?
@@ -162,6 +165,7 @@ ${clientContext}
 20. Use drive_recent_files when Neb asks for recent/recently modified files in Google Drive.
 21. Use daily_founder_brief when Neb asks for a daily founder briefing combining inbox, calendar, and recent Drive activity.
 22. When Neb asks to enable/disable governed delivery steps for a specific project (git push, auto deploy, deploy provider, founder approval, client email, auto invoice), use configure_delivery with client_slug, project_slug, and a config_patch object. Example patch: { "autoDeploy": false }.
+23. Use retry_qa when Neb explicitly asks to redo/retry only QA (e.g. "rifai il QA", "retry qa <id>", "ri-lancia solo QA"). This skips Architect and Dev General and runs only the final QA gate.
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -302,6 +306,16 @@ function detectFounderShortcutIntent(text: string): IntentResponse | null {
       action: 'execute',
       message: 'Cerco il file su Google Drive.',
       commands: [{ type: 'drive_find_file', params: { query: driveFindMatch[1].trim() } }],
+    }
+  }
+
+  // --- Retry QA only ---
+  const retryQaMatch = text.match(/^(?:\/)?retry[-\s]qa\s+([a-f0-9-]{4,36})$/i)
+  if (retryQaMatch?.[1]?.trim()) {
+    return {
+      action: 'execute',
+      message: 'Rilancio il solo gate QA sul task.',
+      commands: [{ type: 'retry_qa', params: { task_ref: retryQaMatch[1].trim() } }],
     }
   }
 
@@ -1665,6 +1679,46 @@ async function executeAction(
       })
 
       return formatFounderTaskActionMessage(result)
+    }
+
+    // ── retry_qa ──────────────────────────────────────────────────────────
+    case 'retry_qa': {
+      const taskRef = getString(params, 'task_ref') ?? getString(params, 'task_id')
+
+      if (!taskRef) throw new Error('task_ref mancante per retry_qa')
+
+      const task = await getTaskByReference(taskRef)
+      if (!task) throw new Error(`Task non trovato: ${taskRef}`)
+
+      if (task.status !== 'blocked' && task.status !== 'in_progress') {
+        throw new Error(
+          `Task è in stato "${task.status}" — retry_qa supporta solo task bloccati o in corso`
+        )
+      }
+
+      await recordEvent('founder_command', {
+        taskId: task.id,
+        payload: {
+          command: 'retry_qa_only',
+          source: 'natural_language',
+          task_ref: taskRef,
+          resolved_task_id: task.id,
+        },
+      })
+
+      void runQaAgent(task, notify).catch((err: unknown) => {
+        log.error({ err, taskId: task.id }, 'retry_qa: QA agent failed')
+      })
+
+      return [
+        `🔁 *QA rilanciato (solo gate QA)*`,
+        ``,
+        `ID: \`${task.id.slice(0, 8)}\``,
+        `Title: ${task.title}`,
+        `Agent: qa`,
+        ``,
+        `Il gate QA è in esecuzione — Architect e Dev General saltati.`,
+      ].join('\n')
     }
 
     // ── approve_task ──────────────────────────────────────────────────────

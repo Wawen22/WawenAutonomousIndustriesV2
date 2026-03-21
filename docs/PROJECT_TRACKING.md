@@ -82,7 +82,7 @@ This now implies a platform decision:
 | T107 | Security hardening (CORS + bearer token + path traversal) | ✅ Done | Codex | 1 | — |
 | T108 | Invoice email automation | ✅ Done | Claude | 1 | — |
 | T109 | Task deduplication guard | ✅ Done | Claude | 2 | — |
-| T110 | Partial retry (QA-only retry) | 🔲 Todo | Claude | 2 | Allow founder to retry only QA step without re-running Architect + Dev General |
+| T110 | Partial retry (QA-only retry) | ✅ Done | Claude | 2 | — |
 | T111 | MCP GitHub integration | 🔲 Todo | Claude | 2 | Replace CLI git ops with GitHub MCP for repo create, PR, issues |
 | T112 | Browser/screenshot QA tool | 🔲 Todo | Claude | 3 | After deploy, QA agent opens URL + takes screenshot, attaches to report |
 | T083 | File Export tool | ✅ Done | Claude | 2 | — |
@@ -106,6 +106,7 @@ This now implies a platform decision:
 | T107 | Security hardening | ✅ Done | Dashboard API now uses origin-aware CORS, optional bearer auth for sensitive routes, and hardened workspace path resolution for file-serving endpoints |
 | T108 | Invoice email automation | ✅ Done | On `invoice_project`: HTML invoice email sent to client via Resend; invoice number `INV-YYYYMMDD-<slug>`; non-fatal if no client email; `invoice_email_sent` event logged |
 | T109 | Task deduplication guard | ✅ Done | Atomic CAS pickup in CEO agent + `create_task` guard in CEO Intake blocks duplicate agent spawning on same project |
+| T110 | QA-only partial retry | ✅ Done | `retry qa <task_ref>` and `/retry-qa <task_ref>` now skip Architect + Dev General and re-run only the QA gate on the existing task |
 | T113 | Model routing alignment + LLM diagnostics | ✅ Done | Model assignments from the Models view are authoritative for normal runs, special workflow overrides are founder-governed, and LLM transport failures now retry with clearer diagnostics |
 | T085 | CEO personal task routing | ✅ Done | Personal mode can create docs, send reports, do research, build digests |
 | T093 | Capability platform contracts | ✅ Done | Backend now has shared contracts for capability catalog, assignments, policy, health, and audit summary |
@@ -162,6 +163,13 @@ This now implies a platform decision:
 - Added optional bearer auth via `WAI_DASHBOARD_TOKEN` on sensitive dashboard/backend routes while preserving local founder access
 - Hardened `/api/deliverables`, `/api/file`, and repo file serving with resolved-path containment checks under `workspace/`
 - Backend and dashboard typechecks verified green
+
+### 2026-03-21 — T110: QA-only partial retry
+
+- Added `retry_qa` shortcut in `detectFounderShortcutIntent`: matches `retry qa <id>` / `/retry-qa <id>` / `retry-qa <id>` — zero LLM call
+- Added `retry_qa` action to CEO system prompt ACTIONS list with planning rule 23
+- Added `retry_qa` case to command dispatcher in `ceo_intake.ts`: validates task is `blocked` or `in_progress`, fires `runQaAgent()` directly (fire-and-forget), logs `founder_command` event with `command: 'retry_qa_only'`
+- No new files; only `backend/src/agents/ceo_intake.ts` modified
 
 ### 2026-03-21 — T108 + T109: Invoice email + Task deduplication
 
