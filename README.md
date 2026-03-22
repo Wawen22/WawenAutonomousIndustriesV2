@@ -1,64 +1,64 @@
-Leggi docs/PROJECT_TRACKING.md e docs/AGENTS_AND_TEAMS.md prima di fare qualsiasi cosa.
+# WAI — Wawen Autonomous Industries
 
-Procedi con T121 — Agent Roster Expansion: aggiungi 8 nuovi agenti specializzati a WAI.
+Dual OS: Business agent platform + Personal assistant for Neb.
 
-Il reference è nella cartella `IDEE-E-INTEGRAZIONI-DI-RIFERIMENTO-PER-WAI/agency-agents-main/` — contiene 160+ prompt agenti organizzati per funzione. Usali come ISPIRAZIONE e adattali al contesto WAI, non fare copia-incolla.
+→ Docs: [docs/INDEX.md](docs/INDEX.md) | Status: [docs/PROJECT_TRACKING.md](docs/PROJECT_TRACKING.md)
 
-## Agenti da aggiungere
+---
 
-Aggiungi questi 8 agenti in ordine di priorità:
+## Avvio servizi
 
-1. **security_auditor** (team: ops) — Analisi sicurezza codice, infra, dipendenze. Cerca vulnerabilità, OWASP top 10, secrets esposti.
+| Servizio | Porta | Comando | Note |
+|---|---|---|---|
+| **LiteLLM** | 4000 | `sg docker -c "docker compose up litellm -d"` | Deve partire per primo |
+| **Backend** | 3001 | `cd backend && pnpm dev` | Node.js + Telegram bot |
+| **Dashboard** | 3000 | `cd dashboard && pnpm dev` | React + Vite |
+| **Google Workspace MCP** | — | `./scripts/start-google-workspace-mcp.sh` | Gmail / Calendar / Drive |
+| **PinchTab** | 9867 | `pinchtab server` | Browser automation — richiede Chrome installato |
 
-2. **db_optimizer** (team: dev) — Review schema DB, query performance, indici mancanti, N+1 queries. Opera su progetti software con DB.
+### Ordine consigliato
 
-3. **api_tester** (team: dev) — Test automatico endpoint API: autenticazione, edge case, contract testing, response validation.
+```
+1. LiteLLM     (docker)
+2. Backend     (pnpm dev)
+3. Dashboard   (pnpm dev)
+4. Google MCP  (script)  ← solo se usi Gmail/Calendar/Drive
+5. PinchTab    (server)  ← solo se usi browser tools
+```
 
-4. **legal_compliance** (team: ops) — Review contratti, GDPR compliance, privacy policy, termini di servizio. Solo analisi e raccomandazioni — non da consigli legali vincolanti.
+### WhatsApp
 
-5. **proposal_strategist** (team: consulting) — Costruisce proposte commerciali complete: executive summary, scope, pricing, timeline, ROI. Si basa su brief progetto.
+Al primo avvio del backend, se `WHATSAPP_ENABLED=true`, scansiona il QR code che appare nei log con WhatsApp → Dispositivi collegati → Collega un dispositivo.
 
-6. **executive_summary** (team: ops) — Trasforma documenti lunghi, riunioni, output agenti in executive summary concisi e actionable per Neb/clienti.
+---
 
-7. **feedback_synthesizer** (team: consulting) — Analizza feedback raccolto (cliente, utenti, stakeholder), identifica pattern, priority score, action items.
+## Variabili d'ambiente richieste
 
-8. **behavioral_coach** (team: ops) — Personal mode only. Tracker abitudini, accountability check-in, nudge produttività per Neb via Telegram.
+File `.env` nella root del backend. Variabili minime:
 
-## Cosa implementare per ogni agente
+```
+LITELLM_BASE_URL=http://localhost:4000/v1
+LITELLM_API_KEY=...
+SUPABASE_URL=...
+SUPABASE_SERVICE_KEY=...
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_FOUNDER_CHAT_ID=...
+PINCHTAB_BASE_URL=http://127.0.0.1:9867
+PINCHTAB_TOKEN=...
+```
 
-Per ogni agente, seguendo i pattern esistenti nel codebase:
+---
 
-1. **`backend/src/agents/<nome>.ts`** — file agente con:
-   - System prompt specifico (personalità, expertise, output format)
-   - Funzione `run<Nome>Agent(task, notify)` con firma standard
-   - Output strutturato (JSON parsato + fallback)
-   - Log eventi con `recordEvent`
+## Comandi utili
 
-2. **`backend/src/config/agents.ts`** — registra il nuovo agente nel registry
+```bash
+# Typecheck
+cd backend && pnpm typecheck
+cd dashboard && pnpm typecheck
 
-3. **`backend/src/agents/ceo.ts`** — aggiungi il nuovo agente all'AGENT_ROSTER e alla logica di routing del CEO (quali task delega al nuovo agente)
+# Verifica PinchTab
+curl -s -H "Authorization: Bearer $PINCHTAB_TOKEN" http://127.0.0.1:9867/health
 
-4. **`backend/src/services/founder_task_actions.ts`** — aggiungi il case nella funzione di dispatch per i nuovi agenti
-
-## Vincoli
-
-- Segui esattamente i pattern degli agenti esistenti (architect.ts, consulting_lead.ts, qa.ts)
-- Ogni agente usa `runAgent` da `services/llm.ts` con `projectId`/`clientId` se disponibili dal task
-- System prompt: italiano o inglese a seconda del contesto, massimo pragmatico
-- Output sempre in JSON parsabile con fallback su errore di parsing
-- `captureMemory: false` per agenti di analisi (security, legal, db) — non salvano output grezzo
-- Nessun hardcode di model ID — usa il routing standard
-- `pnpm typecheck` deve passare alla fine
-
-## Ordine di esecuzione suggerito
-
-Implementa in questo ordine (dal più semplice al più complesso):
-1. executive_summary, feedback_synthesizer (output semplice, nessuna dipendenza)
-2. security_auditor, api_tester, db_optimizer (analisi tecnica)
-3. legal_compliance (analisi con disclaimer)
-4. proposal_strategist (output strutturato complesso)
-5. behavioral_coach (personal mode, logica Telegram)
-
-Alla fine: `pnpm typecheck` backend, aggiorna docs/PROJECT_TRACKING.md con T121 → ✅ Done.
-
-ultrathink e procedi.
+# Verifica LiteLLM
+curl http://localhost:4000/health
+```
