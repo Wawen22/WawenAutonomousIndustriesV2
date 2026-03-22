@@ -139,11 +139,25 @@ Backlog ordinato per valore / rischio:
 | T116 | WhatsApp delivery for scheduled brief | ✅ Done | — |
 | T117 | Stuck-task proactive alert | ✅ Done | — |
 | T118 | Finance weekly + Settings page + Notification channels | ✅ Done | — |
-| T119 | Memory visibility in dashboard | 3 | Vista delle memorie per agente nella sezione Capabilities — utile per debug e governance delle preferenze apprese. |
+| T119 | Memory visibility in dashboard | ✅ Done | — |
+| T120 | Memory v2: multi-scope, tiered recall, intelligent auto-capture | 1 | Spec approvato (v2, post spec-review). Aggiunge scope agent/project/client, recall tiered, auto-capture intelligente. Riduce token iniettati del ~60%, agenti ricevono contesto preciso per progetto/cliente. Vedi `docs/superpowers/specs/2026-03-22-memory-multi-scope-design.md`. |
 
 ---
 
 ## Recent Changes
+
+### 2026-03-22 — T119: Memory visibility in dashboard
+
+**Modified (backend):**
+- `services/memory.ts`: added `deleteAgentMemory(id)` and `deleteAgentMemories(agentId?)`
+- `index.ts`: 3 new endpoints — `GET /api/memory` (filters: agentId, entityType, search, includeExpired, limit), `DELETE /api/memory/:id` (single), `DELETE /api/memory?agentId=` (bulk)
+
+**Modified (dashboard):**
+- `types/index.ts`: `AgentMemory` now includes `entity_type`
+- `hooks/useSupabaseRealtime.ts`: `useAgentMemories` now selects `entity_type`
+- `MemoryView.tsx`: entity_type filter dropdown, delete button per cell (hover-reveal), "Delete All / Delete Agent Memories" button scoped to current agent filter; optimistic hide on delete
+
+---
 
 ### 2026-03-22 — T118: Finance weekly + Settings page + Notification channels
 
