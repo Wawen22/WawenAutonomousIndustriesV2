@@ -137,3 +137,9 @@ When there's ambiguity, choose the option that makes WAI:
 - more governable
 - closer to delivering and monetizing real work
 - not the one that just makes it more impressive to look at.
+
+
+## Nota del founder
+la cartella "openclaw" contiene il progetto OpenClaw da cui WAI prendere spunto per alcune implementazioni, architettura, e best practices. Non è un progetto monolitico da cui copiare tutto, ma una raccolta di esempi e ispirazioni. Consultala quando vuoi implementare qualcosa di nuovo o migliorare un'area esistente, ma adatta sempre le idee al contesto specifico di WAI invece di fare copia-incolla diretto.
+
+La cartella "IDEE-E-INTEGRAZIONI-DI-RIFERIMENTO-PER-WAI" contiene invece una raccolta di idee, integrazioni, repository, e ispirazioni esterne a cui attingere per nuove funzionalità o miglioramenti. Non è una lista di cose da fare, ma un serbatoio di spunti da cui pescare quando si cerca di innovare o risolvere un problema specifico. Consultala regolarmente per trovare ispirazione e mantenere WAI all'avanguardia.

@@ -1317,7 +1317,12 @@ export async function sendTelegramNotification(message: string): Promise<void> {
 
   try {
     const bot = getTelegramBot()
-    await bot.api.sendMessage(chatId, message, { parse_mode: 'Markdown' })
+    try {
+      await bot.api.sendMessage(chatId, message, { parse_mode: 'Markdown' })
+    } catch {
+      // Markdown parse failed (e.g. unmatched backtick in agent output) — retry as plain text
+      await bot.api.sendMessage(chatId, message)
+    }
   } catch (err) {
     log.error({ err }, 'Failed to send Telegram notification')
   }

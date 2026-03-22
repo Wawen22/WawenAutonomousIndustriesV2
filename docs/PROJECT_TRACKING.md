@@ -86,6 +86,8 @@ This now implies a platform decision:
 | T111 | MCP GitHub integration | ✅ Done | Claude | 2 | — |
 | T112 | Browser/screenshot QA tool | ✅ Done | Claude | 3 | — |
 | T113 | Web Scraper / Deep Reader | ✅ Done | Claude | 2 | — |
+| T114 | Agent memory system (pgvector + learning) | ✅ Done | Claude | 2 | — |
+| T115 | Daily brief automation scheduler | ✅ Done | Claude | 2 | — |
 | T083 | File Export tool | ✅ Done | Claude | 2 | — |
 | T084 | Skills system | ✅ Done | Claude | 2 | — |
 | T086 | MCP integration layer | ✅ Done | Codex | 2 | — |
@@ -110,6 +112,8 @@ This now implies a platform decision:
 | T110 | QA-only partial retry | ✅ Done | `retry qa <task_ref>` and `/retry-qa <task_ref>` now skip Architect + Dev General and re-run only the QA gate on the existing task |
 | T111 | MCP GitHub integration | ✅ Done | `backend/src/services/github.ts` added with `createGitHubRepo`, `createPullRequest`, `createIssue`. `initWorkspaceRepo` auto-creates a GitHub remote and pushes initial commit when `GITHUB_TOKEN` + `GITHUB_OWNER` are set. `integration.github` registered in the capability registry |
 | T113 | Model routing alignment + LLM diagnostics | ✅ Done | Model assignments from the Models view are authoritative for normal runs, special workflow overrides are founder-governed, and LLM transport failures now retry with clearer diagnostics |
+| T114 | Agent memory system | ✅ Done | pgvector-backed per-agent memory (`agent_memories` table, migrations 005+008), `memory.ts` for store/recall/dedup, `memory_learning.ts` extracts preferences from founder feedback and persists as memories; `entity_type` field for categorization |
+| T115 | Daily brief automation scheduler | ✅ Done | `personal-automation.ts` `startFounderAutomationRuntime()` runs every minute via `setInterval`, fires `daily_founder_brief` at the configured local time (default 08:30 Europe/Rome); on/off toggle + schedule editor live in Assistant HQ |
 | T085 | CEO personal task routing | ✅ Done | Personal mode can create docs, send reports, do research, build digests |
 | T093 | Capability platform contracts | ✅ Done | Backend now has shared contracts for capability catalog, assignments, policy, health, and audit summary |
 | T094 | Capability registry API MVP | ✅ Done | Read-only backend registry now exposes current capabilities for dashboard consumption |
@@ -126,27 +130,29 @@ This now implies a platform decision:
 
 ---
 
-## Immediate Next Steps
+## Next Steps
 
-### Sessione prossima — priorità revenue (T108 + T109)
+Backlog ordinato per valore / rischio:
 
-**T108 — Invoice email automatica**
-- Quando il founder dice `/invoice mario-rossi/landing`, oltre a cambiare lo status: genera PDF fattura + invia email al cliente via Resend
-- Template HTML → PDF con `puppeteer` o libreria PDF pura
-- `client.email` campo da aggiungere allo schema (o usare metadata progetto)
-
-**T109 — Task deduplication guard**
-- Mettere optimistic lock già all’ingresso CEO (`pending` → `in_progress`) prima di spawn/delegation
-- Evitare collisioni multi-agent sullo stesso progetto/repo
-
-**Backlog ordinato:**
-3. T110 — Partial retry (QA-only)
-4. T111 — MCP GitHub
-5. T112 — Browser/screenshot QA
+| ID | Title | Priority | Rationale |
+|----|-------|----------|-----------|
+| T116 | WhatsApp delivery for scheduled brief | ✅ Done | — |
+| T117 | Stuck-task proactive alert | 2 | Agente che monitora task `in_progress` fermi da > N ore e notifica su Telegram/WhatsApp. Basso rischio, alto valore operativo. |
+| T118 | Finance weekly report automation | 3 | Budget vs spesa mandato su WhatsApp ogni lunedì. Riusa `finance.ts` + `notification-router.ts`. |
+| T119 | Memory visibility in dashboard | 3 | Vista delle memorie per agente nella sezione Capabilities — utile per debug e governance delle preferenze apprese. |
 
 ---
 
 ## Recent Changes
+
+### 2026-03-22 — T116: WhatsApp delivery for scheduled brief
+
+- In `runDailyFounderBriefAutomationNow` (success path), after logging the `succeeded` event, now calls `sendFounderNotification(briefText)` — routes to Telegram always, WhatsApp if connected
+- Message capped at 3800 chars (Telegram hard limit is 4096) — truncated messages append `…[brief completo nel workspace]`
+- Send is non-fatal: `.catch()` so notification failure never breaks automation state recording
+- Applies to both `manual` and `scheduled` triggers
+- Import of `sendFounderNotification` added from `notification-router.ts`
+- Typecheck green
 
 ### 2026-03-20 — Sessione 66: Governed Delivery Pipeline + security hardening (T106/T107)
 

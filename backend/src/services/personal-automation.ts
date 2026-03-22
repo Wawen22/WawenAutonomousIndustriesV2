@@ -5,6 +5,7 @@ import { DAILY_FOUNDER_BRIEF_AUTOMATION_CAPABILITY_ID } from '../config/capabili
 import { ensurePersonalProfile } from './personal-context.js'
 import { executePersonalAssistantQuickAction } from './personal-assistant-actions.js'
 import { log, recordCapabilityEvent, recordEvent } from './logger.js'
+import { sendFounderNotification } from './notification-router.js'
 import { getPersonalWorkspacePath } from './workspace.js'
 
 const DEFAULT_OWNER_SLUG = 'neb'
@@ -356,6 +357,18 @@ export async function runDailyFounderBriefAutomationNow(
         ...(outputPath ? { output_path: outputPath } : {}),
       },
     })
+
+    const briefText = result.reply.trim()
+    if (briefText) {
+      const MAX_CHARS = 3_800
+      const message =
+        briefText.length > MAX_CHARS
+          ? `${briefText.slice(0, MAX_CHARS)}\n\n…[brief completo nel workspace]`
+          : briefText
+      await sendFounderNotification(message).catch((err: unknown) => {
+        log.warn({ err }, 'Failed to send daily brief notification — brief saved to workspace')
+      })
+    }
 
     return toAutomationStatus(state)
   } catch (err) {
