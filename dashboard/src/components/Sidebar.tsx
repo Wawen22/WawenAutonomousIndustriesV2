@@ -27,37 +27,42 @@ interface NavSection {
 
 const COMPANY_NAV_SECTIONS: NavSection[] = [
   {
-    title: 'COMMAND',
+    title: 'OVERVIEW',
     items: [
-      { id: 'overview',  label: 'Mission Control',  icon: 'overview'  },
+      { id: 'overview',  label: 'Dashboard',        icon: 'overview'  },
       { id: 'office',    label: 'Virtual Office',   icon: 'office'    },
-      { id: 'team',      label: 'Neural Org',       icon: 'team'      },
+      { id: 'team',      label: 'Team',             icon: 'team'      },
     ]
   },
   {
-    title: 'TACTICAL',
+    title: 'CLIENTS & WORK',
     items: [
+      { id: 'clients',   label: 'Clients',          icon: 'clients'   },
+      { id: 'projects',  label: 'Projects',         icon: 'projects'  },
       { id: 'tasks',     label: 'Task Board',       icon: 'tasks'     },
-      { id: 'runs',      label: 'Run History',      icon: 'runs'      },
-      { id: 'activity',  label: 'System Log',       icon: 'activity'  },
     ]
   },
   {
     title: 'FINANCE',
     items: [
       { id: 'revenue',   label: 'Revenue',          icon: 'revenue'   },
-      { id: 'costs',     label: 'Burn Rate',        icon: 'costs'     },
-      { id: 'projects',  label: 'Blueprints',       icon: 'projects'  },
-      { id: 'clients',   label: 'Entity Map',       icon: 'clients'   },
+      { id: 'costs',     label: 'Costs',            icon: 'costs'     },
     ]
   },
   {
-    title: 'CORE',
+    title: 'MONITOR',
     items: [
-      { id: 'founder',   label: 'Founder HQ',       icon: 'alert'     },
-      { id: 'memory',    label: 'Neural Archive',   icon: 'memory'    },
+      { id: 'activity',  label: 'Activity',         icon: 'activity'  },
+      { id: 'runs',      label: 'Run History',      icon: 'runs'      },
+      { id: 'founder',   label: 'Founder Ops',      icon: 'alert'     },
+    ]
+  },
+  {
+    title: 'SYSTEM',
+    items: [
       { id: 'capabilities', label: 'Capabilities',  icon: 'cpu'       },
       { id: 'models',    label: 'Models',           icon: 'models'    },
+      { id: 'memory',    label: 'Memory',           icon: 'memory'    },
       { id: 'settings',  label: 'Settings',         icon: 'settings'  },
     ]
   }

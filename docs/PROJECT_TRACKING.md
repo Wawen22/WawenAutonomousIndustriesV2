@@ -160,6 +160,14 @@ Backlog ordinato per valore / rischio:
 - `SettingsView.tsx` — Automations tab (Finance Weekly: toggle + day picker + last-sent status) + Notifications tab (Telegram/WhatsApp toggles with live connection status)
 - `'settings'` view added to both Company and Personal nav (CORE section), icon: gear
 
+**Run Now button (Settings → Automations):**
+- `runFinanceCycleNow()` in `finance.ts` — bypassa enabled/dayOfWeek/dedup, invia subito
+- Endpoint `POST /api/settings/automations/finance-weekly/run` — usa `priority: 'critical'` per bypassare il dedup in-memory 60s di `sendNotification`; rispetta channel prefs (legge `getNotificationPreferences()`)
+- Dashboard: pulsante Run Now con spinner + feedback 4s "Sent to active channels ✓" / "Send failed"
+
+**Bug fix — Telegram markdown parser:**
+- `sendTelegramNotification` ora ritenta senza `parse_mode` se Telegram rifiuta il messaggio (backtick/markdown non valido nel contenuto LLM)
+
 **Typecheck:** backend + dashboard green
 
 ### 2026-03-22 — T114+T115+T117: Retroactive tracking alignment
