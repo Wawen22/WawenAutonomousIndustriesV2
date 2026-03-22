@@ -5,6 +5,7 @@ import {
   getSupabaseClient,
   getTasksByStatus,
 } from './supabase.js'
+import { getCalendarEventsToday, getGoogleWorkspaceMcpRuntimeStatus } from './google-workspace-mcp.js'
 import type { Agent, SystemEvent, Task } from '../types/index.js'
 
 interface AgentHealth {
@@ -84,6 +85,13 @@ function formatRecentErrors(events: SystemEvent[]): string[] {
   return ['⚠️ Recent errors:', ...lines]
 }
 
+function formatAgenda(events: string[]): string[] {
+  if (events.length === 0) {
+    return ['📅 Agenda: no meetings today']
+  }
+  return ['📅 Agenda:', ...events.map(e => `- ${escapeMarkdown(e)}`)]
+}
+
 function buildProblematicAgents(
   agents: Agent[],
   blockedTasks: Task[],
@@ -141,7 +149,12 @@ function buildProblematicAgents(
 
 export async function buildSystemStatusReport(): Promise<string> {
   const startOfMonthIso = startOfCurrentMonthIso()
-  const [agents, state, inProgressTasks, blockedTasks, cost, invoicedResult, paymentsResult, errorEventsResult] =
+
+  // Check if Google Workspace is connected before trying to fetch calendar
+  const googleStatus = await getGoogleWorkspaceMcpRuntimeStatus('neb').catch(() => null)
+  const fetchCalendar = googleStatus?.state === 'connected'
+
+  const [agents, state, inProgressTasks, blockedTasks, cost, invoicedResult, paymentsResult, errorEventsResult, calendarEvents] =
     await Promise.all([
       getAgents(),
       getProjectState(),
@@ -163,6 +176,7 @@ export async function buildSystemStatusReport(): Promise<string> {
         .in('severity', ['error', 'critical'])
         .order('created_at', { ascending: false })
         .limit(12),
+      fetchCalendar ? getCalendarEventsToday('neb') : Promise.resolve([]),
     ])
 
   if (invoicedResult.error) {
@@ -197,6 +211,7 @@ export async function buildSystemStatusReport(): Promise<string> {
     '',
     `🎯 Milestone: ${escapeMarkdown(state?.current_milestone ?? 'none')}`,
     `🤖 Agents healthy: ${healthyAgents}/${agents.length}`,
+    ...formatAgenda(calendarEvents),
     ...summarizeTasks(inProgressTasks, '⚡ Active tasks'),
     ...summarizeTasks(blockedTasks, '⛔ Blocked tasks'),
     `💰 ${escapeMarkdown(formatMonthLabel())} revenue: invoiced ${formatUsd(monthlyInvoiced)} | paid ${formatUsd(monthlyPaid)}`,

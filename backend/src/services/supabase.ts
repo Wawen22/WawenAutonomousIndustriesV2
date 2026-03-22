@@ -29,6 +29,7 @@ import type {
   UpdateProjectRepoInput,
 } from '../types/index.js'
 import { estimateCost, getModelById } from '../config/models.js'
+import { sendNotification } from './notification-router.js'
 
 // ---------------------------------------------------------------------------
 // Client (singleton)
@@ -127,6 +128,15 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
 
   // Emit human_review_requested event so the Founder Ops inbox surfaces the task
   if (task.requires_human_review) {
+    void sendNotification(
+      `👀 *Human Review Required*\n\n` +
+      `Task: ${task.title}\n` +
+      `Agent: ${task.assignee_agent_id ?? 'n/a'}\n` +
+      `ID: \`${task.id.slice(0, 8)}\`\n\n` +
+      `Use \`/approve ${task.id.slice(0, 8)}\` o \`/reject ${task.id.slice(0, 8)}\` per rispondere.`,
+      { priority: 'high', tag: `review_${task.id}` }
+    ).catch(() => {})
+
     void getSupabaseClient()
       .from('events')
       .insert({
@@ -272,6 +282,21 @@ export async function updateTaskRequiresHumanReview(taskId: string, value: boole
     .eq('id', taskId)
 
   if (error) throw new Error(`Failed to update task requires_human_review: ${error.message}`)
+
+  if (value) {
+    void getTaskById(taskId).then(task => {
+      if (task) {
+        void sendNotification(
+          `👀 *Human Review Required*\n\n` +
+          `Task: ${task.title}\n` +
+          `Agent: ${task.assignee_agent_id ?? 'n/a'}\n` +
+          `ID: \`${task.id.slice(0, 8)}\`\n\n` +
+          `Usa \`/approve ${task.id.slice(0, 8)}\` o \`/reject ${task.id.slice(0, 8)}\` per rispondere.`,
+          { priority: 'high', tag: `review_${task.id}` }
+        ).catch(() => {})
+      }
+    }).catch(() => {})
+  }
 }
 
 export async function assignTask(taskId: string, agentId: string): Promise<void> {

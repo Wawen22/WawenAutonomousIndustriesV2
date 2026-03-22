@@ -23,6 +23,8 @@ import { resumeApprovedDeliveryGates, runQaAgent } from '../agents/qa.js'
 import { runOpsAgent } from '../agents/ops.js'
 import { runFinanceAgent } from '../agents/finance.js'
 import { runHrAgent } from '../agents/hr.js'
+import { processFeedbackLearning } from './memory_learning.js'
+import { buildSystemStatusReport } from './status_report.js'
 import type { Task, TaskStatus } from '../types/index.js'
 
 export type FounderTaskAction = 'retry' | 'approve' | 'reject'
@@ -241,6 +243,12 @@ async function approveTask(
   await updateTaskRequiresHumanReview(task.id, false)
   await updateTaskMetadata(task.id, buildActionMetadata(task, 'approve', source, actionReason))
 
+  if (actionReason) {
+    void processFeedbackLearning(task, actionReason).catch((err: unknown) => {
+      log.error({ err, taskId: task.id }, 'Adaptive learning failed during task approval')
+    })
+  }
+
   await recordEvent('human_approved', {
     taskId: task.id,
     payload: {
@@ -286,6 +294,12 @@ async function rejectTask(
   await updateTaskRequiresHumanReview(task.id, false)
   await updateTaskMetadata(task.id, buildActionMetadata(task, 'reject', source, actionReason))
 
+  if (actionReason && actionReason !== 'No reason provided') {
+    void processFeedbackLearning(task, actionReason).catch((err: unknown) => {
+      log.error({ err, taskId: task.id }, 'Adaptive learning failed during task rejection')
+    })
+  }
+
   await recordEvent('human_rejected', {
     taskId: task.id,
     payload: {
@@ -314,7 +328,7 @@ export async function executeFounderTaskAction(
   taskId: string,
   action: FounderTaskAction,
   options: {
-    source: 'telegram' | 'dashboard' | 'natural_language'
+    source: 'telegram' | 'dashboard' | 'whatsapp' | 'natural_language'
     reason?: string | undefined
     notify: (message: string) => Promise<void>
   }
@@ -333,6 +347,61 @@ export async function executeFounderTaskAction(
       return rejectTask(task, options.source, options.reason)
     default:
       throw new Error(`Unsupported founder task action: ${String(action)}`)
+  }
+}
+
+/**
+ * Unified command executor for cross-channel parity (T116).
+ * Handles structured commands like /approve, /reject, /retry.
+ */
+export async function executeCommand(
+  text: string,
+  options: {
+    source: 'telegram' | 'whatsapp' | 'dashboard'
+    notify: (message: string) => Promise<void>
+  }
+): Promise<string> {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('/')) {
+    return 'Not a structured command.'
+  }
+
+  const [commandWithAt, ...args] = trimmed.split(/\s+/)
+  const command = commandWithAt!.split('@')[0]!.toLowerCase()
+
+  try {
+    switch (command) {
+      case '/approve':
+      case '/reject':
+      case '/retry': {
+        const taskId = args[0]
+        if (!taskId) return `Usage: ${command} <task_id> [reason]`
+        
+        const action = command.slice(1) as FounderTaskAction
+        const reason = args.slice(1).join(' ')
+        
+        const result = await executeFounderTaskAction(taskId, action, {
+          source: options.source,
+          reason,
+          notify: options.notify,
+        })
+        
+        return formatFounderTaskActionMessage(result)
+      }
+
+      case '/briefing':
+      case '/status': {
+        return await buildSystemStatusReport()
+      }
+
+      // Add more shared commands here (e.g., /status, /projects, etc.)
+      
+      default:
+        return `Unknown command: ${command}`
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return `❌ Command failed: ${msg}`
   }
 }
 

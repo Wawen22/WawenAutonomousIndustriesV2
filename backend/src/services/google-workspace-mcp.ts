@@ -613,3 +613,47 @@ export async function callGoogleWorkspaceMcpTool(
     await client.close().catch(() => undefined)
   }
 }
+
+/**
+ * Helper to fetch today's calendar events specifically for the briefing (T140).
+ */
+export async function getCalendarEventsToday(ownerSlug?: string): Promise<string[]> {
+  try {
+    const now = new Date()
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString()
+
+    const result = await callGoogleWorkspaceMcpTool('google_calendar_list_events', {
+      calendar_id: 'primary',
+      time_min: startOfDay,
+      time_max: endOfDay,
+      single_events: true,
+    }, ownerSlug)
+
+    if (result.isError) {
+      log.warn({ text: result.text }, 'Google Calendar tool returned error for briefing')
+      return []
+    }
+
+    // The tool usually returns a list of events in text format or structuredContent
+    // If structuredContent is available and is an array of events:
+    const events = (result.structuredContent as any)?.events || []
+    if (Array.isArray(events) && events.length > 0) {
+      return events.map((e: any) => {
+        const start = e.start?.dateTime || e.start?.date || ''
+        const time = start.includes('T') ? start.split('T')[1].slice(0, 5) : 'All day'
+        return `${time} - ${e.summary || 'No title'}`
+      })
+    }
+
+    // Fallback: parse text
+    if (result.text && result.text !== 'No events found.') {
+      return result.text.split('\n').filter(l => l.trim().length > 0).slice(0, 5)
+    }
+
+    return []
+  } catch (err) {
+    log.error({ err }, 'Failed to fetch calendar events for briefing')
+    return []
+  }
+}

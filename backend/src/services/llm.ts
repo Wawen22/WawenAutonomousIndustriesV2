@@ -9,7 +9,7 @@ import { getModelForAgent, getModelById, estimateCost } from '../config/models.j
 import { log, recordRun } from './logger.js'
 import { createAgentMemory, formatMemoriesForPrompt, recallAgentMemories } from './memory.js'
 import { getSpecialModelOverride } from './model-routing-policy.js'
-import type { ModelRoutingContext, RunOutcome, TaskType } from '../types/index.js'
+import type { AgentMemory, ModelRoutingContext, RunOutcome, TaskType } from '../types/index.js'
 
 const DEFAULT_RUN_TIMEOUT_MS = 300_000 // 5 min default; file generation uses 6 min override
 const MEMORY_WARNING_COOLDOWN_MS = 300_000
@@ -320,23 +320,47 @@ function logMemoryWarning(err: unknown, agentId: string, message: string, taskId
   log.warn({ err, agentId, taskId }, message)
 }
 
+function formatPreferencesForPrompt(memories: AgentMemory[]): string {
+  if (memories.length === 0) return ''
+
+  const items = memories
+    .map((m, i) => `${i + 1}. ${m.content}`)
+    .join('\n')
+
+  return [
+    'CRITICAL FOUNDER PREFERENCES (DO NOT VIOLATE):',
+    items,
+    '',
+    'The above preferences are established based on previous founder feedback. Adhere to them strictly.',
+  ].join('\n')
+}
+
 async function injectMemoryRecall(messages: ChatMessage[], agentId: string): Promise<ChatMessage[]> {
   const query = buildMemoryQuery(messages)
   if (query.length < 24) return messages
 
   try {
-    const memories = await recallAgentMemories({ agentId, query })
-    const memoryPrompt = formatMemoriesForPrompt(memories)
-    if (!memoryPrompt) return messages
+    // 1. Recall both general memories and preferences in parallel
+    const [generalMemories, preferences] = await Promise.all([
+      recallAgentMemories({ agentId, query, entityType: 'general', limit: 3 }),
+      recallAgentMemories({ agentId, query, entityType: 'preference', limit: 5 }),
+    ])
+
+    const memoryPrompt = formatMemoriesForPrompt(generalMemories)
+    const preferencePrompt = formatPreferencesForPrompt(preferences)
+
+    if (!memoryPrompt && !preferencePrompt) return messages
+
+    const extraContext = [preferencePrompt, memoryPrompt].filter(Boolean).join('\n\n---\n\n')
 
     const firstNonSystemIndex = messages.findIndex((message) => message.role !== 'system')
     if (firstNonSystemIndex < 0) {
-      return [...messages, { role: 'system', content: memoryPrompt }]
+      return [...messages, { role: 'system', content: extraContext }]
     }
 
     return [
       ...messages.slice(0, firstNonSystemIndex),
-      { role: 'system', content: memoryPrompt },
+      { role: 'system', content: extraContext },
       ...messages.slice(firstNonSystemIndex),
     ]
   } catch (err) {

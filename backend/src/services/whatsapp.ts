@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { log } from './logger.js'
 import { recordCapabilityEvent } from './logger.js'
 import { getWorkspaceRoot } from './workspace.js'
+import { executeCommand } from './founder_task_actions.js'
 import type { WhatsAppStatus } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -283,7 +284,24 @@ function registerWhatsAppIncomingHandler(socket: any): void {
 
       const senderJid = key.remoteJid
 
-      // reply: send back to the founder on WhatsApp
+      // 1. Structured commands check (T116 parity)
+      if (text.trim().startsWith('/')) {
+        void (async () => {
+          try {
+            const response = await executeCommand(text, {
+              source: 'whatsapp',
+              notify: async (msgText) => { await sendWhatsAppNotification(senderJid, msgText) },
+            })
+            await sendWhatsAppNotification(senderJid, response)
+          } catch (err) {
+            log.error({ err, text }, 'WhatsApp: command execution failed')
+            await sendWhatsAppNotification(senderJid, '❌ Errore comando.').catch(() => {})
+          }
+        })()
+        continue
+      }
+
+      // 2. Natural language handler (CEO)
       const reply = async (responseText: string): Promise<void> => {
         await sendWhatsAppNotification(senderJid, responseText)
       }

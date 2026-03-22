@@ -19,18 +19,21 @@ const MAX_PROMPT_MEMORY_CHARS = 700
 interface CreateAgentMemoryInput {
   agentId: string
   content: string
+  entityType?: string | undefined
   ttl?: string | undefined
 }
 
 interface RecallAgentMemoriesInput {
   agentId: string
   query: string
+  entityType?: string | undefined
   limit?: number
   minSimilarity?: number
 }
 
 interface GetAgentMemoriesInput {
   agentId?: string | undefined
+  entityType?: string | undefined
   limit?: number
   includeExpired?: boolean
 }
@@ -130,6 +133,7 @@ export async function createAgentMemory(input: CreateAgentMemoryInput): Promise<
     p_agent_id: input.agentId,
     p_query_embedding: queryEmbedding,
     p_match_count: 1,
+    p_entity_type: input.entityType ?? 'general',
   })
 
   if (!recallErr && Array.isArray(existingMatches) && existingMatches.length > 0) {
@@ -145,9 +149,10 @@ export async function createAgentMemory(input: CreateAgentMemoryInput): Promise<
       agent_id: input.agentId,
       content: normalizedContent,
       embedding: queryEmbedding,
+      entity_type: input.entityType ?? 'general',
       ttl: input.ttl ?? getDefaultTtl(),
     })
-    .select('id, agent_id, content, created_at, ttl')
+    .select('id, agent_id, content, entity_type, created_at, ttl')
     .single()
 
   if (error) throw new Error(`Failed to create agent memory: ${error.message}`)
@@ -159,12 +164,15 @@ export async function getAgentMemories(input: GetAgentMemoriesInput = {}): Promi
 
   let query = getSupabaseClient()
     .from('agent_memories')
-    .select('id, agent_id, content, created_at, ttl')
+    .select('id, agent_id, content, entity_type, created_at, ttl')
     .order('created_at', { ascending: false })
     .limit(limit)
 
   if (input.agentId) {
     query = query.eq('agent_id', input.agentId)
+  }
+  if (input.entityType) {
+    query = query.eq('entity_type', input.entityType)
   }
 
   const { data, error } = await query
@@ -186,6 +194,7 @@ export async function recallAgentMemories(
     p_agent_id: input.agentId,
     p_query_embedding: queryEmbedding,
     p_match_count: input.limit ?? DEFAULT_MEMORY_LIMIT,
+    p_entity_type: input.entityType ?? null,
   })
 
   if (error) throw new Error(`Failed to recall agent memories: ${error.message}`)

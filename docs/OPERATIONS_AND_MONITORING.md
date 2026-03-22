@@ -160,6 +160,30 @@ agent_error event unresolved > 30 min
 
 ---
 
+## Proactive Agent Communication
+
+WAI is not purely reactive. The system uses `NotificationRouter` to reach out to the Founder across multiple channels (Telegram, WhatsApp, Dashboard) when specific triggers occur.
+
+### Trigger Matrix
+
+| Event | Channel Priority | Logic |
+|-------|------------------|-------|
+| `human_review_requested` | Telegram (High) | Immediate alert with action buttons. |
+| `task_blocked` | WhatsApp (High) | Alert if the block is severe or requires external input. |
+| `project_delivered` | Telegram / WhatsApp | Status update + link to output. |
+| `payment_received` | WhatsApp (Low) | Confirmation of revenue. |
+| `daily_briefing` | WhatsApp (Scheduled) | Summary of previous 24h at 08:00. |
+| `budget_exceeded` | Telegram (Critical) | Immediate system halt warning. |
+
+### Throttling & Smart Routing
+
+To avoid notification fatigue, the `NotificationRouter`:
+1. **Deduplicates**: Similar events within a 5-minute window are batched.
+2. **Channel Switching**: If a High priority alert is not acknowledged on Telegram within 15 minutes, it may fail over to WhatsApp.
+3. **Quiet Hours**: Non-critical notifications (Daily Briefing, Payment Received) are held between 23:00 and 07:00 unless explicitly overridden.
+
+---
+
 ## Incident Response
 
 ### Runbook: Task Blocked
