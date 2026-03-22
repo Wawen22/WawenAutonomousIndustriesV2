@@ -145,6 +145,7 @@ export interface AgentMemory {
   id: string
   agent_id: string
   content: string
+  entity_type: string
   created_at: string
   ttl: string | null
 }

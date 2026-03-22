@@ -205,6 +205,24 @@ export async function recallAgentMemories(
     .filter(isActiveMemory)
 }
 
+export async function deleteAgentMemory(id: string): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('agent_memories')
+    .delete()
+    .eq('id', id)
+  if (error) throw new Error(`Failed to delete agent memory: ${error.message}`)
+}
+
+export async function deleteAgentMemories(agentId?: string): Promise<number> {
+  let query = getSupabaseClient().from('agent_memories').delete()
+  if (agentId) {
+    query = query.eq('agent_id', agentId)
+  }
+  const { data, error } = await query.select('id')
+  if (error) throw new Error(`Failed to delete agent memories: ${error.message}`)
+  return (data ?? []).length
+}
+
 export function formatMemoriesForPrompt(memories: AgentMemoryMatch[]): string {
   if (memories.length === 0) return ''
 

@@ -72,6 +72,7 @@ import {
 import { sendFounderNotification, sendNotification } from './services/notification-router.js'
 import { getNotificationPreferences, updateNotificationPreferences } from './services/notification-preferences.js'
 import { getCompanyAutomations, updateCompanyAutomations } from './services/company-automations.js'
+import { getAgentMemories, deleteAgentMemory, deleteAgentMemories } from './services/memory.js'
 import { MODELS, AGENT_MODEL_DEFAULTS, getModelOverrides } from './config/models.js'
 import {
   assignModelToAgent,
@@ -1464,6 +1465,70 @@ async function main(): Promise<void> {
         } catch (err) {
           res.writeHead(500)
           res.end(JSON.stringify({ error: 'Failed to update company automations' }))
+        }
+      })()
+      return
+    }
+
+    // GET /api/memory — T119 list agent memories with optional filters
+    if (url.pathname === '/api/memory' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const agentId = url.searchParams.get('agentId') ?? undefined
+          const entityType = url.searchParams.get('entityType') ?? undefined
+          const includeExpired = url.searchParams.get('includeExpired') === 'true'
+          const limit = Number(url.searchParams.get('limit') ?? '500')
+          const search = (url.searchParams.get('search') ?? '').toLowerCase().trim()
+          let memories = await getAgentMemories({ agentId, entityType, includeExpired, limit })
+          if (search) {
+            memories = memories.filter(m =>
+              m.content.toLowerCase().includes(search) ||
+              m.agent_id.toLowerCase().includes(search) ||
+              m.entity_type.toLowerCase().includes(search)
+            )
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(memories))
+        } catch (err) {
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: 'Failed to get memories' }))
+        }
+      })()
+      return
+    }
+
+    // DELETE /api/memory — T119 delete all memories (optionally scoped to agentId)
+    if (url.pathname === '/api/memory' && req.method === 'DELETE') {
+      void (async () => {
+        try {
+          const agentId = url.searchParams.get('agentId') ?? undefined
+          const deleted = await deleteAgentMemories(agentId)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ deleted }))
+        } catch (err) {
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: 'Failed to delete memories' }))
+        }
+      })()
+      return
+    }
+
+    // DELETE /api/memory/:id — T119 delete a single memory by id
+    if (url.pathname.startsWith('/api/memory/') && req.method === 'DELETE') {
+      const memoryId = url.pathname.slice('/api/memory/'.length)
+      void (async () => {
+        try {
+          if (!memoryId) {
+            res.writeHead(400)
+            res.end(JSON.stringify({ error: 'Missing memory id' }))
+            return
+          }
+          await deleteAgentMemory(memoryId)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } catch (err) {
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: 'Failed to delete memory' }))
         }
       })()
       return

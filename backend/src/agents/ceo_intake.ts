@@ -169,7 +169,7 @@ ${clientContext}
 19. Use drive_read_file when Neb asks to open/read the content of a Drive document or file.
 20. Use drive_recent_files when Neb asks for recent/recently modified files in Google Drive.
 21. Use daily_founder_brief when Neb asks for a daily founder briefing combining inbox, calendar, and recent Drive activity.
-22. When Neb asks to enable/disable governed delivery steps for a specific project (git push, auto deploy, deploy provider, founder approval, client email, auto invoice), use configure_delivery with client_slug, project_slug, and a config_patch object. Example patch: { "autoDeploy": false }.
+22. When Neb asks to enable/disable governed delivery steps for a specific project, use configure_delivery with client_slug, project_slug, and a config_patch object. The ONLY valid config_patch fields are: gitPush (boolean), autoDeploy (boolean), deployProvider ("vercel"|"netlify"|null), requireFounderApproval (boolean), clientEmailOnDelivery (boolean), autoInvoice (boolean). Example patch: { "autoDeploy": false }. IMPORTANT: billing cycle, payment terms, invoicing frequency, and similar billing preferences are NOT delivery config fields — do NOT use configure_delivery for those. Instead, use update_brief to append the preference to the project brief (e.g. content: "Preferenze fatturazione: trimestrale") so it is stored on the project and visible to agents.
 23. Use retry_qa when Neb explicitly asks to redo/retry only QA (e.g. "rifai il QA", "retry qa <id>", "ri-lancia solo QA"). This skips Architect and Dev General and runs only the final QA gate.
 24. Use capture_screenshot when Neb asks to take a visual snapshot of a URL (e.g. "fai uno screenshot di google.it", "screen di https://...").
 25. Use read_url when Neb asks to read, analyze, or summarize a specific web page (e.g. "leggi questo articolo https://...", "riassumi questa pagina: ...").
@@ -2047,6 +2047,13 @@ async function executeAction(
         ``,
         formatDeliveryConfigSummary(nextConfig),
       ].join('\n')
+    }
+
+    // reply is not a real command — the LLM sometimes wraps informational
+    // responses as { type: "reply", message: "..." } instead of leaving commands empty.
+    case 'reply': {
+      const msg = getString(params, 'message') || getString(params, 'content') || getString(params, 'text')
+      return msg || ''
     }
 
     default:
