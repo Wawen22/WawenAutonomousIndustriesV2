@@ -34,7 +34,12 @@ async function ptFetch(
     }
     const res = await fetch(url, init)
     const text = await res.text()
-    const data: unknown = text ? JSON.parse(text) : {}
+    let data: unknown
+    try {
+      data = text ? JSON.parse(text) : {}
+    } catch {
+      data = text // plain-text responses (e.g. /snapshot compact format)
+    }
     if (!res.ok) return { ok: false, error: `HTTP ${String(res.status)}: ${res.statusText}`, data }
     return { ok: true, data }
   } catch (err) {
@@ -46,10 +51,23 @@ async function ptFetch(
   }
 }
 
-/** Returns true if PinchTab is reachable (800 ms loopback timeout). */
+/** Returns true if PinchTab is reachable AND the default browser instance is ready. */
 export async function isPinchTabAvailable(): Promise<boolean> {
   const result = await ptFetch('GET', '/health', undefined, HEALTH_TIMEOUT_MS)
-  return result.ok
+  if (!result.ok) return false
+
+  // Also verify the default browser instance is in a ready state.
+  // The health endpoint returns { status: "ok", defaultInstance: { status: "ready"|"error"|... } }.
+  // A non-ready instance causes all /navigate calls to return 503 "instance not ready".
+  const data = result.data as Record<string, unknown>
+  const instance = data?.['defaultInstance'] as Record<string, unknown> | undefined
+  // Valid operational states: 'ready' or 'running'. Anything else (error, starting, stopping) means not usable.
+  if (instance && typeof instance['status'] === 'string') {
+    const s = instance['status']
+    if (s !== 'ready' && s !== 'running') return false
+  }
+
+  return true
 }
 
 export async function browserNavigate(

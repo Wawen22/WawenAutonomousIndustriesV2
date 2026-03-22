@@ -152,6 +152,7 @@ Ispirato da `pinchtab-main/`. Controllo browser attivo per agenti (navigazione, 
 | ID | Title | Priority | Status | Note |
 |----|-------|----------|--------|------|
 | T122 | PinchTab integration — browser control capability | 2 | ✅ Done | plugin.pinchtab nel capability registry, HTTP client service, health check live |
+| T122b | PinchTab browser tools per CEO Intake | 2 | ✅ Done | 4 comandi browser esposti al CEO NL intake: browser_navigate, browser_read, browser_screenshot, browser_snapshot — graceful degradation se PinchTab offline |
 
 ### Fase 3 — Personal mode expansion
 
@@ -186,6 +187,27 @@ Ispirato da `skills-main/` (Anthropic). Generazione documenti DOCX/PDF reali inv
 ---
 
 ## Recent Changes
+
+### 2026-03-22 — T122b: PinchTab Browser Tools per CEO Intake
+
+**Changed:**
+- `backend/src/agents/ceo_intake.ts`: 4 nuovi comandi NL esposti al CEO Intake:
+  - `browser_navigate` — naviga PinchTab a un URL (fondamenta per sessioni multi-step)
+  - `browser_read` — naviga + estrae testo leggibile (readability mode), esporta in personal workspace, restituisce excerpt
+  - `browser_screenshot` — naviga + screenshot live via PinchTab, salva PNG, invia foto su Telegram
+  - `browser_snapshot` — naviga + DOM snapshot compatto (format compact, max 2000 token)
+- Tutti i comandi verificano `isPinchTabAvailable()` upfront e restituiscono un messaggio chiaro se PinchTab è offline (graceful degradation — nessun crash agent)
+- 2 shortcut regex aggiunte in `detectFounderShortcutIntent`: `browser read <url>` e `browser screenshot <url>`
+- System prompt aggiornato con regole 26-30 per guidare l'LLM nel scegliere il comando giusto
+
+**How to test:**
+1. Con PinchTab offline: scrivi "browser leggi apple.com" → risposta con ⚠️ messaggio degradato
+2. Con PinchTab online: scrivi "vai su apple.com e dimmi cosa c'è" → CEO pianifica `browser_read` + risposta con excerpt + file salvato
+3. "browser screenshot apple.com" → CEO usa `browser_screenshot` → foto su Telegram
+4. "browser navigate google.com" seguito da "browser read" (senza url) → sessione multi-step
+5. "dimmi gli elementi interattivi di x.com" → CEO pianifica `browser_snapshot`
+
+**Next step:** T122c — browser_action interattiva (click/type/fill) con agentic loop; oppure T122d — QA visivo automatico con PinchTab.
 
 ### 2026-03-22 — T122: PinchTab Browser Control Capability
 

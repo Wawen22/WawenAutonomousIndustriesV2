@@ -51,6 +51,13 @@ import {
 import { sanitizeDeliveryConfigPatch, updateProjectDeliveryConfig } from '../services/delivery-config.js'
 import { captureScreenshot } from '../services/screenshot.js'
 import { scrapeUrl } from '../services/scraper.js'
+import {
+  isPinchTabAvailable,
+  browserNavigate,
+  browserText,
+  browserScreenshot as pinchTabScreenshot,
+  browserSnapshot,
+} from '../services/pinchtab.js'
 import { sendFounderPhoto } from '../services/notification-router.js'
 import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import { runCeoAgent } from './ceo.js'
@@ -240,6 +247,10 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - configure_delivery → params: client_slug, project_slug, config_patch
 - capture_screenshot → params: url, caption?
 - read_url           → params: url
+- browser_navigate   → params: url  (naviga il browser PinchTab a un URL — fondamenta per sessioni multi-step)
+- browser_read       → params: url?, summary?  (naviga + legge il testo della pagina via PinchTab — ideale per SPA e siti JS-heavy)
+- browser_screenshot → params: url?, caption?  (naviga + screenshot live del browser PinchTab → invia foto su Telegram)
+- browser_snapshot   → params: url?  (naviga + snapshot DOM compatto → utile per ispezionare la struttura della pagina)
 
 Valid project types: ${PROJECT_TYPES.join(', ')}
 
@@ -272,6 +283,11 @@ ${clientContext}
 23. Use retry_qa when Neb explicitly asks to redo/retry only QA (e.g. "rifai il QA", "retry qa <id>", "ri-lancia solo QA"). This skips Architect and Dev General and runs only the final QA gate.
 24. Use capture_screenshot when Neb asks to take a visual snapshot of a URL (e.g. "fai uno screenshot di google.it", "screen di https://...").
 25. Use read_url when Neb asks to read, analyze, or summarize a specific web page (e.g. "leggi questo articolo https://...", "riassumi questa pagina: ...").
+26. Use browser_navigate to open a URL in the PinchTab live browser (foundation for multi-step sessions). Use before browser_read/browser_screenshot/browser_snapshot when chaining commands.
+27. Use browser_read when Neb asks to read/analyze a JS-heavy or SPA page via the live browser (e.g. "vai su X e dimmi cosa c'è", "scraping di Y con browser", "leggi questa dashboard"). Prefer over read_url for dynamic pages. If url param is provided it navigates first.
+28. Use browser_screenshot when Neb asks for a live browser screenshot via PinchTab (e.g. "browser screenshot di X", "screenshot con pinchtab di Y"). If url param provided it navigates first.
+29. Use browser_snapshot when Neb wants to inspect the DOM structure of a page (e.g. "dimmi gli elementi interattivi di X", "vedi il DOM di Y"). If url param provided it navigates first.
+30. All browser_* commands require PinchTab running on http://127.0.0.1:9867. They fail gracefully with a clear message if PinchTab is unavailable. Never call browser_read/browser_screenshot/browser_snapshot without either a url param or a preceding browser_navigate in the same plan.
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -446,6 +462,30 @@ function detectFounderShortcutIntent(text: string): IntentResponse | null {
       action: 'execute',
       message: 'Rilancio il solo gate QA sul task.',
       commands: [{ type: 'retry_qa', params: { task_ref: retryQaMatch[1].trim() } }],
+    }
+  }
+
+  // --- Browser read (PinchTab) ---
+  const browserReadMatch = text.match(/^(?:browser\s+(?:leggi|read|scraping)|leggi\s+browser|scraping\s+browser)\s+(https?:\/\/[^\s]+|[a-z0-9.-]+\.[a-z]{2,}[^\s]*)$/i)
+  if (browserReadMatch?.[1]) {
+    let url = browserReadMatch[1].trim()
+    if (!url.startsWith('http')) url = `https://${url}`
+    return {
+      action: 'execute',
+      message: `Leggo il contenuto di ${url} via browser PinchTab.`,
+      commands: [{ type: 'browser_read', params: { url } }],
+    }
+  }
+
+  // --- Browser screenshot (PinchTab) ---
+  const browserScreenMatch = text.match(/^(?:browser\s+(?:screenshot|screen|snap)|pt\s+(?:screenshot|screen))\s+(https?:\/\/[^\s]+|[a-z0-9.-]+\.[a-z]{2,}[^\s]*)$/i)
+  if (browserScreenMatch?.[1]) {
+    let url = browserScreenMatch[1].trim()
+    if (!url.startsWith('http')) url = `https://${url}`
+    return {
+      action: 'execute',
+      message: `Catturo uno screenshot live di ${url} via PinchTab.`,
+      commands: [{ type: 'browser_screenshot', params: { url } }],
     }
   }
 
@@ -2108,6 +2148,166 @@ async function executeAction(
 
       const excerpt = scrapeResult.excerpt ? `\n\n> ${scrapeResult.excerpt}` : ''
       return `📖 *${title}* ${excerpt}\n\nContenuto estratto e salvato in \`${exportResult.relativePath}\`.`.trim()
+    }
+
+    // ── browser_navigate ─────────────────────────────────────────────────
+    case 'browser_navigate': {
+      const url = getString(params, 'url')
+      if (!url) throw new Error('url mancante per browser_navigate')
+
+      const ptUnavailable = await isPinchTabAvailable().then((ok) => !ok)
+      if (ptUnavailable) {
+        return '⚠️ PinchTab non disponibile. Assicurati che PinchTab sia in esecuzione su http://127.0.0.1:9867 e riprova.'
+      }
+
+      const navResult = await browserNavigate(url, { blockImages: true })
+      if (!navResult.ok) {
+        return `⚠️ PinchTab: impossibile aprire ${url} (${navResult.error}). Alcuni siti bloccano i browser automatizzati.`
+      }
+
+      await recordEvent('founder_command', {
+        payload: { command: 'nl_browser_navigate', source: 'natural_language', url },
+      })
+
+      return `🌐 Browser aperto su ${url}`
+    }
+
+    // ── browser_read ─────────────────────────────────────────────────────
+    case 'browser_read': {
+      const url = getString(params, 'url')
+
+      const ptUnavailable = await isPinchTabAvailable().then((ok) => !ok)
+      if (ptUnavailable) {
+        return '⚠️ PinchTab non disponibile. Assicurati che PinchTab sia in esecuzione su http://127.0.0.1:9867 e riprova.'
+      }
+
+      if (url) {
+        const navResult = await browserNavigate(url, { blockImages: true })
+        if (!navResult.ok) {
+          return `⚠️ PinchTab: impossibile navigare a ${url} (${navResult.error}). Il sito potrebbe bloccare browser automatizzati. Prova con \`read_url\` per pagine statiche.`
+        }
+      }
+
+      const textResult = await browserText({ mode: 'readability' })
+      if (!textResult.ok) {
+        return `⚠️ PinchTab: estrazione testo fallita (${textResult.error}).`
+      }
+
+      const rawTextData = textResult.data as Record<string, unknown>
+      const pageText = typeof rawTextData?.['text'] === 'string'
+        ? rawTextData['text']
+        : typeof rawTextData?.['content'] === 'string'
+          ? rawTextData['content']
+          : String(textResult.data ?? '')
+      const pageTitle = typeof rawTextData?.['title'] === 'string'
+        ? rawTextData['title']
+        : url ? `Browser Read — ${url}` : 'Browser Read'
+
+      if (!pageText.trim()) {
+        return `⚠️ PinchTab: nessun testo estratto dalla pagina${url ? ` ${url}` : ''}. Il sito potrebbe richiedere JavaScript avanzato o autenticazione.`
+      }
+
+      const filename = `browser-read-${slugify(pageTitle.slice(0, 50))}-${Date.now()}.md`
+      const exportResult = await executeTool('file_export', {
+        title: pageTitle,
+        filename,
+        format: 'md',
+        content: pageText,
+        mode: 'personal',
+      }, { agentId: 'ceo' })
+
+      await recordEvent('founder_command', {
+        payload: { command: 'nl_browser_read', source: 'natural_language', url: url ?? '(current page)', title: pageTitle, path: exportResult.relativePath },
+      })
+
+      const textExcerpt = pageText.slice(0, 400).replace(/\n+/g, ' ').trim()
+      return `🌐 *${pageTitle}*\n\n> ${textExcerpt}…\n\nContenuto estratto e salvato in \`${exportResult.relativePath}\`.`
+    }
+
+    // ── browser_screenshot ───────────────────────────────────────────────
+    case 'browser_screenshot': {
+      const url = getString(params, 'url')
+      const caption = getString(params, 'caption')
+
+      const ptUnavailable = await isPinchTabAvailable().then((ok) => !ok)
+      if (ptUnavailable) {
+        return '⚠️ PinchTab non disponibile. Assicurati che PinchTab sia in esecuzione su http://127.0.0.1:9867 e riprova.'
+      }
+
+      if (url) {
+        const navResult = await browserNavigate(url, { blockImages: false })
+        if (!navResult.ok) {
+          return `⚠️ PinchTab: impossibile navigare a ${url} (${navResult.error}).`
+        }
+      }
+
+      const screenshotResult = await pinchTabScreenshot()
+      if (!screenshotResult.ok) {
+        return `⚠️ PinchTab: screenshot fallito (${screenshotResult.error}).`
+      }
+
+      const rawScreenData = screenshotResult.data as Record<string, unknown>
+      const base64 =
+        typeof rawScreenData?.['base64'] === 'string' ? rawScreenData['base64'] :
+        typeof rawScreenData?.['image'] === 'string' ? rawScreenData['image'] :
+        typeof rawScreenData?.['screenshot'] === 'string' ? rawScreenData['screenshot'] :
+        typeof rawScreenData?.['data'] === 'string' ? rawScreenData['data'] :
+        typeof screenshotResult.data === 'string' ? screenshotResult.data : null
+
+      if (!base64) {
+        return '⚠️ PinchTab: risposta screenshot non riconosciuta — campo immagine assente. Controlla la versione API.'
+      }
+
+      const cleanBase64 = base64.replace(/^data:image\/[a-z]+;base64,/, '')
+      const personalContext = await getPersonalContext()
+      const outputDir = personalContext.outputPath
+      await mkdir(outputDir, { recursive: true })
+
+      const screenshotPath = join(outputDir, `browser-screenshot-${Date.now()}.png`)
+      await writeFile(screenshotPath, Buffer.from(cleanBase64, 'base64'))
+
+      await sendFounderPhoto(screenshotPath, caption ?? `📸 Browser screenshot${url ? ` di ${url}` : ''}`)
+
+      await recordEvent('founder_command', {
+        payload: { command: 'nl_browser_screenshot', source: 'natural_language', url: url ?? '(current page)', path: screenshotPath },
+      })
+
+      return `📸 Browser screenshot${url ? ` di ${url}` : ''} catturato e inviato.`
+    }
+
+    // ── browser_snapshot ─────────────────────────────────────────────────
+    case 'browser_snapshot': {
+      const url = getString(params, 'url')
+
+      const ptUnavailable = await isPinchTabAvailable().then((ok) => !ok)
+      if (ptUnavailable) {
+        return '⚠️ PinchTab non disponibile. Assicurati che PinchTab sia in esecuzione su http://127.0.0.1:9867 e riprova.'
+      }
+
+      if (url) {
+        const navResult = await browserNavigate(url, { blockImages: true })
+        if (!navResult.ok) {
+          return `⚠️ PinchTab: impossibile navigare a ${url} (${navResult.error}).`
+        }
+      }
+
+      const snapshotResult = await browserSnapshot({ format: 'compact', maxTokens: 2000 })
+      if (!snapshotResult.ok) {
+        return `⚠️ PinchTab: snapshot DOM fallito (${snapshotResult.error}).`
+      }
+
+      const rawSnapData = snapshotResult.data as Record<string, unknown>
+      const snapshotText =
+        typeof rawSnapData?.['snapshot'] === 'string' ? rawSnapData['snapshot'] :
+        typeof rawSnapData?.['content'] === 'string' ? rawSnapData['content'] :
+        typeof snapshotResult.data === 'string' ? snapshotResult.data :
+        JSON.stringify(snapshotResult.data).slice(0, 2000)
+
+      await recordEvent('founder_command', {
+        payload: { command: 'nl_browser_snapshot', source: 'natural_language', url: url ?? '(current page)' },
+      })
+
+      return `🔍 DOM Snapshot${url ? ` di ${url}` : ''}:\n\n\`\`\`\n${snapshotText}\n\`\`\``
     }
 
     // ── configure_delivery ───────────────────────────────────────────────
