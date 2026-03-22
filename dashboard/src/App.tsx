@@ -92,7 +92,7 @@ const VIEW_META: Record<ViewId, { title: string; description: string }> = {
 // Topbar
 // ---------------------------------------------------------------------------
 
-function Topbar({ view, mode, onModeChange }: { view: ViewId; mode: DashboardMode; onModeChange: (mode: DashboardMode) => void }) {
+function Topbar({ view, mode, onModeChange, onOpenDocs }: { view: ViewId; mode: DashboardMode; onModeChange: (mode: DashboardMode) => void; onOpenDocs: () => void }) {
   const meta = VIEW_META[view]
   const [time, setTime] = useState(() => new Date())
 
@@ -116,6 +116,21 @@ function Topbar({ view, mode, onModeChange }: { view: ViewId; mode: DashboardMod
           <span className={clsx('w-1 h-1 rounded-full', mode === 'company' ? 'bg-[#00D4FF]' : 'bg-[#7CF6E6]')} />
           <span className="text-[10px] text-slate-500 font-mono">M9 In Progress</span>
         </span>
+
+        {/* Knowledge Base button */}
+        {view !== 'docs' && (
+          <button
+            onClick={onOpenDocs}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.07] bg-black/20 text-slate-400 text-[10px] font-black uppercase tracking-[0.18em] transition hover:border-[#00D4FF]/25 hover:text-[#00D4FF] hover:bg-[#00D4FF]/[0.04]"
+            title="Open Knowledge Base"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            </svg>
+            Docs
+          </button>
+        )}
 
         <div className="flex items-center rounded-full border border-white/[0.07] bg-black/30 p-1">
           {([
@@ -323,7 +338,6 @@ export function App() {
         mode={mode}
         current={view}
         onNavigate={handleNavigate}
-        onOpenDocs={handleOpenDocs}
         onExitDocs={handleExitDocs}
         docsSelectedPath={docsSelectedPath}
         onDocsSelect={setDocsSelectedPath}
@@ -334,7 +348,7 @@ export function App() {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         {/* Topbar */}
-        <Topbar view={view} mode={mode} onModeChange={handleModeChange} />
+        <Topbar view={view} mode={mode} onModeChange={handleModeChange} onOpenDocs={handleOpenDocs} />
 
         {/* Page */}
         <main

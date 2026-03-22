@@ -86,7 +86,6 @@ interface SidebarProps {
   mode: DashboardMode
   current: ViewId
   onNavigate: (view: ViewId) => void
-  onOpenDocs: () => void
   onExitDocs: () => void
   docsSelectedPath: string | null
   onDocsSelect: (path: string) => void
@@ -262,7 +261,6 @@ export function Sidebar({
   mode,
   current,
   onNavigate,
-  onOpenDocs,
   onExitDocs,
   docsSelectedPath,
   onDocsSelect,
@@ -356,17 +354,6 @@ export function Sidebar({
 
       {/* Connection Status Badge */}
       <div className="px-4 mt-auto">
-        {!isDocsMode && (
-          <div className="mb-3 flex justify-start">
-            <button
-              onClick={onOpenDocs}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-black/30 text-slate-400 transition hover:border-[#00D4FF]/30 hover:text-[#00D4FF]"
-              title="Knowledge Base"
-            >
-              <Icon name="book" size={15} />
-            </button>
-          </div>
-        )}
         <div className={clsx(
           "flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/5 bg-black/40",
           effectiveCollapsed ? "justify-center px-0" : ""
