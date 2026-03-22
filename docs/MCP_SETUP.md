@@ -159,3 +159,55 @@ Current local endpoints:
 - `POST /api/personal/automation/run`
 
 State is persisted in `workspace/personal/neb/automations.json`.
+
+---
+
+## PinchTab Browser Control
+
+PinchTab is a standalone Go HTTP server that gives agents direct browser control (navigate, click, fill, snapshot, token-efficient text extraction).
+
+### Install
+
+```bash
+# Option 1 — npm (recommended)
+npm install -g pinchtab
+
+# Option 2 — install script
+curl -fsSL https://pinchtab.com/install.sh | bash
+
+# Option 3 — Docker
+docker run -d --name pinchtab -p 127.0.0.1:9867:9867 \
+  -v pinchtab-data:/data --shm-size=2g pinchtab/pinchtab
+```
+
+### Start (daemon — recommended for daily use)
+
+```bash
+pinchtab daemon install   # installs and starts background daemon
+```
+
+Or manually:
+
+```bash
+pinchtab server   # foreground, port 9867
+```
+
+### Optional `.env`
+
+```env
+PINCHTAB_BASE_URL=http://127.0.0.1:9867   # default
+PINCHTAB_TOKEN=                            # only if PinchTab token auth is enabled
+```
+
+### Verify
+
+```bash
+curl http://localhost:9867/health
+# → {"status":"ok",...}
+```
+
+After PinchTab is running, the WAI capability `plugin.pinchtab` will show `state: connected` in `GET /api/capabilities` and the `Capabilities` dashboard view.
+
+### Security note
+
+PinchTab defaults to loopback only and restricts navigation to locally hosted URLs (IDPI). To allow external URLs, update the PinchTab config. Never expose port 9867 beyond localhost.

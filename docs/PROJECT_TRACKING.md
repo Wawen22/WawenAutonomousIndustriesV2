@@ -151,7 +151,7 @@ Ispirato da `pinchtab-main/`. Controllo browser attivo per agenti (navigazione, 
 
 | ID | Title | Priority | Status | Note |
 |----|-------|----------|--------|------|
-| T122 | PinchTab integration — browser control capability | 2 | ⬜ Todo | Server Go standalone, MCP plugin, registrato come capability |
+| T122 | PinchTab integration — browser control capability | 2 | ✅ Done | plugin.pinchtab nel capability registry, HTTP client service, health check live |
 
 ### Fase 3 — Personal mode expansion
 
@@ -186,6 +186,20 @@ Ispirato da `skills-main/` (Anthropic). Generazione documenti DOCX/PDF reali inv
 ---
 
 ## Recent Changes
+
+### 2026-03-22 — T122: PinchTab Browser Control Capability
+
+**New:**
+- `backend/src/services/pinchtab.ts`: HTTP client for PinchTab REST API — `isPinchTabAvailable`, `browserNavigate`, `browserSnapshot`, `browserAction`, `browserText`, `browserScreenshot`. Uses Node 22 built-in `fetch` with `AbortController` (800 ms health timeout, 30 s op timeout). Never throws — all errors returned as `{ ok: false, error }`.
+- `backend/src/config/capabilities.ts`: `PINCHTAB_CAPABILITY_ID = 'plugin.pinchtab'`
+- `backend/src/services/capabilities.ts`: `plugin.pinchtab` registered in the capability catalog with live health check (`isPinchTabAvailable()` at registry build time), policy, assignments (company + personal runtime, dev + ops teams), and audit.
+
+**How to test:**
+1. Start backend without PinchTab → `GET /api/capabilities` shows `plugin.pinchtab` with `state: degraded`
+2. Start PinchTab (`pinchtab server` or `pinchtab daemon install`) → capability shows `state: connected`
+3. Dashboard `Capabilities` view shows `PinchTab Browser Control` with correct health badge
+
+**Next step:** T122b — expose `browserNavigate` / `browserSnapshot` / `browserAction` / `browserText` as LLM tool calls in specific agent system prompts.
 
 ### 2026-03-22 — T120: Memory v2: Multi-Scope Architecture
 
