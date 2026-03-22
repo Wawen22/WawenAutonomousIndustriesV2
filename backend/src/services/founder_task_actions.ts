@@ -23,6 +23,14 @@ import { resumeApprovedDeliveryGates, runQaAgent } from '../agents/qa.js'
 import { runOpsAgent } from '../agents/ops.js'
 import { runFinanceAgent } from '../agents/finance.js'
 import { runHrAgent } from '../agents/hr.js'
+import { runExecutiveSummaryAgent } from '../agents/executive_summary.js'
+import { runFeedbackSynthesizerAgent } from '../agents/feedback_synthesizer.js'
+import { runSecurityAuditorAgent } from '../agents/security_auditor.js'
+import { runApiTesterAgent } from '../agents/api_tester.js'
+import { runDbOptimizerAgent } from '../agents/db_optimizer.js'
+import { runLegalComplianceAgent } from '../agents/legal_compliance.js'
+import { runProposalStrategistAgent } from '../agents/proposal_strategist.js'
+import { runBehavioralCoachAgent } from '../agents/behavioral_coach.js'
 import { extractAndSaveProjectFacts, processFeedbackLearning } from './memory_learning.js'
 import { buildSystemStatusReport } from './status_report.js'
 import type { Task, TaskStatus } from '../types/index.js'
@@ -139,6 +147,30 @@ async function dispatchRetriedTask(
       return
     case 'hr':
       await runHrAgent(task, notify)
+      return
+    case 'executive_summary':
+      await runExecutiveSummaryAgent(task, notify)
+      return
+    case 'feedback_synthesizer':
+      await runFeedbackSynthesizerAgent(task, notify)
+      return
+    case 'security_auditor':
+      await runSecurityAuditorAgent(task, notify)
+      return
+    case 'api_tester':
+      await runApiTesterAgent(task, notify)
+      return
+    case 'db_optimizer':
+      await runDbOptimizerAgent(task, notify)
+      return
+    case 'legal_compliance':
+      await runLegalComplianceAgent(task, notify)
+      return
+    case 'proposal_strategist':
+      await runProposalStrategistAgent(task, notify)
+      return
+    case 'behavioral_coach':
+      await runBehavioralCoachAgent(task, notify)
       return
     default:
       throw new Error(`Task ${task.id} has no retryable assignee`)

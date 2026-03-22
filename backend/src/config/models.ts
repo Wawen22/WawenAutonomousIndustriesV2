@@ -146,6 +146,16 @@ export const AGENT_MODEL_DEFAULTS: Record<string, string> = {
   ops: 'glm-4.5-air',
   finance: 'nemotron-120b',
   hr: 'glm-4.5-air',
+
+  // Specialist agents (T121)
+  executive_summary: 'glm-4.5-air',       // fast summarization — no complex reasoning needed
+  feedback_synthesizer: 'nemotron-120b',   // pattern analysis + priority scoring
+  security_auditor: 'nemotron-120b',       // complex security reasoning
+  api_tester: 'nemotron-120b',             // technical analysis
+  db_optimizer: 'nemotron-120b',           // schema + query analysis
+  legal_compliance: 'nemotron-120b',       // complex legal reasoning
+  proposal_strategist: 'nemotron-120b',    // structured commercial output
+  behavioral_coach: 'glm-4.5-air',        // lightweight personal messages
 }
 
 // ---------------------------------------------------------------------------

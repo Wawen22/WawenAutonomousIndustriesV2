@@ -291,6 +291,112 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
       maxCostPerTaskUsd: 2,
     }),
   },
+
+  // --- New Specialist Agents (T121) ---
+
+  executive_summary: {
+    id: 'executive_summary',
+    name: 'Executive Summary Agent',
+    role: 'Transform long documents, agent outputs, and reports into concise actionable summaries',
+    team: 'ops',
+    model_id: assignedModel('executive_summary', 'glm-4.5-air'),
+    config: makeConfig({
+      tools: ['file_system', 'supabase_read', 'file_export'],
+      maxCostPerTaskUsd: 2,
+    }),
+  },
+
+  feedback_synthesizer: {
+    id: 'feedback_synthesizer',
+    name: 'Feedback Synthesizer',
+    role: 'Analyze feedback from clients and users, identify patterns, priority scores, and action items',
+    team: 'consulting',
+    model_id: assignedModel('feedback_synthesizer', 'nemotron-120b'),
+    config: makeConfig({
+      tools: ['file_system', 'supabase_read', 'file_export'],
+      maxCostPerTaskUsd: 5,
+    }),
+  },
+
+  security_auditor: {
+    id: 'security_auditor',
+    name: 'Security Auditor',
+    role: 'Analyze code, infrastructure, and dependencies for security vulnerabilities and OWASP Top 10',
+    team: 'ops',
+    model_id: assignedModel('security_auditor', 'nemotron-120b'),
+    config: makeConfig({
+      tools: ['file_system', 'supabase_read', 'shell_readonly', 'file_export'],
+      maxCostPerTaskUsd: 10,
+      thinkingLevel: 'high',
+      canReadAllTasks: true,
+      canUseShell: true,
+    }),
+  },
+
+  api_tester: {
+    id: 'api_tester',
+    name: 'API Tester',
+    role: 'Test API endpoints for authentication, edge cases, contract testing, and response validation',
+    team: 'dev',
+    model_id: assignedModel('api_tester', 'nemotron-120b'),
+    config: makeConfig({
+      tools: ['file_system', 'supabase_read', 'shell_readonly', 'file_export'],
+      maxCostPerTaskUsd: 5,
+      canUseShell: true,
+    }),
+  },
+
+  db_optimizer: {
+    id: 'db_optimizer',
+    name: 'DB Optimizer',
+    role: 'Review DB schema, query performance, missing indexes, and N+1 query patterns',
+    team: 'dev',
+    model_id: assignedModel('db_optimizer', 'nemotron-120b'),
+    config: makeConfig({
+      tools: ['supabase_read', 'file_system', 'file_export'],
+      maxCostPerTaskUsd: 5,
+      canReadAllTasks: true,
+    }),
+  },
+
+  legal_compliance: {
+    id: 'legal_compliance',
+    name: 'Legal Compliance Agent',
+    role: 'Review contracts, GDPR compliance, privacy policies, and terms of service — analysis only, not legal advice',
+    team: 'ops',
+    model_id: assignedModel('legal_compliance', 'nemotron-120b'),
+    config: makeConfig({
+      tools: ['file_system', 'supabase_read', 'file_export'],
+      maxCostPerTaskUsd: 10,
+      thinkingLevel: 'high',
+    }),
+  },
+
+  proposal_strategist: {
+    id: 'proposal_strategist',
+    name: 'Proposal Strategist',
+    role: 'Build complete commercial proposals with executive summary, scope, tiered pricing, and ROI',
+    team: 'consulting',
+    model_id: assignedModel('proposal_strategist', 'nemotron-120b'),
+    config: makeConfig({
+      tools: ['file_system', 'supabase_read', 'file_export'],
+      maxCostPerTaskUsd: 10,
+      thinkingLevel: 'high',
+    }),
+  },
+
+  behavioral_coach: {
+    id: 'behavioral_coach',
+    name: 'Behavioral Coach',
+    role: 'Personal habit tracker, accountability check-ins, and productivity nudges for Neb via Telegram',
+    team: 'ops',
+    model_id: assignedModel('behavioral_coach', 'glm-4.5-air'),
+    config: makeConfig({
+      tools: ['supabase_read', 'telegram_notify'],
+      maxCostPerTaskUsd: 1,
+      canSendTelegram: true,
+    }),
+  },
 }
 
 export function getAgent(id: string): Omit<Agent, 'status' | 'created_at' | 'updated_at'> {

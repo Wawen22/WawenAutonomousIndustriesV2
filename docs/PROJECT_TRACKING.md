@@ -115,6 +115,7 @@ This now implies a platform decision:
 | T114 | Agent memory system | ✅ Done | pgvector-backed per-agent memory (`agent_memories` table, migrations 005+008), `memory.ts` for store/recall/dedup, `memory_learning.ts` extracts preferences from founder feedback and persists as memories; `entity_type` field for categorization |
 | T115 | Daily brief automation scheduler | ✅ Done | `personal-automation.ts` `startFounderAutomationRuntime()` runs every minute via `setInterval`, fires `daily_founder_brief` at the configured local time (default 08:30 Europe/Rome); on/off toggle + schedule editor live in Assistant HQ |
 | T085 | CEO personal task routing | ✅ Done | Personal mode can create docs, send reports, do research, build digests |
+| T121 | Agent Roster Expansion | ✅ Done | 8 nuovi agenti specializzati: security_auditor, db_optimizer, api_tester, legal_compliance, proposal_strategist, executive_summary, feedback_synthesizer, behavioral_coach — roster passa da 17 a 25 agenti |
 | T093 | Capability platform contracts | ✅ Done | Backend now has shared contracts for capability catalog, assignments, policy, health, and audit summary |
 | T094 | Capability registry API MVP | ✅ Done | Read-only backend registry now exposes current capabilities for dashboard consumption |
 | T095 | Dashboard Capabilities view MVP | ✅ Done | New `Capabilities` dashboard view ships catalog, filters, assignments, health, and policy visibility |
@@ -142,7 +143,7 @@ Ispirato da `agency-agents-main/`. Aggiungere agenti specializzati per coprire f
 
 | ID | Title | Priority | Status | Note |
 |----|-------|----------|--------|------|
-| T121 | Agent Roster Expansion — 8 nuovi agenti specializzati | 1 | 🔄 Next | Security, DB Optimizer, API Tester, Legal, Proposal Strategist, Executive Summary, Feedback Synthesizer, Behavioral Nudge |
+| T121 | Agent Roster Expansion — 8 nuovi agenti specializzati | 1 | ✅ Done | security_auditor, db_optimizer, api_tester, legal_compliance, proposal_strategist, executive_summary, feedback_synthesizer, behavioral_coach — tutti operativi, typecheck ✅ |
 
 ### Fase 2 — Browser automation avanzato
 

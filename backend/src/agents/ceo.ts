@@ -21,6 +21,14 @@ import { runQaAgent } from './qa.js'
 import { runOpsAgent } from './ops.js'
 import { runFinanceAgent } from './finance.js'
 import { runHrAgent } from './hr.js'
+import { runExecutiveSummaryAgent } from './executive_summary.js'
+import { runFeedbackSynthesizerAgent } from './feedback_synthesizer.js'
+import { runSecurityAuditorAgent } from './security_auditor.js'
+import { runApiTesterAgent } from './api_tester.js'
+import { runDbOptimizerAgent } from './db_optimizer.js'
+import { runLegalComplianceAgent } from './legal_compliance.js'
+import { runProposalStrategistAgent } from './proposal_strategist.js'
+import { runBehavioralCoachAgent } from './behavioral_coach.js'
 import type { Task, TaskType, TaskPriority } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -45,6 +53,14 @@ Available agents:
 - ops             – Ops Agent: system monitoring, uptime, incidents
 - finance         – Finance Agent: cost tracking, budget alerts, reports
 - hr              – HR Agent: agent docs, role definitions, process docs
+- executive_summary   – Executive Summary Agent: condense long documents, meeting notes, or agent outputs into concise actionable summaries — USE THIS when Neb asks for a summary of anything
+- feedback_synthesizer – Feedback Synthesizer: analyze client/user feedback, identify patterns, priority scores, action items — USE THIS for any feedback analysis task
+- security_auditor    – Security Auditor: code security review, OWASP Top 10, secrets detection, infra vulnerabilities — USE THIS for any security audit task
+- api_tester          – API Tester: endpoint testing, auth checks, contract testing, edge cases — USE THIS for API review or testing tasks
+- db_optimizer        – DB Optimizer: schema review, missing indexes, N+1 queries, query performance — USE THIS for database performance or schema review tasks
+- legal_compliance    – Legal Compliance Agent: GDPR review, privacy policy, contracts, ToS analysis — USE THIS for legal/compliance review tasks (analysis only, not legal advice)
+- proposal_strategist – Proposal Strategist: build complete commercial proposals with tiered pricing, scope, ROI — USE THIS for creating structured sales proposals
+- behavioral_coach    – Behavioral Coach: personal habit tracking, accountability check-ins, productivity nudges for Neb — USE THIS for personal productivity or habit tracking tasks
 `.trim()
 
 const VALID_TASK_TYPES = [
@@ -172,6 +188,14 @@ Routing hints:
 - CRITICAL OVERRIDE: If the task involves CREATING A FILE or WRITING CODE (HTML, CSS, JS, script, page, report file, PDF generator, dashboard, etc.) — regardless of project type — always prefer architect or dev_general_1. The type of work (implementation) overrides the project domain.
 - CRITICAL OVERRIDE: If the task says "usa i contenuti esistenti", "usa i deliverable", "prendi quello che hai fatto", "crea una pagina da", "generate from existing" — the workspace context below may list those files. Read it and route to architect who can read and use them.
 - If workspace context lists existing deliverables (marketing plans, analysis, proposals, etc.) and the task is to CREATE SOMETHING FROM them, always prefer architect.
+- If the task asks to summarize, condense, or make a brief of a document, meeting, or report, prefer executive_summary.
+- If the task involves analyzing feedback from clients, users, or stakeholders to find patterns or actions, prefer feedback_synthesizer.
+- If the task involves a security review, vulnerability scan, OWASP audit, or secrets detection, prefer security_auditor.
+- If the task involves testing API endpoints, contract testing, or HTTP response validation, prefer api_tester.
+- If the task involves DB schema review, query optimization, missing indexes, or N+1 detection, prefer db_optimizer.
+- If the task involves GDPR review, privacy policy audit, contract review, or ToS compliance, prefer legal_compliance.
+- If the task involves building a commercial proposal, sales deck structure, or pricing strategy for a client, prefer proposal_strategist over consulting_lead.
+- If the task involves Neb's personal habits, productivity check-in, or accountability tracking, prefer behavioral_coach.
 
 Respond with ONLY a JSON object — no markdown, no text outside JSON:
 {
@@ -323,6 +347,38 @@ Analyze and delegate to the most appropriate agent.`
     } else if (delegation.delegateTo === 'hr') {
       void runHrAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'HR Agent failed')
+      })
+    } else if (delegation.delegateTo === 'executive_summary') {
+      void runExecutiveSummaryAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Executive Summary Agent failed')
+      })
+    } else if (delegation.delegateTo === 'feedback_synthesizer') {
+      void runFeedbackSynthesizerAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Feedback Synthesizer Agent failed')
+      })
+    } else if (delegation.delegateTo === 'security_auditor') {
+      void runSecurityAuditorAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Security Auditor Agent failed')
+      })
+    } else if (delegation.delegateTo === 'api_tester') {
+      void runApiTesterAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'API Tester Agent failed')
+      })
+    } else if (delegation.delegateTo === 'db_optimizer') {
+      void runDbOptimizerAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'DB Optimizer Agent failed')
+      })
+    } else if (delegation.delegateTo === 'legal_compliance') {
+      void runLegalComplianceAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Legal Compliance Agent failed')
+      })
+    } else if (delegation.delegateTo === 'proposal_strategist') {
+      void runProposalStrategistAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Proposal Strategist Agent failed')
+      })
+    } else if (delegation.delegateTo === 'behavioral_coach') {
+      void runBehavioralCoachAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Behavioral Coach Agent failed')
       })
     }
   } catch (err) {

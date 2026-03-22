@@ -54,7 +54,7 @@ CEO Agent (GPT-5.4)
 
 ## Runtime Implementation Status
 
-All 17 agents are fully operational. The backend marks all agents as `online` at startup. All agents have a real runtime implementation — see the table below.
+All 25 agents are fully operational. The backend marks all agents as `online` at startup. All agents have a real runtime implementation — see the table below.
 
 | Agent / Group | Registry Status | Runtime Status | Notes |
 |--------------|-----------------|----------------|-------|
@@ -73,6 +73,14 @@ All 17 agents are fully operational. The backend marks all agents as `online` at
 | `ops` | configured | ✅ implemented | Runtime monitora task/agent stuck >30 min, registra `ops_alert` e notifica Neb |
 | `finance` | configured | ✅ implemented | Runtime esegue `checkBudget()`, genera report settimanale su `runs`, registra `finance_report_generated` |
 | `hr` | configured | ✅ implemented | Runtime aggrega `tasks/runs/events`, genera digest settimanale e registra `hr_digest_generated` |
+| `executive_summary` | configured | ✅ implemented | Condensa documenti/output in executive summary concisi con TL;DR, action items, urgency |
+| `feedback_synthesizer` | configured | ✅ implemented | Analizza feedback, identifica pattern con priority score, produce action items |
+| `security_auditor` | configured | ✅ implemented | Audit sicurezza codice/infra, OWASP Top 10, secrets detection, action plan |
+| `api_tester` | configured | ✅ implemented | Test endpoint API: auth, edge case, contract testing, response validation |
+| `db_optimizer` | configured | ✅ implemented | Review schema DB, N+1 queries, indici mancanti, query performance con SQL fix |
+| `legal_compliance` | configured | ✅ implemented | Review GDPR, privacy policy, contratti, ToS — analisi e raccomandazioni (no legal advice) |
+| `proposal_strategist` | configured | ✅ implemented | Proposta commerciale completa: exec summary, scope, tiered pricing, ROI, next steps |
+| `behavioral_coach` | configured | ✅ implemented | Personal mode: habit tracking, accountability check-in, nudge produttività per Neb via Telegram |
 
 ---
 
@@ -207,6 +215,75 @@ Keeps WAI running smoothly, solvent, and well-documented.
 - **Model:** Gemini 2.5 Flash
 - **Tools:** Supabase, File system
 - **Runtime:** aggrega attività team da `tasks`, `runs`, `events`, genera weekly digest utile per Neb e supporta task HR espliciti
+
+---
+
+---
+
+## Specialist Agents (T121)
+
+Agents added in T121 to expand WAI's analytical and strategic capabilities.
+
+### Executive Summary Agent
+- **ID:** `executive_summary`
+- **Role:** Transform long documents, agent outputs, meeting notes, or reports into concise, actionable executive summaries with TL;DR, key points, action items, and urgency rating
+- **Model:** Gemini 2.5 Flash
+- **Team:** ops
+- **Output:** Structured summary + optional `exec-summary-*.md` deliverable
+
+### Feedback Synthesizer
+- **ID:** `feedback_synthesizer`
+- **Role:** Analyze feedback from clients, users, or stakeholders; identify recurring themes and patterns with priority scores (1-10); produce action items and quick wins
+- **Model:** GPT-5.4
+- **Team:** consulting
+- **Output:** `feedback-synthesis.md` deliverable with patterns sorted by priority
+
+### Security Auditor
+- **ID:** `security_auditor`
+- **Role:** Analyze code, infrastructure, and dependencies for security vulnerabilities. OWASP Top 10, secrets detection, auth flaws, injection vectors
+- **Model:** GPT-5.4 (high thinking)
+- **Team:** ops
+- **Output:** `security-audit.md` with severity-sorted findings, OWASP categories, action plan
+- **Note:** `captureMemory: false` — does not store raw audit output in agent memory
+
+### API Tester
+- **ID:** `api_tester`
+- **Role:** Test API endpoints for authentication, edge cases, contract compliance, and response validation
+- **Model:** GPT-5.4
+- **Team:** dev
+- **Output:** `api-test-report.md` with test cases, auth findings, contract issues
+- **Note:** `captureMemory: false`
+
+### DB Optimizer
+- **ID:** `db_optimizer`
+- **Role:** Review database schemas and query patterns; identify missing indexes, N+1 queries, anti-patterns, and slow queries. Provides exact SQL migration fixes
+- **Model:** GPT-5.4
+- **Team:** dev
+- **Output:** `db-optimization-report.md` with DB health score, issues, SQL index statements
+- **Note:** `captureMemory: false`
+
+### Legal Compliance Agent
+- **ID:** `legal_compliance`
+- **Role:** Review contracts, GDPR compliance, privacy policies, and terms of service. Analysis and recommendations only — not binding legal advice
+- **Model:** GPT-5.4 (high thinking)
+- **Team:** ops
+- **Output:** `legal-compliance-review.md` with findings, GDPR gaps, compliance status table
+- **Note:** `captureMemory: false`. Always includes disclaimer.
+
+### Proposal Strategist
+- **ID:** `proposal_strategist`
+- **Role:** Build complete, conversion-optimized commercial proposals with tiered pricing, scope of work, ROI, milestones, and next steps
+- **Model:** GPT-5.4 (high thinking)
+- **Team:** consulting
+- **Output:** `proposal-strategy.md` — full commercial proposal document
+
+### Behavioral Coach
+- **ID:** `behavioral_coach`
+- **Role:** Personal accountability partner for Neb. Habit tracking, daily/weekly check-ins, streak tracking, productivity nudges — delivered via Telegram
+- **Model:** Gemini 2.5 Flash
+- **Team:** ops
+- **Tone:** Direct, warm, Italian language for personal communications
+- **Trigger:** Explicit task from Neb or scheduled check-in
 
 ---
 

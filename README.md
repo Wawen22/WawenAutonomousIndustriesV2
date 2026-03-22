@@ -1,134 +1,64 @@
-# WAI – Wawen Autonomous Industries
+Leggi docs/PROJECT_TRACKING.md e docs/AGENTS_AND_TEAMS.md prima di fare qualsiasi cosa.
 
-> **Zero Human Company** — a multi-agent operating system for client delivery and founder execution.
+Procedi con T121 — Agent Roster Expansion: aggiungi 8 nuovi agenti specializzati a WAI.
 
-WAI has two practical surfaces:
+Il reference è nella cartella `IDEE-E-INTEGRAZIONI-DI-RIFERIMENTO-PER-WAI/agency-agents-main/` — contiene 160+ prompt agenti organizzati per funzione. Usali come ISPIRAZIONE e adattali al contesto WAI, non fare copia-incolla.
 
-- **Business OS** for projects, briefs, repos, delivery chains, invoicing, and founder decisions
-- **Personal Assistant** for Neb, with Gmail / Calendar / Drive workflows, quick actions, and controlled automations
+## Agenti da aggiungere
 
----
+Aggiungi questi 8 agenti in ordine di priorità:
 
-## Stack
+1. **security_auditor** (team: ops) — Analisi sicurezza codice, infra, dipendenze. Cerca vulnerabilità, OWASP top 10, secrets esposti.
 
-| Component | Technology | Role |
-|-----------|-----------|------|
-| Backend | Node.js 22 + TypeScript | Agent orchestration, founder APIs, Telegram bot |
-| Dashboard | React 18 + Vite + Tailwind | Founder UI, monitoring, Assistant HQ |
-| Database | Supabase cloud | Source of truth for agents, tasks, runs, events, memory |
-| LLM Proxy | LiteLLM | Routes GPT-5.4 and Gemini traffic |
-| Founder Interface | Telegram + Dashboard | Human control surface |
-| Personal Integrations | Google Workspace MCP | Gmail, Calendar, Drive for personal mode |
+2. **db_optimizer** (team: dev) — Review schema DB, query performance, indici mancanti, N+1 queries. Opera su progetti software con DB.
 
----
+3. **api_tester** (team: dev) — Test automatico endpoint API: autenticazione, edge case, contract testing, response validation.
 
-## Quick Start
+4. **legal_compliance** (team: ops) — Review contratti, GDPR compliance, privacy policy, termini di servizio. Solo analisi e raccomandazioni — non da consigli legali vincolanti.
 
-```bash
-# 1. Start/Restart LiteLLM
-sg docker -c "docker compose up litellm -d"
+5. **proposal_strategist** (team: consulting) — Costruisce proposte commerciali complete: executive summary, scope, pricing, timeline, ROI. Si basa su brief progetto.
 
-# 2. Start backend
-cd backend && pnpm dev
+6. **executive_summary** (team: ops) — Trasforma documenti lunghi, riunioni, output agenti in executive summary concisi e actionable per Neb/clienti.
 
-# 3. Start dashboard
-cd dashboard && pnpm dev
-```
+7. **feedback_synthesizer** (team: consulting) — Analizza feedback raccolto (cliente, utenti, stakeholder), identifica pattern, priority score, action items.
 
-Local endpoints:
+8. **behavioral_coach** (team: ops) — Personal mode only. Tracker abitudini, accountability check-in, nudge produttività per Neb via Telegram.
 
-- backend: `http://localhost:3001`
-- dashboard: `http://localhost:3000`
-- LiteLLM: `http://localhost:4000`
+## Cosa implementare per ogni agente
 
-Typechecks:
+Per ogni agente, seguendo i pattern esistenti nel codebase:
 
-```bash
-cd backend && pnpm typecheck
-cd dashboard && pnpm typecheck
-```
+1. **`backend/src/agents/<nome>.ts`** — file agente con:
+   - System prompt specifico (personalità, expertise, output format)
+   - Funzione `run<Nome>Agent(task, notify)` con firma standard
+   - Output strutturato (JSON parsato + fallback)
+   - Log eventi con `recordEvent`
 
-If you want Gmail / Calendar / Drive in personal mode:
+2. **`backend/src/config/agents.ts`** — registra il nuovo agente nel registry
 
-```bash
-./scripts/start-google-workspace-mcp.sh
-```
+3. **`backend/src/agents/ceo.ts`** — aggiungi il nuovo agente all'AGENT_ROSTER e alla logica di routing del CEO (quali task delega al nuovo agente)
 
-Then connect it from `Assistant HQ`.
+4. **`backend/src/services/founder_task_actions.ts`** — aggiungi il case nella funzione di dispatch per i nuovi agenti
 
----
+## Vincoli
 
-## Documentation
+- Segui esattamente i pattern degli agenti esistenti (architect.ts, consulting_lead.ts, qa.ts)
+- Ogni agente usa `runAgent` da `services/llm.ts` con `projectId`/`clientId` se disponibili dal task
+- System prompt: italiano o inglese a seconda del contesto, massimo pragmatico
+- Output sempre in JSON parsabile con fallback su errore di parsing
+- `captureMemory: false` per agenti di analisi (security, legal, db) — non salvano output grezzo
+- Nessun hardcode di model ID — usa il routing standard
+- `pnpm typecheck` deve passare alla fine
 
-Start here:
+## Ordine di esecuzione suggerito
 
-- [docs/INDEX.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/INDEX.md)
+Implementa in questo ordine (dal più semplice al più complesso):
+1. executive_summary, feedback_synthesizer (output semplice, nessuna dipendenza)
+2. security_auditor, api_tester, db_optimizer (analisi tecnica)
+3. legal_compliance (analisi con disclaimer)
+4. proposal_strategist (output strutturato complesso)
+5. behavioral_coach (personal mode, logica Telegram)
 
-Most important docs:
+Alla fine: `pnpm typecheck` backend, aggiorna docs/PROJECT_TRACKING.md con T121 → ✅ Done.
 
-- [docs/PROJECT_TRACKING.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/PROJECT_TRACKING.md) — live status
-- [docs/FOUNDER_OPERATIONS_PLAYBOOK.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/FOUNDER_OPERATIONS_PLAYBOOK.md) — founder manual, commands, and examples
-- [docs/ARCHITECTURE.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/ARCHITECTURE.md) — technical architecture
-- [docs/MCP_SETUP.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/MCP_SETUP.md) — Google Workspace MCP setup
-
-In the dashboard, Company mode now exposes the same knowledge base through the `Docs` view.
-
----
-
-## Current Status
-
-| Milestone | Status |
-|-----------|--------|
-| M1–M7 | ✅ Done |
-| M8 | ⬜ Todo |
-| M9 | 🔄 In Progress |
-| M10 | 🔄 In Progress |
-| M11 | ⬜ Todo |
-
-Live details always live in:
-
-- [docs/PROJECT_TRACKING.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/PROJECT_TRACKING.md)
-
----
-
-## Founder Surface
-
-### Business OS
-
-Use WAI for:
-
-- clients and projects
-- repo-aware software delivery
-- consulting, marketing, and SaaS chains
-- invoicing and payment tracking
-- blocked-task recovery and human review
-
-### Personal Assistant
-
-Use `Assistant HQ` for:
-
-- latest email
-- today agenda
-- recent Drive files
-- daily founder brief
-- automation control for the founder brief
-
----
-
-## Repo Layout
-
-```text
-wai/
-├── backend/      # agents, services, founder APIs
-├── dashboard/    # founder UI
-├── docs/         # knowledge base
-├── supabase/     # schema, migrations, seed
-├── workspace/    # generated outputs and linked repos
-└── CLAUDE.md     # instructions for coding agents
-```
-
----
-
-## License
-
-Proprietary — Wawen Autonomous Industries © 2026.
+ultrathink e procedi.

@@ -19,8 +19,8 @@ import {
   formatMarkProjectPaidMessage,
 } from './services/founder_revenue_actions.js'
 import { getTelegramBot } from './services/telegram.js'
-import { updateAgentStatus, getProjectState } from './services/supabase.js'
-import { getAllAgentIds } from './config/agents.js'
+import { updateAgentStatus, upsertAgentRecord, getProjectState } from './services/supabase.js'
+import { AGENTS, getAllAgentIds } from './config/agents.js'
 import { pingLiteLLM } from './services/llm.js'
 import { getMcpBridgeStatus } from './services/mcp-bridge.js'
 import {
@@ -1776,14 +1776,30 @@ async function main(): Promise<void> {
     payload: { version: '0.1.0', agents: getAllAgentIds() },
   })
 
-  // --- Mark all known agents as online ---
+  // --- Sync agents from config (upsert) then mark all online ---
+  // This ensures new agents added to config/agents.ts are auto-registered in the DB.
   try {
-    for (const agentId of getAllAgentIds()) {
-      await updateAgentStatus(agentId, 'online')
+    for (const agent of Object.values(AGENTS)) {
+      await upsertAgentRecord({
+        id: agent.id,
+        name: agent.name,
+        role: agent.role,
+        team: agent.team,
+        model_id: agent.model_id,
+        config: agent.config as unknown as Record<string, unknown>,
+      })
     }
-    log.info({ count: getAllAgentIds().length }, 'Agents marked online')
+    log.info({ count: Object.keys(AGENTS).length }, 'Agents synced and marked online')
   } catch (err) {
-    log.warn({ err }, 'Failed to update agent statuses (DB may not be ready yet)')
+    log.warn({ err }, 'Failed to sync agent records (DB may not be ready yet)')
+    // Fallback: try plain status update for known agents
+    try {
+      for (const agentId of getAllAgentIds()) {
+        await updateAgentStatus(agentId, 'online')
+      }
+    } catch {
+      // non-fatal — agents will appear offline until next restart
+    }
   }
 
   // --- Restore persisted model assignment overrides ---

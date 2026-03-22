@@ -97,6 +97,33 @@ export async function updateAgentStatus(id: string, status: AgentStatus): Promis
   if (error) throw new Error(`Failed to update agent status: ${error.message}`)
 }
 
+export async function upsertAgentRecord(agent: {
+  id: string
+  name: string
+  role: string
+  team: string
+  model_id: string
+  config: Record<string, unknown>
+}): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('agents')
+    .upsert(
+      {
+        id: agent.id,
+        name: agent.name,
+        role: agent.role,
+        team: agent.team,
+        model_id: agent.model_id,
+        config: agent.config,
+        status: 'online',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id', ignoreDuplicates: false }
+    )
+
+  if (error) throw new Error(`Failed to upsert agent ${agent.id}: ${error.message}`)
+}
+
 export async function updateAgentModel(id: string, modelId: string): Promise<void> {
   const { error } = await getSupabaseClient()
     .from('agents')
