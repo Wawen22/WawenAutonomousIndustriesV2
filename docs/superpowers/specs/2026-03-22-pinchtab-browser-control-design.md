@@ -24,7 +24,7 @@ The integration adds:
 
 1. A typed HTTP client service (`pinchtab.ts`) wrapping the PinchTab REST API
 2. A capability registry entry (`plugin.pinchtab`) with health check, policy, and audit
-3. Two capability ID constants in `config/capabilities.ts`
+3. One capability ID constant in `config/capabilities.ts`
 4. Documentation updates
 
 The existing Playwright tools (`screenshot.ts`, `scraper.ts`) are **not modified**. They remain the right tool for stateless QA screenshots. PinchTab adds a complementary stateful browser control layer.
@@ -66,11 +66,20 @@ PinchTab (standalone Go binary)
 | `PINCHTAB_BASE_URL` | `http://127.0.0.1:9867` | No |
 | `PINCHTAB_TOKEN` | — | No (only if PinchTab token auth is enabled) |
 
+### Timeouts
+
+All `fetch` calls use an `AbortController` signal:
+
+- `isPinchTabAvailable()`: **800 ms** timeout (loopback health check; must not block `GET /api/capabilities`)
+- All five service functions: **30 000 ms** timeout (navigation and page interactions can be slow)
+
+If the signal fires, the function catches the `AbortError` and returns `{ ok: false, error: 'timeout' }`. Never throws.
+
 ### Public API
 
 ```typescript
 isPinchTabAvailable(): Promise<boolean>
-// GET /health → true if status 200, false otherwise
+// GET /health with 800 ms timeout → true if status 200, false on any error
 
 browserNavigate(url: string, opts?: { timeout?: number; blockImages?: boolean; newTab?: boolean }): Promise<PinchTabResult>
 // POST /navigate
@@ -93,14 +102,28 @@ browserScreenshot(): Promise<PinchTabResult>
 ```typescript
 interface PinchTabResult {
   ok: boolean
-  data?: unknown
+  data?: unknown   // narrowed at call site — see "Type contract" below
   error?: string
 }
 ```
 
+### Type contract for `data`
+
+`data` is typed as `unknown` intentionally. All call sites must narrow before use. This prevents accidental `as` casts. Example pattern:
+
+```typescript
+const result = await browserText()
+if (result.ok && result.data && typeof result.data === 'object') {
+  const text = (result.data as { text?: string }).text ?? ''
+  // use text
+}
+```
+
+Typed response shapes per endpoint (e.g. `SnapshotResult`, `NavigateResult`) are out of scope for T122 but should be introduced in the follow-on tool-registration task when agent code needs to consume specific fields. For T122, `unknown` is correct: the service layer must not make assumptions about which fields downstream code needs.
+
 ### Error handling
 
-All functions catch network errors and return `{ ok: false, error: message }`. Never throw. The caller (agent or health check) decides whether to surface the error.
+All functions catch network errors, `AbortError`, and non-OK HTTP responses and return `{ ok: false, error: message }`. Never throw. The caller decides whether to surface the error.
 
 ---
 
@@ -117,7 +140,7 @@ description:   'Stateful browser control via PinchTab HTTP server.
                 token-efficient DOM snapshots, click/type/fill
                 actions, and multi-step navigation.'
 owner:         'neb'
-runtimeTarget: 'both'
+runtimeTarget: 'shared'        ← both company and personal runtimes
 status:        active (always registered; health reflects availability)
 riskLevel:     'medium'
 tags:          ['browser', 'automation', 'scraping', 'qa']
@@ -150,13 +173,14 @@ notes:            'PinchTab must be running on localhost:9867.
 
 ### Health
 
-Health state is derived from `isPinchTabAvailable()`:
+Health state is derived from `isPinchTabAvailable()` (with 800 ms timeout):
 
 | State | Condition |
 |---|---|
-| `connected` | `GET /health` returns 200 |
-| `offline` | Connection refused or timeout |
-| `missing_config` | — (no required env vars) |
+| `connected` | `GET /health` returns 200 within 800 ms |
+| `degraded` | Connection refused, timeout, or non-200 response |
+
+Note: `'offline'` is not a valid `CapabilityHealthState`. When PinchTab is not reachable the correct state is `'degraded'`, consistent with how other unreachable local runtimes are reported.
 
 Checked at registry build time on each `GET /api/capabilities` call.
 
@@ -166,7 +190,7 @@ Standard `baseAudit` with summary: `'PinchTab browser control — stateful Chrom
 
 ---
 
-## Capability ID Constants
+## Capability ID Constant
 
 Added to `backend/src/config/capabilities.ts`:
 
@@ -220,6 +244,7 @@ PINCHTAB_TOKEN=
 - Dashboard UI beyond CapabilitiesView (not needed)
 - Multi-instance or profile management (advanced PinchTab feature, future)
 - Replacing `screenshot.ts` / `scraper.ts`
+- Typed response shapes per endpoint (deferred to tool-registration task)
 
 ---
 
@@ -237,11 +262,12 @@ PINCHTAB_TOKEN=
 
 ## Test Plan
 
-1. **Health check (offline):** start backend with PinchTab not running → `GET /api/capabilities` shows `plugin.pinchtab` with state `offline`
-2. **Health check (online):** start PinchTab (`pinchtab server`) → `GET /api/capabilities` shows `plugin.pinchtab` with state `connected`
+1. **Health check (degraded):** start backend with PinchTab not running → `GET /api/capabilities` shows `plugin.pinchtab` with state `degraded`; response time < 2 s (AbortController fires at 800 ms)
+2. **Health check (connected):** start PinchTab (`pinchtab server`) → `GET /api/capabilities` shows `plugin.pinchtab` with state `connected`
+2b. **Health check (stalled):** PinchTab process running but hung → `isPinchTabAvailable()` returns `false` within 800 ms (timeout fires, does not hang indefinitely)
 3. **Navigate:** call `browserNavigate('https://example.com')` → returns `{ ok: true }`
-4. **Text extraction:** `browserText()` returns page text < 2000 chars for a simple page
-5. **Snapshot:** `browserSnapshot({ filter: 'interactive' })` returns structured DOM with element refs
+4. **Text extraction:** `browserText()` returns page text, `result.ok === true`, `data` narrowable to `{ text: string }`
+5. **Snapshot:** `browserSnapshot({ filter: 'interactive' })` returns `{ ok: true }` with element refs in `data`
 6. **Dashboard:** `Capabilities` view shows `PinchTab Browser Control` with correct health badge
 7. **Typecheck:** `cd backend && pnpm typecheck` → no errors
 8. **Typecheck:** `cd dashboard && pnpm typecheck` → no errors (no dashboard changes expected)
