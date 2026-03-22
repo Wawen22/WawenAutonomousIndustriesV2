@@ -127,6 +127,7 @@ export async function browserSnapshot(opts?: {
   return ptFetch('GET', `/snapshot${qs ? `?${qs}` : ''}`)
 }
 
+// scrollY and waitNav are real PinchTab API fields (see PinchTab plugin cli.py lines 225-230)
 export async function browserAction(
   kind: 'click' | 'type' | 'press' | 'fill' | 'hover' | 'select' | 'scroll',
   opts: { ref?: string; text?: string; value?: string; key?: string; scrollY?: number; waitNav?: boolean },
@@ -180,22 +181,17 @@ git commit -m "feat(T122): add PinchTab HTTP client service"
 
 - [ ] **Step 2.1: Add the constant**
 
-Open `backend/src/config/capabilities.ts`. After line 8 (`export const PERSONAL_WORKSPACE_CONTEXT_CAPABILITY_ID = 'memory.personal_workspace_context'`), add:
+Open `backend/src/config/capabilities.ts`. Insert **only** this single line after line 8 (`export const PERSONAL_WORKSPACE_CONTEXT_CAPABILITY_ID = 'memory.personal_workspace_context'`). Do not modify or remove any other lines — the file has 44 lines total with functions below line 8 that must be preserved.
 
 ```typescript
 export const PINCHTAB_CAPABILITY_ID = 'plugin.pinchtab'
 ```
 
-The file should now have this at the top (lines 1–9):
+Use the Edit tool (old_string = the existing line 8, new_string = line 8 + the new constant):
 
-```typescript
-import type { PersonalAssistantQuickActionId } from '../services/personal-assistant-actions.js'
-
-export const GOOGLE_WORKSPACE_PLUGIN_CAPABILITY_ID = 'plugin.google_workspace.mcp'
-export const GMAIL_INTEGRATION_CAPABILITY_ID = 'integration.google_workspace.gmail'
-export const CALENDAR_INTEGRATION_CAPABILITY_ID = 'integration.google_workspace.calendar'
-export const DRIVE_INTEGRATION_CAPABILITY_ID = 'integration.google_workspace.drive'
-export const DAILY_FOUNDER_BRIEF_AUTOMATION_CAPABILITY_ID = 'skill.founder.daily_founder_brief_automation'
+```
+old_string: export const PERSONAL_WORKSPACE_CONTEXT_CAPABILITY_ID = 'memory.personal_workspace_context'
+new_string:
 export const PERSONAL_WORKSPACE_CONTEXT_CAPABILITY_ID = 'memory.personal_workspace_context'
 export const PINCHTAB_CAPABILITY_ID = 'plugin.pinchtab'
 ```
@@ -296,8 +292,8 @@ Find the end of the `catalogBase` array. The last entry ends just before the lin
         ],
       }),
       assignments: [
-        runtimeAssignment('plugin.pinchtab', 'company', 'Company Runtime', 'company'),
-        runtimeAssignment('plugin.pinchtab', 'personal', 'Personal Runtime', 'personal'),
+        runtimeAssignment('plugin.pinchtab', 'company', 'Company Runtime', 'shared'),
+        runtimeAssignment('plugin.pinchtab', 'personal', 'Personal Runtime', 'shared'),
         teamAssignment('plugin.pinchtab', 'dev', 'company', 'Dev and QA agents use browser control for interactive testing and scraping.'),
         teamAssignment('plugin.pinchtab', 'ops', 'company', 'Ops agents can use browser control for monitoring and screenshot capture.'),
       ],
@@ -417,33 +413,21 @@ Expected output: `connected PinchTab server is reachable on localhost:9867 ...`
 
 Note: the capability registry health is checked on each `GET /api/capabilities` request, so restarting the backend is NOT needed between steps 4.2 and 4.4.
 
-- [ ] **Step 4.5: Verify navigate + text (with PinchTab running)**
+- [ ] **Step 4.5: Verify navigate + text via PinchTab CLI (with PinchTab running)**
 
-The pinchtab.ts service functions are not exposed as HTTP endpoints in T122 (that's a future task). Verify them by running a quick inline Node script:
+The `pinchtab.ts` service functions are not exposed as WAI HTTP endpoints in T122 (that's a future task). Verify that PinchTab itself can perform navigation and text extraction using its own CLI:
 
 ```bash
-cd "/home/rnebili/Progetti/NEB/Projects/WAI V2/backend"
-node --input-type=module << 'EOF'
-import { browserNavigate, browserText } from './src/services/pinchtab.js'
-const nav = await browserNavigate('https://example.com')
-console.log('navigate ok:', nav.ok, nav.error ?? '')
-const txt = await browserText()
-console.log('text ok:', txt.ok, txt.error ?? '')
-if (txt.ok && txt.data && typeof txt.data === 'object') {
-  const text = txt.data.text ?? ''
-  console.log('text length:', typeof text === 'string' ? text.length : 'not a string')
-}
-EOF
+# Navigate to example.com
+pinchtab nav https://example.com
+
+# Extract page text (token-efficient)
+pinchtab text
 ```
 
-Expected:
-```
-navigate ok: true
-text ok: true
-text length: <some number > 0>
-```
+Expected: `pinchtab nav` completes without error; `pinchtab text` outputs readable page content.
 
-If PinchTab's `/health` is up but navigation fails with IDPI restrictions, that is expected behaviour — PinchTab defaults to blocking external URLs. Run `pinchtab nav https://example.com` from PinchTab CLI first to confirm it works in your environment.
+If navigation fails with an IDPI restriction error, PinchTab is correctly blocking external URLs by default. Refer to the PinchTab security docs to widen the allowed URL list for your test environment. The WAI integration itself is unaffected — `isPinchTabAvailable()` only checks `/health`, not navigation capability.
 
 - [ ] **Step 4.6: Verify Dashboard Capabilities view**
 
