@@ -132,15 +132,55 @@ This now implies a platform decision:
 
 ## Next Steps
 
-Backlog ordinato per valore / rischio:
+WAI è in **fase di espansione funzionale**. L'obiettivo è rendere il sistema più capace e solido prima di andare in produzione. Niente VPS, niente clienti reali ancora — prima si costruisce la piattaforma completa.
 
-| ID | Title | Priority | Rationale |
-|----|-------|----------|-----------|
-| T116 | WhatsApp delivery for scheduled brief | ✅ Done | — |
-| T117 | Stuck-task proactive alert | ✅ Done | — |
-| T118 | Finance weekly + Settings page + Notification channels | ✅ Done | — |
-| T119 | Memory visibility in dashboard | ✅ Done | — |
-| T120 | Memory v2: multi-scope, tiered recall, intelligent auto-capture | ✅ Done | — |
+Le espansioni sono organizzate in 4 fasi ispirate ai reference repo in `IDEE-E-INTEGRAZIONI-DI-RIFERIMENTO-PER-WAI/`.
+
+### Fase 1 — Espansione roster agenti (in corso)
+
+Ispirato da `agency-agents-main/`. Aggiungere agenti specializzati per coprire funzioni aziendali oggi scoperte.
+
+| ID | Title | Priority | Status | Note |
+|----|-------|----------|--------|------|
+| T121 | Agent Roster Expansion — 8 nuovi agenti specializzati | 1 | 🔄 Next | Security, DB Optimizer, API Tester, Legal, Proposal Strategist, Executive Summary, Feedback Synthesizer, Behavioral Nudge |
+
+### Fase 2 — Browser automation avanzato
+
+Ispirato da `pinchtab-main/`. Controllo browser attivo per agenti (navigazione, click, form fill).
+
+| ID | Title | Priority | Status | Note |
+|----|-------|----------|--------|------|
+| T122 | PinchTab integration — browser control capability | 2 | ⬜ Todo | Server Go standalone, MCP plugin, registrato come capability |
+
+### Fase 3 — Personal mode expansion
+
+Ispirato da `awesome-openclaw-usecases-main/`. Use case di produttività personale per Neb.
+
+| ID | Title | Priority | Status | Note |
+|----|-------|----------|--------|------|
+| T123 | Second Brain — personal knowledge ingestion + search | 2 | ⬜ Todo | Estende memoria multi-scope (T120) con ingestion docs/note |
+| T124 | Personal CRM — contact tracking + follow-up automation | 2 | ⬜ Todo | Gmail MCP + contatti + reminder |
+| T125 | Meeting Notes automation — Calendar + trascrizione + summary | 3 | ⬜ Todo | Google Calendar MCP + action items |
+
+### Fase 4 — Document skills reali
+
+Ispirato da `skills-main/` (Anthropic). Generazione documenti DOCX/PDF reali invece di solo markdown.
+
+| ID | Title | Priority | Status | Note |
+|----|-------|----------|--------|------|
+| T126 | Document generation — DOCX/PDF/PPTX output reale | 2 | ⬜ Todo | Adatta Anthropic document skills per create_document flow |
+
+---
+
+### Backlog completato (ultimi task)
+
+| ID | Title | Status |
+|----|-------|--------|
+| T116 | WhatsApp delivery for scheduled brief | ✅ Done |
+| T117 | Stuck-task proactive alert | ✅ Done |
+| T118 | Finance weekly + Settings page + Notification channels | ✅ Done |
+| T119 | Memory visibility in dashboard | ✅ Done |
+| T120 | Memory v2: multi-scope, tiered recall, intelligent auto-capture | ✅ Done |
 
 ---
 
