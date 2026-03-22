@@ -22,6 +22,7 @@ import { getGoogleWorkspaceMcpRuntimeStatus } from './google-workspace-mcp.js'
 import { getMcpBridgeStatus, type McpConnectorStatus } from './mcp-bridge.js'
 import { getPersonalAutomationStatus } from './personal-automation.js'
 import { getCapabilityEvents } from './supabase.js'
+import { isPinchTabAvailable } from './pinchtab.js'
 import { getPersonalWorkspacePath, getWorkspaceRoot } from './workspace.js'
 
 const DEFAULT_OWNER_SLUG = 'neb'
@@ -551,11 +552,12 @@ function deriveAuditFromEvents(
 
 export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistrySnapshot> {
   const generatedAt = new Date().toISOString()
-  const [mcpBridgeStatus, googleWorkspaceRuntime, automationStatus, recentEvents] = await Promise.all([
+  const [mcpBridgeStatus, googleWorkspaceRuntime, automationStatus, recentEvents, pinchTabAvailable] = await Promise.all([
     getMcpBridgeStatus(),
     getGoogleWorkspaceMcpRuntimeStatus(DEFAULT_OWNER_SLUG),
     getPersonalAutomationStatus(DEFAULT_OWNER_SLUG),
     getCapabilityEvents({ limit: 200 }),
+    isPinchTabAvailable(),
   ])
 
   const gmailConnector = findConnector(mcpBridgeStatus.connectors, 'gmail')
@@ -1506,6 +1508,56 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
         }),
       }
     })(),
+    {
+      capability: baseCapability({
+        id: 'plugin.pinchtab',
+        type: 'plugin',
+        label: 'PinchTab Browser Control',
+        description: 'Stateful browser control via PinchTab HTTP server. Gives agents persistent Chrome sessions with token-efficient DOM snapshots (~800 tokens/page), click/type/fill actions, and multi-step navigation.',
+        owner: DEFAULT_OWNER_SLUG,
+        runtimeTarget: 'shared',
+        riskLevel: 'medium',
+        tags: ['browser', 'automation', 'scraping', 'qa'],
+        usageInstructions: 'Start PinchTab (npm install -g pinchtab && pinchtab daemon install) then call browserNavigate / browserSnapshot / browserAction / browserText from pinchtab.ts. Health check is live — state reflects whether PinchTab is reachable on localhost:9867.',
+        examples: [
+          'Navigate to a URL and extract page text token-efficiently',
+          'Click a button or fill a form on a web page',
+          'Take a screenshot of a running web application',
+          'Get an accessibility-tree snapshot for structured DOM interaction',
+        ],
+      }),
+      assignments: [
+        runtimeAssignment('plugin.pinchtab', 'company', 'Company Runtime', 'shared'),
+        runtimeAssignment('plugin.pinchtab', 'personal', 'Personal Runtime', 'shared'),
+        teamAssignment('plugin.pinchtab', 'dev', 'company', 'Dev and QA agents use browser control for interactive testing and scraping.'),
+        teamAssignment('plugin.pinchtab', 'ops', 'company', 'Ops agents can use browser control for monitoring and screenshot capture.'),
+      ],
+      policy: basePolicy({
+        capabilityId: 'plugin.pinchtab',
+        mode: 'restricted',
+        allowedTools: ['browser_navigate', 'browser_snapshot', 'browser_action', 'browser_text', 'browser_screenshot'],
+        envRequirements: [],
+        notes: 'PinchTab must be running on localhost:9867. PINCHTAB_BASE_URL and PINCHTAB_TOKEN are optional env overrides. Default security posture: loopback only, IDPI restricts navigation to locally hosted URLs until explicitly widened in PinchTab config.',
+      }),
+      health: baseHealth({
+        capabilityId: 'plugin.pinchtab',
+        state: pinchTabAvailable ? 'connected' : 'degraded',
+        label: pinchTabAvailable ? 'Connected' : 'Offline',
+        message: pinchTabAvailable
+          ? 'PinchTab server is reachable on localhost:9867 and ready for browser control.'
+          : 'PinchTab server is not reachable. Run: pinchtab daemon install  or  pinchtab server',
+        checkedAt: generatedAt,
+        freshness: pinchTabAvailable ? 'fresh' : 'unknown',
+        reasonCode: pinchTabAvailable ? 'server_reachable' : 'server_unreachable',
+        details: pinchTabAvailable
+          ? [`PinchTab HTTP API responding on ${process.env['PINCHTAB_BASE_URL'] ?? 'http://127.0.0.1:9867'}`]
+          : ['Install: npm install -g pinchtab', 'Start: pinchtab daemon install'],
+      }),
+      audit: baseAudit({
+        capabilityId: 'plugin.pinchtab',
+        summary: 'PinchTab browser control — stateful Chrome sessions for agent automation.',
+      }),
+    },
   ]
 
   const catalogWithGovernance = await applyCapabilityGovernanceOverrides(catalogBase)
