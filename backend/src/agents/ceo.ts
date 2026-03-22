@@ -4,7 +4,7 @@
 // ============================================================
 
 import { runAgent } from '../services/llm.js'
-import { createTask, transitionTaskStatus, updateTaskStatus } from '../services/supabase.js'
+import { createTask, getProjectById, transitionTaskStatus, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
 import { loadAllWorkspaceContext, resolveSoftwareWorkspacePath } from './software_delivery_utils.js'
 import { runPmSaasAgent } from './pm_saas.js'
@@ -122,6 +122,17 @@ export async function runCeoAgent(
 
   // Build optional project context from task.metadata or task.project_id
   const projectId = task.project_id ?? (task.metadata['project_id'] as string | undefined)
+
+  // Resolve clientId for scoped memory recall (best-effort, non-blocking)
+  let clientId: string | undefined
+  if (projectId) {
+    try {
+      const project = await getProjectById(projectId)
+      clientId = project?.client_id
+    } catch {
+      // non-fatal — memory recall will work without clientId
+    }
+  }
   let projectContext = ''
   if (task.metadata['project_name']) {
     const clientSlug = task.metadata['client_slug'] as string | undefined
@@ -197,6 +208,8 @@ Analyze and delegate to the most appropriate agent.`
         taskId: task.id,
         taskType: 'routing',
         requiresComplex: true,
+        ...(projectId ? { projectId } : {}),
+        ...(clientId ? { clientId } : {}),
       }
     )
 

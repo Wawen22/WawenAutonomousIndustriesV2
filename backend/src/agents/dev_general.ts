@@ -10,6 +10,7 @@ import { join } from 'path'
 import { runAgent } from '../services/llm.js'
 import {
   getChildTasks,
+  getProjectById,
   getTaskById,
   transitionTaskStatus,
   updateTaskStatus,
@@ -364,6 +365,17 @@ export async function runDevGeneralAgent(
   const qualityGates = normalizeStringArray(task.metadata['quality_gates'])
   const workspaceAbsPath = await resolveSoftwareWorkspacePath(task, projectId)
 
+  // Resolve clientId for scoped memory recall (best-effort, non-fatal)
+  let clientId: string | undefined
+  if (projectId) {
+    try {
+      const project = await getProjectById(projectId)
+      clientId = project?.client_id
+    } catch {
+      // non-fatal
+    }
+  }
+
   const architecturePlanContent =
     architecturePlanPath ? await readOptionalFile(architecturePlanPath) : ''
   const repoContext = await loadRepoContext(repoLocalPath)
@@ -435,6 +447,8 @@ Constraints:
         taskId: task.id,
         taskType: taskTypeForAgent(agentId),
         requiresComplex: agentId === 'dev_general_1',
+        ...(projectId ? { projectId } : {}),
+        ...(clientId ? { clientId } : {}),
       }
     )
 

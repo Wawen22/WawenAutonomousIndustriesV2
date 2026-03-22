@@ -139,6 +139,9 @@ export interface AgentMemory {
   agent_id: string
   content: string
   entity_type: string
+  scope: 'agent' | 'project' | 'client'
+  project_id: string | null
+  client_id: string | null
   created_at: string
   ttl: string | null
 }

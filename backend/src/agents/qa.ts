@@ -645,6 +645,17 @@ export async function runQaAgent(
   const qaScope = normalizeStringArray(task.metadata['qa_scope'])
   const workspaceAbsPath = await resolveSoftwareWorkspacePath(task, projectId)
 
+  // Resolve clientId for scoped memory recall (best-effort, non-fatal)
+  let clientId: string | undefined
+  if (projectId) {
+    try {
+      const project = await getProjectById(projectId)
+      clientId = project?.client_id
+    } catch {
+      // non-fatal
+    }
+  }
+
   const architecturePlanContent =
     architecturePlanPath ? await readOptionalFile(architecturePlanPath) : ''
   const workerDeliverables = workspaceAbsPath
@@ -725,6 +736,8 @@ Constraints:
         agentId: 'qa',
         taskId: task.id,
         taskType: 'support',
+        ...(projectId ? { projectId } : {}),
+        ...(clientId ? { clientId } : {}),
       }
     )
 

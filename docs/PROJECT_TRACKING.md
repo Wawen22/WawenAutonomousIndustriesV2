@@ -140,11 +140,34 @@ Backlog ordinato per valore / rischio:
 | T117 | Stuck-task proactive alert | ✅ Done | — |
 | T118 | Finance weekly + Settings page + Notification channels | ✅ Done | — |
 | T119 | Memory visibility in dashboard | ✅ Done | — |
-| T120 | Memory v2: multi-scope, tiered recall, intelligent auto-capture | 1 | Spec approvato (v2, post spec-review). Aggiunge scope agent/project/client, recall tiered, auto-capture intelligente. Riduce token iniettati del ~60%, agenti ricevono contesto preciso per progetto/cliente. Vedi `docs/superpowers/specs/2026-03-22-memory-multi-scope-design.md`. |
+| T120 | Memory v2: multi-scope, tiered recall, intelligent auto-capture | ✅ Done | — |
 
 ---
 
 ## Recent Changes
+
+### 2026-03-22 — T120: Memory v2: Multi-Scope Architecture
+
+**DB:**
+- Migration `009_memory_scopes.sql` applied: sentinel agent `_system`, `scope` column (agent/project/client), `project_id` and `client_id` FK columns on `agent_memories`, two partial indexes
+
+**Backend:**
+- `types/index.ts`: `AgentMemory` now includes `scope`, `project_id`, `client_id`
+- `services/memory.ts`: `CreateAgentMemoryInput` accepts `projectId?`/`clientId?`; scope auto-detection sets `agent_id='_system'` for project/client scopes; no TTL for project/client facts; new `getProjectMemories(projectId, clientId?)` for direct table query
+- `services/llm.ts`: `RunOptions` adds `projectId?`/`clientId?`; `injectMemoryRecall` → `injectScopedMemory` — tiered recall: project/client path injects project facts + preferences only (~200-350 chars), fallback path retains general+preference recall (existing memories drain naturally); debug log of context character count
+- `services/memory_learning.ts`: new `extractAndSaveProjectFacts(task, output)` — cheap model, max 3 compact facts per task, `entity_type='project_fact'`, no TTL
+- `services/founder_task_actions.ts`: non-blocking `extractAndSaveProjectFacts` call in `approveTask` (requires `project_id`)
+- `agents/ceo_intake.ts`: new `scheduleCeoFactExtraction(text)` — background client/project fact extraction after execute/reply commands; saves `client_fact` and `project_fact` via sentinel
+- `agents/ceo.ts`, `architect.ts`, `dev_general.ts`, `qa.ts`: resolve `clientId` from project lookup; pass `projectId`/`clientId` to `runAgent`
+
+**Dashboard:**
+- `types/index.ts`: `AgentMemory` updated with `scope`, `project_id`, `client_id`
+- `hooks/useSupabaseRealtime.ts`: `useAgentMemories` select updated to include new columns (MemoryView works without code changes)
+
+**How to test:**
+1. Approve a task on a project → check MemoryView filtered by `entity_type=project_fact` within 30s
+2. Tell CEO Intake something about a client (e.g. "wawen22 vuole fatturazione trimestrale") → check `client_fact` in MemoryView
+3. Backend debug logs show `injectScopedMemory: project/client path` with `contextChars ≤ 1400` for agents running on project tasks
 
 ### 2026-03-22 — T119: Memory visibility in dashboard
 

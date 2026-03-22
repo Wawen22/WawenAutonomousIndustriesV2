@@ -23,7 +23,7 @@ import { resumeApprovedDeliveryGates, runQaAgent } from '../agents/qa.js'
 import { runOpsAgent } from '../agents/ops.js'
 import { runFinanceAgent } from '../agents/finance.js'
 import { runHrAgent } from '../agents/hr.js'
-import { processFeedbackLearning } from './memory_learning.js'
+import { extractAndSaveProjectFacts, processFeedbackLearning } from './memory_learning.js'
 import { buildSystemStatusReport } from './status_report.js'
 import type { Task, TaskStatus } from '../types/index.js'
 
@@ -246,6 +246,14 @@ async function approveTask(
   if (actionReason) {
     void processFeedbackLearning(task, actionReason).catch((err: unknown) => {
       log.error({ err, taskId: task.id }, 'Adaptive learning failed during task approval')
+    })
+  }
+
+  // Non-blocking: extract compact project facts from the completed task.
+  // Uses the task description as context (task output lives in workspace, not in DB).
+  if (task.project_id) {
+    void extractAndSaveProjectFacts(task, task.description).catch((err: unknown) => {
+      log.warn({ err, taskId: task.id }, 'extractAndSaveProjectFacts failed silently during task approval')
     })
   }
 

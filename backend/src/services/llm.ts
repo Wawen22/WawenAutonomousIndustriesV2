@@ -7,7 +7,7 @@
 import OpenAI from 'openai'
 import { getModelForAgent, getModelById, estimateCost } from '../config/models.js'
 import { log, recordRun } from './logger.js'
-import { createAgentMemory, formatMemoriesForPrompt, recallAgentMemories } from './memory.js'
+import { createAgentMemory, formatMemoriesForPrompt, getProjectMemories, recallAgentMemories } from './memory.js'
 import { getSpecialModelOverride } from './model-routing-policy.js'
 import type { AgentMemory, ModelRoutingContext, RunOutcome, TaskType } from '../types/index.js'
 
@@ -72,6 +72,8 @@ export interface RunOptions {
   modelOverride?: string
   timeoutMs?: number
   captureMemory?: boolean
+  projectId?: string
+  clientId?: string
 }
 
 export interface RunResult {
@@ -335,23 +337,61 @@ function formatPreferencesForPrompt(memories: AgentMemory[]): string {
   ].join('\n')
 }
 
-async function injectMemoryRecall(messages: ChatMessage[], agentId: string): Promise<ChatMessage[]> {
+function formatProjectMemoriesForPrompt(memories: AgentMemory[]): string {
+  if (memories.length === 0) return ''
+
+  const items = memories.map((m) => `- [${m.entity_type}] ${m.content}`).join('\n')
+  return ['Project/Client Context (established facts — use as background, do not contradict):', items].join('\n')
+}
+
+async function injectScopedMemory(
+  messages: ChatMessage[],
+  agentId: string,
+  projectId?: string,
+  clientId?: string
+): Promise<ChatMessage[]> {
   const query = buildMemoryQuery(messages)
   if (query.length < 24) return messages
 
   try {
-    // 1. Recall both general memories and preferences in parallel
-    const [generalMemories, preferences] = await Promise.all([
-      recallAgentMemories({ agentId, query, entityType: 'general', limit: 3 }),
-      recallAgentMemories({ agentId, query, entityType: 'preference', limit: 5 }),
-    ])
+    let extraContext: string
 
-    const memoryPrompt = formatMemoriesForPrompt(generalMemories)
-    const preferencePrompt = formatPreferencesForPrompt(preferences)
+    if (projectId ?? clientId) {
+      // Tiered recall: project/client facts first, then agent preferences — NO general memory
+      const [projectMemories, preferences] = await Promise.all([
+        getProjectMemories(projectId ?? '', clientId),
+        recallAgentMemories({ agentId, query, entityType: 'preference', limit: 5 }),
+      ])
 
-    if (!memoryPrompt && !preferencePrompt) return messages
+      const projectPrompt = formatProjectMemoriesForPrompt(projectMemories)
+      const preferencePrompt = formatPreferencesForPrompt(preferences)
 
-    const extraContext = [preferencePrompt, memoryPrompt].filter(Boolean).join('\n\n---\n\n')
+      if (!projectPrompt && !preferencePrompt) return messages
+      extraContext = [projectPrompt, preferencePrompt].filter(Boolean).join('\n\n---\n\n')
+
+      log.debug(
+        { agentId, projectId, clientId, contextChars: extraContext.length },
+        'injectScopedMemory: project/client path'
+      )
+    } else {
+      // Fallback (backward-compatible): general + preference recall
+      // General memories drain naturally as 30-day TTLs expire.
+      const [generalMemories, preferences] = await Promise.all([
+        recallAgentMemories({ agentId, query, entityType: 'general', limit: 3 }),
+        recallAgentMemories({ agentId, query, entityType: 'preference', limit: 5 }),
+      ])
+
+      const memoryPrompt = formatMemoriesForPrompt(generalMemories)
+      const preferencePrompt = formatPreferencesForPrompt(preferences)
+
+      if (!memoryPrompt && !preferencePrompt) return messages
+      extraContext = [preferencePrompt, memoryPrompt].filter(Boolean).join('\n\n---\n\n')
+
+      log.debug(
+        { agentId, contextChars: extraContext.length },
+        'injectScopedMemory: fallback path (no project/client scope)'
+      )
+    }
 
     const firstNonSystemIndex = messages.findIndex((message) => message.role !== 'system')
     if (firstNonSystemIndex < 0) {
@@ -373,7 +413,7 @@ export async function runAgent(
   messages: ChatMessage[],
   opts: RunOptions
 ): Promise<RunResult> {
-  const preparedMessages = await injectMemoryRecall(messages, opts.agentId)
+  const preparedMessages = await injectScopedMemory(messages, opts.agentId, opts.projectId, opts.clientId)
   const routingCtx: ModelRoutingContext = {
     agentId: opts.agentId,
     ...(opts.taskType !== undefined && { taskType: opts.taskType }),

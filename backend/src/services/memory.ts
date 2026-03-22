@@ -21,6 +21,8 @@ interface CreateAgentMemoryInput {
   content: string
   entityType?: string | undefined
   ttl?: string | undefined
+  projectId?: string | undefined
+  clientId?: string | undefined
 }
 
 interface RecallAgentMemoriesInput {
@@ -126,11 +128,30 @@ export async function createAgentMemory(input: CreateAgentMemoryInput): Promise<
   const normalizedContent = normalizeForMemory(input.content)
   if (normalizedContent.length < 40) return null
 
-  // Deduplication: skip saving if a very similar active memory already exists
-  // for this agent. Uses a high threshold to avoid dropping genuinely distinct memories.
+  // Scope auto-detection:
+  //   projectId set                    → scope='project', agent_id='_system'
+  //   clientId set (no projectId)      → scope='client',  agent_id='_system'
+  //   neither                          → scope='agent',   agent_id=input.agentId
+  //   both set                         → scope='project' wins, clientId still stored
+  let scope: 'agent' | 'project' | 'client'
+  let resolvedAgentId: string
+  if (input.projectId) {
+    scope = 'project'
+    resolvedAgentId = '_system'
+  } else if (input.clientId) {
+    scope = 'client'
+    resolvedAgentId = '_system'
+  } else {
+    scope = 'agent'
+    resolvedAgentId = input.agentId
+  }
+
+  // Deduplication: skip saving if a very similar active memory already exists.
+  // Uses the resolved agent_id (sentinel '_system' for project/client scopes)
+  // so dedup correctly spans all agents writing facts about the same project/client.
   const queryEmbedding = vectorToSqlLiteral(createEmbedding(normalizedContent))
   const { data: existingMatches, error: recallErr } = await getSupabaseClient().rpc('match_agent_memories', {
-    p_agent_id: input.agentId,
+    p_agent_id: resolvedAgentId,
     p_query_embedding: queryEmbedding,
     p_match_count: 1,
     p_entity_type: input.entityType ?? 'general',
@@ -146,13 +167,16 @@ export async function createAgentMemory(input: CreateAgentMemoryInput): Promise<
   const { data, error } = await getSupabaseClient()
     .from('agent_memories')
     .insert({
-      agent_id: input.agentId,
+      agent_id: resolvedAgentId,
       content: normalizedContent,
       embedding: queryEmbedding,
       entity_type: input.entityType ?? 'general',
-      ttl: input.ttl ?? getDefaultTtl(),
+      scope,
+      ...(input.projectId ? { project_id: input.projectId } : {}),
+      ...(input.clientId ? { client_id: input.clientId } : {}),
+      ttl: input.ttl ?? (scope === 'agent' ? getDefaultTtl() : null),
     })
-    .select('id, agent_id, content, entity_type, created_at, ttl')
+    .select('id, agent_id, content, entity_type, scope, project_id, client_id, created_at, ttl')
     .single()
 
   if (error) throw new Error(`Failed to create agent memory: ${error.message}`)
@@ -164,7 +188,7 @@ export async function getAgentMemories(input: GetAgentMemoriesInput = {}): Promi
 
   let query = getSupabaseClient()
     .from('agent_memories')
-    .select('id, agent_id, content, entity_type, created_at, ttl')
+    .select('id, agent_id, content, entity_type, scope, project_id, client_id, created_at, ttl')
     .order('created_at', { ascending: false })
     .limit(limit)
 
@@ -221,6 +245,45 @@ export async function deleteAgentMemories(agentId?: string): Promise<number> {
   const { data, error } = await query.select('id')
   if (error) throw new Error(`Failed to delete agent memories: ${error.message}`)
   return (data ?? []).length
+}
+
+export async function getProjectMemories(
+  projectId: string,
+  clientId?: string
+): Promise<AgentMemory[]> {
+  // Direct table query — no vector search, no RPC.
+  // Fetches project_fact + task_outcome for the project, and optionally client_fact for the client.
+  const supabase = getSupabaseClient()
+
+  const allResults: AgentMemory[] = []
+
+  // Project-scoped facts and task outcomes
+  if (projectId) {
+    const { data: projectData, error: projectError } = await supabase
+      .from('agent_memories')
+      .select('id, agent_id, content, entity_type, scope, project_id, client_id, created_at, ttl')
+      .eq('project_id', projectId)
+      .in('entity_type', ['project_fact', 'task_outcome'])
+      .order('created_at', { ascending: false })
+
+    if (projectError) throw new Error(`Failed to get project memories: ${projectError.message}`)
+    allResults.push(...((projectData ?? []) as AgentMemory[]).filter(isActiveMemory))
+  }
+
+  // Client-scoped facts (if clientId provided)
+  if (clientId) {
+    const { data: clientData, error: clientError } = await supabase
+      .from('agent_memories')
+      .select('id, agent_id, content, entity_type, scope, project_id, client_id, created_at, ttl')
+      .eq('client_id', clientId)
+      .eq('entity_type', 'client_fact')
+      .order('created_at', { ascending: false })
+
+    if (clientError) throw new Error(`Failed to get client memories: ${clientError.message}`)
+    allResults.push(...((clientData ?? []) as AgentMemory[]).filter(isActiveMemory))
+  }
+
+  return allResults
 }
 
 export function formatMemoriesForPrompt(memories: AgentMemoryMatch[]): string {

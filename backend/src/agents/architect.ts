@@ -8,7 +8,7 @@ import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 
 import { runAgent } from '../services/llm.js'
-import { createTask, updateProjectRepo, updateProjectStatus, updateTaskStatus } from '../services/supabase.js'
+import { createTask, getProjectById, updateProjectRepo, updateProjectStatus, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
 import { appendProjectProgress } from '../services/workspace.js'
 import { runDevGeneralAgent } from './dev_general.js'
@@ -205,6 +205,17 @@ export async function runArchitectAgent(
   const repoDefaultBranch = (task.metadata['repo_default_branch'] as string | undefined) ?? undefined
   const workspaceAbsPath = await resolveSoftwareWorkspacePath(task, projectId)
 
+  // Resolve clientId for scoped memory recall (best-effort, non-fatal)
+  let clientId: string | undefined
+  if (projectId) {
+    try {
+      const project = await getProjectById(projectId)
+      clientId = project?.client_id
+    } catch {
+      // non-fatal
+    }
+  }
+
   // Auto-init git repo when workspace exists but no repo is linked yet
   let effectiveRepoLocalPath = repoLocalPath
   let effectiveRepoUrl = repoUrl
@@ -327,6 +338,8 @@ Constraints:
         taskId: task.id,
         taskType: 'architecture',
         requiresComplex: true,
+        ...(projectId ? { projectId } : {}),
+        ...(clientId ? { clientId } : {}),
       }
     )
 

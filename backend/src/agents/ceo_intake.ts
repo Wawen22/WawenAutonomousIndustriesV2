@@ -55,7 +55,106 @@ import { sendFounderPhoto } from '../services/notification-router.js'
 import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import { runCeoAgent } from './ceo.js'
 import { runQaAgent } from './qa.js'
+import { createAgentMemory } from '../services/memory.js'
 import type { Client, DeliveryConfig, Payment, Project, ProjectType, SystemEvent, Task } from '../types/index.js'
+
+// ---------------------------------------------------------------------------
+// CEO Fact Extraction — non-blocking background extraction of client/project
+// facts from the founder's free-text messages.
+// ---------------------------------------------------------------------------
+
+function logMemoryWarning(err: unknown, context: string): void {
+  log.warn({ err }, `CEO Intake: memory extraction failed (${context}) — silently swallowed`)
+}
+
+async function scheduleCeoFactExtraction(text: string): Promise<void> {
+  // Load all clients and their projects to find slug matches in the message
+  let allClients: Client[]
+  try {
+    allClients = await getClients()
+  } catch {
+    return // Can't load clients — skip silently
+  }
+
+  // Find which client slug appears in the text (case-insensitive)
+  let matchedClient: Client | undefined
+  let matchedProject: Project | undefined
+
+  for (const client of allClients) {
+    if (text.toLowerCase().includes(client.slug.toLowerCase())) {
+      matchedClient = client
+      // Also check for a project slug match
+      try {
+        const projects = await getProjectsByClient(client.slug)
+        for (const project of projects) {
+          if (text.toLowerCase().includes(project.slug.toLowerCase())) {
+            matchedProject = project
+            break
+          }
+        }
+      } catch {
+        // project lookup is best-effort
+      }
+      break
+    }
+  }
+
+  // If no client slug recognized — skip (avoids wasted LLM call)
+  if (!matchedClient) return
+
+  const clientId = matchedClient.id
+  const projectId = matchedProject?.id
+
+  const prompt = `You are WAI's memory capture module. Extract any persistent facts about a client or project from this founder message.
+
+Message: "${text}"
+
+Return JSON: { "clientFacts": string[], "projectFacts": string[] }
+Rules:
+- Only extract facts that will be useful in future tasks (preferences, billing terms, communication style, constraints).
+- Each fact must be ≤ 200 chars and be a standalone sentence.
+- If no persistent facts, return empty arrays.
+- Do NOT extract temporary requests or one-off actions.`
+
+  try {
+    const result = await runAgent(
+      [{ role: 'user', content: prompt }],
+      { agentId: 'system_learning', modelOverride: 'nemotron-120b', captureMemory: false }
+    )
+
+    const jsonMatch = result.content.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return
+
+    const parsed = JSON.parse(jsonMatch[0]) as { clientFacts?: unknown; projectFacts?: unknown }
+    const clientFacts = Array.isArray(parsed.clientFacts) ? parsed.clientFacts as string[] : []
+    const projectFacts = Array.isArray(parsed.projectFacts) ? parsed.projectFacts as string[] : []
+
+    for (const fact of clientFacts) {
+      if (typeof fact !== 'string' || fact.trim().length < 10) continue
+      await createAgentMemory({
+        agentId: '_system',
+        content: fact.trim().slice(0, 200),
+        entityType: 'client_fact',
+        clientId,
+      }).catch((err: unknown) => { logMemoryWarning(err, 'client_fact save') })
+    }
+
+    if (projectId) {
+      for (const fact of projectFacts) {
+        if (typeof fact !== 'string' || fact.trim().length < 10) continue
+        await createAgentMemory({
+          agentId: '_system',
+          content: fact.trim().slice(0, 200),
+          entityType: 'project_fact',
+          projectId,
+          clientId,
+        }).catch((err: unknown) => { logMemoryWarning(err, 'project_fact save') })
+      }
+    }
+  } catch (err) {
+    logMemoryWarning(err, 'LLM extraction')
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Conversation state (in-memory, per chatId, TTL 10 min)
@@ -2240,6 +2339,12 @@ export async function runCeoNaturalLanguageHandler(
       messages.push({ role: 'assistant', content: finalMessage })
       clearConversation(chatId)
       await reply(finalMessage)
+
+      // Non-blocking: extract any client/project facts from the founder's message.
+      // Never blocks the Telegram reply — fails silently.
+      void scheduleCeoFactExtraction(text).catch((err: unknown) => {
+        logMemoryWarning(err, 'scheduleCeoFactExtraction')
+      })
       break
     }
 

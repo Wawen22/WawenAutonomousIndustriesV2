@@ -258,7 +258,7 @@ export function useAgentMemories(limit = 500, agentId?: string) {
   const fetchMemories = useCallback(async (): Promise<AgentMemory[]> => {
     let query = supabase
       .from('agent_memories')
-      .select('id, agent_id, content, entity_type, created_at, ttl')
+      .select('id, agent_id, content, entity_type, scope, project_id, client_id, created_at, ttl')
       .order('created_at', { ascending: false })
       .limit(limit)
 
