@@ -1,0 +1,7 @@
+{
+  "financeWeeklyReport": {
+    "enabled": true,
+    "dayOfWeek": 1,
+    "lastSentWeekKey": null
+  }
+}

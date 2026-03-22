@@ -5,6 +5,7 @@
 // ============================================================
 
 import { log } from './logger.js'
+import { getNotificationPreferences } from './notification-preferences.js'
 import { sendTelegramNotification, sendTelegramPhoto } from './telegram.js'
 import { getWhatsAppStatus, sendWhatsAppNotification } from './whatsapp.js'
 
@@ -65,10 +66,16 @@ export async function sendNotification(
 }
 
 /**
- * Send a notification to the founder on all available channels (legacy wrapper).
+ * Send a notification to the founder, respecting their channel preferences.
  */
 export async function sendFounderNotification(message: string): Promise<void> {
-  await sendNotification(message, { priority: 'high' })
+  const prefs = await getNotificationPreferences()
+  const channels = (['telegram', 'whatsapp'] as const).filter((c) => prefs[c])
+  if (channels.length === 0) {
+    log.debug('All notification channels disabled — skipping founder notification')
+    return
+  }
+  await sendNotification(message, { priority: 'high', channels: [...channels] })
 }
 
 /**

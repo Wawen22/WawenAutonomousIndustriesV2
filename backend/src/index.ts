@@ -32,7 +32,7 @@ import {
 import { getWorkspaceRoot } from './services/workspace.js'
 import { getPersonalContext, updatePersonalProfile } from './services/personal-context.js'
 import { startOpsMonitor } from './agents/ops.js'
-import { startFinanceRuntime } from './agents/finance.js'
+import { startFinanceRuntime, runFinanceCycleNow } from './agents/finance.js'
 import { startHrRuntime } from './agents/hr.js'
 import {
   executePersonalAssistantQuickAction,
@@ -69,7 +69,9 @@ import {
   initWhatsAppSession,
   disconnectWhatsApp,
 } from './services/whatsapp.js'
-import { sendFounderNotification } from './services/notification-router.js'
+import { sendFounderNotification, sendNotification } from './services/notification-router.js'
+import { getNotificationPreferences, updateNotificationPreferences } from './services/notification-preferences.js'
+import { getCompanyAutomations, updateCompanyAutomations } from './services/company-automations.js'
 import { MODELS, AGENT_MODEL_DEFAULTS, getModelOverrides } from './config/models.js'
 import {
   assignModelToAgent,
@@ -1376,6 +1378,92 @@ async function main(): Promise<void> {
           log.error({ err }, 'Files exports API error')
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // GET /api/settings/notifications — T118 notification channel preferences
+    if (url.pathname === '/api/settings/notifications' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const prefs = await getNotificationPreferences()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(prefs))
+        } catch (err) {
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: 'Failed to get notification preferences' }))
+        }
+      })()
+      return
+    }
+
+    // POST /api/settings/notifications — T118 update notification channel preferences
+    if (url.pathname === '/api/settings/notifications' && req.method === 'POST') {
+      void (async () => {
+        try {
+          const body = await readJsonBody(req) as { telegram?: boolean; whatsapp?: boolean }
+          const updated = await updateNotificationPreferences(body)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(updated))
+        } catch (err) {
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: 'Failed to update notification preferences' }))
+        }
+      })()
+      return
+    }
+
+    // GET /api/settings/automations — T118 company automations state
+    if (url.pathname === '/api/settings/automations' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const automations = await getCompanyAutomations()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(automations))
+        } catch (err) {
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: 'Failed to get company automations' }))
+        }
+      })()
+      return
+    }
+
+    // POST /api/settings/automations/finance-weekly/run — T118 force-send finance report now
+    if (url.pathname === '/api/settings/automations/finance-weekly/run' && req.method === 'POST') {
+      void (async () => {
+        try {
+          // Use priority 'critical' to bypass in-memory dedup (60s window) so test sends always go through.
+          // Respect channel prefs so only active channels receive it.
+          const prefs = await getNotificationPreferences()
+          const channels = (['telegram', 'whatsapp'] as const).filter((c) => prefs[c])
+          const notify = async (msg: string) => {
+            if (channels.length === 0) return
+            await sendNotification(msg, { priority: 'critical', channels: [...channels] })
+          }
+          await runFinanceCycleNow(notify)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    // POST /api/settings/automations — T118 update company automations
+    if (url.pathname === '/api/settings/automations' && req.method === 'POST') {
+      void (async () => {
+        try {
+          const body = await readJsonBody(req) as Parameters<typeof updateCompanyAutomations>[0]
+          const updated = await updateCompanyAutomations(body)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(updated))
+        } catch (err) {
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: 'Failed to update company automations' }))
         }
       })()
       return

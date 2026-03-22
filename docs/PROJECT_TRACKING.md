@@ -137,13 +137,36 @@ Backlog ordinato per valore / rischio:
 | ID | Title | Priority | Rationale |
 |----|-------|----------|-----------|
 | T116 | WhatsApp delivery for scheduled brief | ✅ Done | — |
-| T117 | Stuck-task proactive alert | 2 | Agente che monitora task `in_progress` fermi da > N ore e notifica su Telegram/WhatsApp. Basso rischio, alto valore operativo. |
-| T118 | Finance weekly report automation | 3 | Budget vs spesa mandato su WhatsApp ogni lunedì. Riusa `finance.ts` + `notification-router.ts`. |
+| T117 | Stuck-task proactive alert | ✅ Done | — |
+| T118 | Finance weekly + Settings page + Notification channels | ✅ Done | — |
 | T119 | Memory visibility in dashboard | 3 | Vista delle memorie per agente nella sezione Capabilities — utile per debug e governance delle preferenze apprese. |
 
 ---
 
 ## Recent Changes
+
+### 2026-03-22 — T118: Finance weekly + Settings page + Notification channels
+
+**New services (backend):**
+- `notification-preferences.ts` — persists `{ telegram, whatsapp }` to `workspace/system/notification-preferences.json`; default both true
+- `company-automations.ts` — persists `{ financeWeeklyReport: { enabled, dayOfWeek, lastSentWeekKey } }` to `workspace/system/company-automations.json`; default enabled=true, dayOfWeek=1 (Monday)
+
+**Modified (backend):**
+- `notification-router.ts` `sendFounderNotification`: now reads prefs and filters channels before routing; silently skips if all disabled
+- `finance.ts` `runFinanceCycle`: checks `enabled` + `dayOfWeek` before building summary; calls `markFinanceWeeklyReportSent()` after send
+- `index.ts`: 4 new endpoints — `GET/POST /api/settings/notifications`, `GET/POST /api/settings/automations`
+
+**New (dashboard):**
+- `SettingsView.tsx` — Automations tab (Finance Weekly: toggle + day picker + last-sent status) + Notifications tab (Telegram/WhatsApp toggles with live connection status)
+- `'settings'` view added to both Company and Personal nav (CORE section), icon: gear
+
+**Typecheck:** backend + dashboard green
+
+### 2026-03-22 — T114+T115+T117: Retroactive tracking alignment
+
+- **T114** — Agent memory system: `memory.ts` (pgvector store/recall/dedup) + `memory_learning.ts` (extract learning points from founder feedback) + migrations `005`+`008`. Already live, not tracked.
+- **T115** — Daily brief automation scheduler: `personal-automation.ts` `startFounderAutomationRuntime()` runs every minute, fires brief at configured local time. Already live, not tracked.
+- **T117** — Stuck-task proactive alert: `ops.ts` `startOpsMonitor()` checks every 15 min for tasks stuck > 30 min in `in_progress`/`blocked`, sends via `sendFounderNotification`. Already live, not tracked.
 
 ### 2026-03-22 — T116: WhatsApp delivery for scheduled brief
 

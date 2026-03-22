@@ -19,6 +19,7 @@ import { PersonalDocumentsView } from './components/PersonalDocumentsView.js'
 import { DocsView } from './components/DocsView.js'
 import { CapabilitiesView } from './components/CapabilitiesView.js'
 import { ModelsView } from './components/ModelsView.js'
+import { SettingsView } from './components/SettingsView.js'
 
 const VirtualOffice3DView = lazy(() =>
   import('./components/VirtualOffice3DView.js').then((m) => ({ default: m.VirtualOffice3DView }))
@@ -84,6 +85,7 @@ const VIEW_META: Record<ViewId, { title: string; description: string }> = {
   docs:     { title: 'Docs',           description: 'Live knowledge base — canonical docs and archive'      },
   assistant:{ title: 'Assistant HQ',   description: 'Personal execution layer for Neb'                      },
   documents:{ title: 'Documents',      description: 'Personal files, notes, and generated reports'          },
+  settings: { title: 'Settings',       description: 'Automations and notification channel routing'          },
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +186,7 @@ function ViewContent({ view }: { view: ViewId }) {
     case 'memory':    return <MemoryView />
     case 'capabilities': return <CapabilitiesView />
     case 'models':    return <ModelsView />
+    case 'settings':  return <SettingsView />
     case 'docs':      return null
     case 'assistant': return <PersonalHQView />
     case 'documents': return <PersonalDocumentsView />

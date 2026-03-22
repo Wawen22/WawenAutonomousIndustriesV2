@@ -546,3 +546,21 @@ export interface WhatsAppStatus {
   /** Connected phone number — present when state === 'connected' */
   connectedPhone?: string
 }
+
+// --- Settings: Notification Preferences + Company Automations (T118) ---
+
+export interface NotificationPreferences {
+  telegram: boolean
+  whatsapp: boolean
+}
+
+export interface FinanceWeeklyAutomationState {
+  enabled: boolean
+  /** Day of week: 0=Sunday … 6=Saturday */
+  dayOfWeek: number
+  lastSentWeekKey: string | null
+}
+
+export interface CompanyAutomationsState {
+  financeWeeklyReport: FinanceWeeklyAutomationState
+}

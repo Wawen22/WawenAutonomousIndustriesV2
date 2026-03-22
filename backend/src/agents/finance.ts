@@ -1,5 +1,6 @@
 import { getModelForAgent } from '../config/models.js'
 import { checkBudget } from '../services/budget.js'
+import { getCompanyAutomations, markFinanceWeeklyReportSent } from '../services/company-automations.js'
 import { log, recordEvent, recordRun } from '../services/logger.js'
 import { getMonthlyCost, getProjectState, getSupabaseClient, updateTaskStatus } from '../services/supabase.js'
 import type { RunOutcome, Task } from '../types/index.js'
@@ -177,6 +178,24 @@ export async function runFinanceCycle(
 ): Promise<WeeklyFinanceSummary | null> {
   await checkBudget()
 
+  const automations = await getCompanyAutomations()
+  const config = automations.financeWeeklyReport
+
+  if (!config.enabled) {
+    await recordRuntimeRun('Scheduled finance cycle', 'weekly_report_enabled=false; skipped', 'success')
+    return null
+  }
+
+  const todayDow = new Date().getDay()
+  if (todayDow !== config.dayOfWeek) {
+    await recordRuntimeRun(
+      'Scheduled finance cycle',
+      `weekly_report_enabled=true; today_dow=${todayDow}; configured_dow=${config.dayOfWeek}; skipped`,
+      'success'
+    )
+    return null
+  }
+
   const summary = await buildWeeklyFinanceSummary()
   const alreadySent = await hasWeeklyReport(summary.weekKey)
   if (alreadySent) {
@@ -206,8 +225,22 @@ export async function runFinanceCycle(
 
   const rendered = renderWeeklyFinanceSummary(summary)
   await notify(rendered)
+  await markFinanceWeeklyReportSent(summary.weekKey).catch(() => undefined)
   await recordRuntimeRun('Scheduled finance cycle', rendered, 'success')
   return summary
+}
+
+/**
+ * Force-send the finance weekly report immediately, bypassing all schedule/dedup checks.
+ * Used by the dashboard "Run Now" test button.
+ */
+export async function runFinanceCycleNow(
+  notify: (message: string) => Promise<void>
+): Promise<void> {
+  const summary = await buildWeeklyFinanceSummary()
+  const rendered = renderWeeklyFinanceSummary(summary)
+  await notify(rendered)
+  await recordRuntimeRun('Manual finance cycle (forced)', rendered, 'success')
 }
 
 export function startFinanceRuntime(
