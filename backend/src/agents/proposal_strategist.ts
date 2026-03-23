@@ -13,6 +13,7 @@ import { getProjectById, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
 import { getProjectWorkspacePath } from '../services/workspace.js'
 import type { Task } from '../types/index.js'
+import { generatePdfFromHtml, markdownToPdfHtml } from '../services/document-generator.js'
 
 // ---------------------------------------------------------------------------
 // Tipi
@@ -302,11 +303,26 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
     }
 
     let outputPath: string | null = null
+    let pdfOutputPath: string | null = null
     if (workspaceAbsPath) {
       const deliverableDir = join(workspaceAbsPath, 'deliverables')
       await mkdir(deliverableDir, { recursive: true })
       outputPath = join(deliverableDir, 'proposal-strategy.md')
-      await writeFile(outputPath, proposalToMarkdown(proposal, projectName, clientName), 'utf-8')
+      const markdownContent = proposalToMarkdown(proposal, projectName, clientName)
+      await writeFile(outputPath, markdownContent, 'utf-8')
+
+      try {
+        const pdfHtml = markdownToPdfHtml(markdownContent, {
+          title: proposal.title,
+          clientName,
+          projectName,
+        })
+        pdfOutputPath = join(deliverableDir, 'proposal-strategy.pdf')
+        await generatePdfFromHtml(pdfHtml, pdfOutputPath)
+      } catch (pdfErr) {
+        log.warn({ err: pdfErr, taskId: task.id }, 'Proposal Strategist: PDF generation failed (non-fatal, markdown saved)')
+        pdfOutputPath = null
+      }
     }
 
     await recordEvent('task_completed', {
@@ -318,6 +334,7 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
         deliverables_count: proposal.deliverables.length,
         has_roi: Boolean(proposal.roi),
         output_path: outputPath,
+        pdf_output_path: pdfOutputPath,
         model_used: result.modelId,
         cost_usd: result.costUsd,
       },
@@ -341,6 +358,7 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
       ``,
       proposal.roi ? `📈 ROI: ${proposal.roi.slice(0, 120)}` : '',
       outputPath ? `\n💾 Saved: \`${outputPath}\`` : '',
+      pdfOutputPath ? `📄 PDF: \`${pdfOutputPath}\`` : '',
     ].filter((l) => l !== '').join('\n')
 
     await notify(notifyLines)
