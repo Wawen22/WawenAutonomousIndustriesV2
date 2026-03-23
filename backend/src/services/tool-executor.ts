@@ -22,6 +22,7 @@ import { getClientBySlug, getProjectBySlug } from './supabase.js'
 import { getToolsForAgent, validateToolEnvVars } from '../tools/index.js'
 import { ensurePersonalProfile } from './personal-context.js'
 import { recordCapabilityEvent } from './logger.js'
+import { generatePdfFromHtml, markdownToPdfHtml } from './document-generator.js'
 
 export type ExecutableToolId = 'file_export' | 'email' | 'web_search'
 
@@ -34,7 +35,7 @@ export interface FileExportInput {
   content: string
   filename?: string
   title?: string
-  format?: 'md' | 'txt' | 'csv' | 'json' | 'html'
+  format?: 'md' | 'txt' | 'csv' | 'json' | 'html' | 'pdf'
   clientSlug?: string
   projectSlug?: string
   workspacePath?: string
@@ -152,7 +153,18 @@ async function executeFileExport(
 
   const absolutePath = join(absoluteDir, filename)
   const relativePath = `${relativeDir}/${filename}`.replace(/\\/g, '/')
-  await writeFile(absolutePath, input.content, 'utf-8')
+
+  if (input.format === 'pdf') {
+    // Route through Playwright headless PDF renderer
+    const html = input.content.trimStart().startsWith('<')
+      ? input.content
+      : markdownToPdfHtml(input.content, {
+          title: input.title ?? input.filename ?? 'Document',
+        })
+    await generatePdfFromHtml(html, absolutePath)
+  } else {
+    await writeFile(absolutePath, input.content, 'utf-8')
+  }
 
   await recordCapabilityEvent({
     capability_id: 'integration.local_workspace_filesystem',
@@ -165,6 +177,7 @@ async function executeFileExport(
       relative_path: relativePath,
       format: input.format ?? 'md',
       mode: input.mode ?? 'personal',
+      // size_bytes reflects source content (markdown/html), not the PDF binary size
       size_bytes: Buffer.byteLength(input.content, 'utf-8'),
     },
   })
