@@ -90,7 +90,7 @@ export function markdownToPdfHtml(markdown: string, meta: DocumentMeta): string 
     font-size: 11pt;
     line-height: 1.6;
     color: #1a1a1a;
-    padding: 20mm 20mm 20mm 20mm;
+    padding: 0;
     max-width: 100%;
   }
   .doc-header {
