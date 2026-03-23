@@ -357,7 +357,7 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
       `⏱ Timeline: ${proposal.timeline}`,
       ``,
       proposal.roi ? `📈 ROI: ${proposal.roi.slice(0, 120)}` : '',
-      outputPath ? `\n💾 Saved: \`${outputPath}\`` : '',
+      outputPath ? `💾 Saved: \`${outputPath}\`` : '',
       pdfOutputPath ? `📄 PDF: \`${pdfOutputPath}\`` : '',
     ].filter((l) => l !== '').join('\n')
 
