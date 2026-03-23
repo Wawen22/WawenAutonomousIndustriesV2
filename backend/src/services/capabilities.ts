@@ -23,6 +23,7 @@ import { getMcpBridgeStatus, type McpConnectorStatus } from './mcp-bridge.js'
 import { getPersonalAutomationStatus } from './personal-automation.js'
 import { getCapabilityEvents } from './supabase.js'
 import { isPinchTabAvailable } from './pinchtab.js'
+import { isPlaywrightBrowserAvailable } from './document-generator.js'
 import { getPersonalWorkspacePath, getWorkspaceRoot } from './workspace.js'
 
 const DEFAULT_OWNER_SLUG = 'neb'
@@ -552,12 +553,13 @@ function deriveAuditFromEvents(
 
 export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistrySnapshot> {
   const generatedAt = new Date().toISOString()
-  const [mcpBridgeStatus, googleWorkspaceRuntime, automationStatus, recentEvents, pinchTabAvailable] = await Promise.all([
+  const [mcpBridgeStatus, googleWorkspaceRuntime, automationStatus, recentEvents, pinchTabAvailable, playwrightBrowserAvailable] = await Promise.all([
     getMcpBridgeStatus(),
     getGoogleWorkspaceMcpRuntimeStatus(DEFAULT_OWNER_SLUG),
     getPersonalAutomationStatus(DEFAULT_OWNER_SLUG),
     getCapabilityEvents({ limit: 200 }),
     isPinchTabAvailable(),
+    Promise.resolve(isPlaywrightBrowserAvailable()),
   ])
 
   const gmailConnector = findConnector(mcpBridgeStatus.connectors, 'gmail')
@@ -1556,6 +1558,54 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
       audit: baseAudit({
         capabilityId: 'plugin.pinchtab',
         summary: 'PinchTab browser control — stateful Chrome sessions for agent automation.',
+      }),
+    },
+    {
+      capability: baseCapability({
+        id: 'tool.document_generation',
+        type: 'integration',
+        label: 'Document Generator (PDF)',
+        description: 'Produces professional PDF documents from markdown or HTML content using Playwright headless Chromium. Used by delivery agents to generate client-ready proposals and reports.',
+        owner: DEFAULT_OWNER_SLUG,
+        runtimeTarget: 'company',
+        riskLevel: 'low',
+        tags: ['pdf', 'documents', 'playwright', 'delivery'],
+        usageInstructions: 'Call generatePdfFromHtml(html, outputPath) or markdownToPdfHtml(markdown, meta) from document-generator.ts. Run `npx playwright install chromium` if the capability shows degraded.',
+        examples: [
+          'Generate a PDF proposal for a client after the Proposal Strategist completes',
+          'Produce a PDF delivery report with client branding',
+        ],
+      }),
+      assignments: [
+        runtimeAssignment('tool.document_generation', 'company', 'Company Runtime', 'company'),
+        teamAssignment('tool.document_generation', 'consulting', 'company', 'Consulting agents use this to produce client-ready PDF proposals.'),
+        teamAssignment('tool.document_generation', 'marketing', 'company', 'Marketing agents use this to generate PDF reports and decks.'),
+        agentAssignment('tool.document_generation', 'proposal_strategist', 'company', 'Proposal Strategist generates PDF proposals alongside markdown.'),
+        agentAssignment('tool.document_generation', 'executive_summary', 'company', 'Executive Summary agent can produce PDF briefings.'),
+      ],
+      policy: basePolicy({
+        capabilityId: 'tool.document_generation',
+        mode: 'open',
+        allowedTools: ['file_export'],
+        notes: 'PDF generation is local-only via Playwright. No network calls during rendering (inline CSS only). Requires Chromium binary: run `npx playwright install chromium` once.',
+      }),
+      health: baseHealth({
+        capabilityId: 'tool.document_generation',
+        state: playwrightBrowserAvailable ? 'connected' : 'degraded',
+        label: playwrightBrowserAvailable ? 'Connected' : 'Browser Missing',
+        message: playwrightBrowserAvailable
+          ? 'Playwright Chromium binary is present. PDF generation is available.'
+          : 'Playwright Chromium binary not found. Run: npx playwright install chromium',
+        checkedAt: generatedAt,
+        freshness: playwrightBrowserAvailable ? 'fresh' : 'unknown',
+        reasonCode: playwrightBrowserAvailable ? 'chromium_available' : 'chromium_missing',
+        details: playwrightBrowserAvailable
+          ? ['PDF output via headless Chromium, A4 format, inline CSS only']
+          : ['Fix: cd backend && npx playwright install chromium'],
+      }),
+      audit: baseAudit({
+        capabilityId: 'tool.document_generation',
+        summary: 'PDF document generation — enables client-ready proposal and report output from agent markdown.',
       }),
     },
   ]

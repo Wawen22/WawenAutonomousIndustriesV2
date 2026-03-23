@@ -7,6 +7,7 @@ export const DRIVE_INTEGRATION_CAPABILITY_ID = 'integration.google_workspace.dri
 export const DAILY_FOUNDER_BRIEF_AUTOMATION_CAPABILITY_ID = 'skill.founder.daily_founder_brief_automation'
 export const PERSONAL_WORKSPACE_CONTEXT_CAPABILITY_ID = 'memory.personal_workspace_context'
 export const PINCHTAB_CAPABILITY_ID = 'plugin.pinchtab'
+export const DOCUMENT_GENERATION_CAPABILITY_ID = 'tool.document_generation'
 
 export function getFounderQuickActionCapabilityId(
   actionId: PersonalAssistantQuickActionId,
