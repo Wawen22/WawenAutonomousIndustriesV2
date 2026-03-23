@@ -170,7 +170,7 @@ Ispirato da `skills-main/` (Anthropic). Generazione documenti DOCX/PDF reali inv
 
 | ID | Title | Priority | Status | Note |
 |----|-------|----------|--------|------|
-| T126 | Document generation — DOCX/PDF/PPTX output reale | 2 | ⬜ Todo | Adatta Anthropic document skills per create_document flow |
+| T126 | Document generation — PDF output reale | 2 | ✅ Done | PDF via Playwright headless. `proposal_strategist` genera PDF + MD. Capability `tool.document_generation` in registry con health check Chromium. |
 
 ---
 
@@ -187,6 +187,23 @@ Ispirato da `skills-main/` (Anthropic). Generazione documenti DOCX/PDF reali inv
 ---
 
 ## Recent Changes
+
+### 2026-03-23 — T126: Document Generation (PDF output)
+
+**New:**
+- `backend/src/services/document-generator.ts`: nuovo servizio con `isPlaywrightBrowserAvailable()` (controlla il binario Chromium via `existsSync`), `markdownToPdfHtml(markdown, meta)` (converte in HTML stilizzato con CSS inline), `generatePdfFromHtml(html, outputPath)` (Playwright headless, formato A4, margini 15mm)
+- `backend/src/config/capabilities.ts`: `DOCUMENT_GENERATION_CAPABILITY_ID = 'tool.document_generation'`
+- `backend/src/services/capabilities.ts`: capability `tool.document_generation` nel registry con health check live sul binario Chromium; mostra `degraded` se `npx playwright install chromium` non è stato eseguito
+- `backend/src/services/tool-executor.ts`: `FileExportInput.format` esteso con `'pdf'`; `file_export` tool ora instrada gli export PDF attraverso `generatePdfFromHtml`
+- `backend/src/agents/proposal_strategist.ts`: genera `proposal-strategy.pdf` accanto a `proposal-strategy.md` nella directory deliverables; il fallback PDF è non-fatale (il task si completa con il markdown); l'evento `task_completed` include `pdf_output_path`
+
+**How to test:**
+1. Verifica Chromium installato: `cd backend && npx playwright install chromium` (già presente se `isPlaywrightBrowserAvailable()` → true)
+2. Esegui un task proposta → controlla `deliverables/` per `.pdf` accanto a `.md`
+3. `GET /api/capabilities` → `tool.document_generation` con `state: connected`
+4. Dashboard `Capabilities` view mostra `Document Generator (PDF)` con badge verde
+
+**Next step:** T123 — Second Brain (personal knowledge ingestion + search)
 
 ### 2026-03-22 — T122b: PinchTab Browser Tools per CEO Intake
 
