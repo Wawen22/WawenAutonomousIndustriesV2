@@ -153,6 +153,24 @@ export interface AgentMemory {
   ttl: string | null
 }
 
+export type KnowledgeSourceType = 'note' | 'url' | 'file'
+
+export interface KnowledgeItem {
+  id: string
+  owner_slug: string
+  title: string
+  content: string
+  source_type: KnowledgeSourceType
+  source_url: string | null
+  tags: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface KnowledgeItemMatch extends KnowledgeItem {
+  similarity: number
+}
+
 export interface Payment {
   id: string
   project_id: string
