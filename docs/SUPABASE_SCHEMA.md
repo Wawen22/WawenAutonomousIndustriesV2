@@ -163,6 +163,30 @@ Records every LLM invocation or tool execution.
 
 ---
 
+### `knowledge_items`
+
+Personal knowledge base for the founder (Second Brain). Stores notes, scraped URLs, and uploaded files as semantic embeddings for recall via natural language.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `uuid` PK | Auto-generated |
+| `owner_slug` | `text` | Owner identifier (default: `neb`) |
+| `title` | `text` | Item title (auto-extracted from content if not provided) |
+| `content` | `text` | Full text content (max 12 000 chars) |
+| `source_type` | `text` | `note` \| `url` \| `file` |
+| `source_url` | `text` | Original URL (for `url` source type; nullable) |
+| `tags` | `text[]` | Optional tags array |
+| `embedding` | `vector(1536)` | LiteLLM `text-embedding-3-small` embedding (falls back to local FNV hash) |
+| `created_at` | `timestamptz` | |
+| `updated_at` | `timestamptz` | Auto-updated on change |
+
+Notes:
+- Recall uses the SQL function `match_knowledge_items(p_owner_slug, p_query_embedding, p_match_count, p_min_similarity)`.
+- Ingestion runs near-duplicate detection (cosine similarity ≥ 0.88) before inserting.
+- Migration: `supabase/migrations/010_knowledge_items.sql` (must be applied manually in the Supabase SQL Editor).
+
+---
+
 ### `agent_memories`
 
 Persistent long-term memory per agent, stored as pgvector embeddings for similarity recall before each run.

@@ -160,7 +160,7 @@ Ispirato da `awesome-openclaw-usecases-main/`. Use case di produttività persona
 
 | ID | Title | Priority | Status | Note |
 |----|-------|----------|--------|------|
-| T123 | Second Brain — personal knowledge ingestion + search | 2 | ⬜ Todo | Estende memoria multi-scope (T120) con ingestion docs/note |
+| T123 | Second Brain — personal knowledge ingestion + search | 2 | ✅ Done | `knowledge_items` table (pgvector 1536-dim), LiteLLM embedding + local hash fallback, dedup 0.88. API routes GET/POST/DELETE. CEO Intake shortcuts (brain_save/url/search). Daily brief section. Dashboard SecondBrainPanel + tab in Personal HQ. |
 | T124 | Personal CRM — contact tracking + follow-up automation | 2 | ⬜ Todo | Gmail MCP + contatti + reminder |
 | T125 | Meeting Notes automation — Calendar + trascrizione + summary | 3 | ⬜ Todo | Google Calendar MCP + action items |
 
@@ -203,7 +203,29 @@ Ispirato da `skills-main/` (Anthropic). Generazione documenti DOCX/PDF reali inv
 3. `GET /api/capabilities` → `tool.document_generation` con `state: connected`
 4. Dashboard `Capabilities` view mostra `Document Generator (PDF)` con badge verde
 
-**Next step:** T123 — Second Brain (personal knowledge ingestion + search)
+**Next step:** T124 — Personal CRM (contact tracking + follow-up automation)
+
+### 2026-03-24 — T123: Second Brain
+
+**Changed:**
+- `supabase/migrations/010_knowledge_items.sql`: new `knowledge_items` table with `vector(1536)`, `ivfflat` index, `match_knowledge_items` RPC, RLS policies
+- `backend/src/types/index.ts`: `KnowledgeSourceType`, `KnowledgeItem`, `KnowledgeItemMatch`
+- `backend/src/services/knowledge.ts`: full knowledge service — `ingestNote/Url/File`, `searchKnowledge`, `listKnowledgeItems`, `deleteKnowledgeItem`, `checkSecondBrainHealth`, `getKnowledgeItemCount`. LiteLLM `text-embedding-3-small` with local FNV hash fallback. Dedup at 0.88 cosine similarity.
+- `backend/src/config/capabilities.ts`: `SECOND_BRAIN_CAPABILITY_ID = 'personal.second_brain'`
+- `backend/src/services/capabilities.ts`: `personal.second_brain` capability entry with health check
+- `backend/src/index.ts`: 4 routes — `GET /api/personal/knowledge`, `GET /api/personal/knowledge/search`, `POST /api/personal/knowledge`, `DELETE /api/personal/knowledge/:id`
+- `backend/src/agents/ceo_intake.ts`: `brain_save`, `brain_url`, `brain_search` shortcuts + actions in system prompt (rules 31-33). Daily founder brief includes last 5 knowledge items.
+- `dashboard/src/types/index.ts`: `KnowledgeSourceType`, `KnowledgeItem`, `KnowledgeItemMatch`
+- `dashboard/src/components/SecondBrainPanel.tsx`: new component — list, semantic search, add note/URL, delete
+- `dashboard/src/components/PersonalHQView.tsx`: "Second Brain" tab
+
+**How to test:**
+1. Apply `supabase/migrations/010_knowledge_items.sql` in Supabase SQL Editor
+2. Telegram: `brain: la mia nota di test` → bot risponde con "🧠 Nota salvata nel Second Brain"
+3. Telegram: `brain search: nota di test` → bot restituisce risultati semantici
+4. Dashboard Personal HQ → tab "Second Brain" → lista items, ricerca, aggiungi nota/URL
+
+**Next step:** T124 — Personal CRM (contact tracking + follow-up automation)
 
 ### 2026-03-22 — T122b: PinchTab Browser Tools per CEO Intake
 
