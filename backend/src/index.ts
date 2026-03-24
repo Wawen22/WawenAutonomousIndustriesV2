@@ -73,6 +73,13 @@ import { sendFounderNotification, sendNotification } from './services/notificati
 import { getNotificationPreferences, updateNotificationPreferences } from './services/notification-preferences.js'
 import { getCompanyAutomations, updateCompanyAutomations } from './services/company-automations.js'
 import { getAgentMemories, deleteAgentMemory, deleteAgentMemories } from './services/memory.js'
+import {
+  ingestKnowledgeItem,
+  ingestUrl as ingestKnowledgeUrl,
+  listKnowledgeItems,
+  searchKnowledge,
+  deleteKnowledgeItem,
+} from './services/knowledge.js'
 import { MODELS, AGENT_MODEL_DEFAULTS, getModelOverrides } from './config/models.js'
 import {
   assignModelToAgent,
@@ -170,7 +177,7 @@ async function main(): Promise<void> {
       res.setHeader('Access-Control-Allow-Origin', allowedOrigin)
       res.setHeader('Vary', 'Origin')
     }
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
     if (req.method === 'OPTIONS') {
@@ -1744,6 +1751,131 @@ async function main(): Promise<void> {
           const message = err instanceof Error ? err.message : 'Unknown error'
           log.error({ err }, 'Models special override API error')
           res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    // ── GET /api/personal/knowledge — list knowledge items ─────────────────
+    if (url.pathname === '/api/personal/knowledge' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '50', 10), 200)
+          const offset = Math.max(0, parseInt(url.searchParams.get('offset') ?? '0', 10))
+          const items = await listKnowledgeItems('neb', { limit, offset })
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ items }))
+        } catch (err) {
+          log.error({ err }, 'Knowledge list API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // ── GET /api/personal/knowledge/search — semantic search ───────────────
+    if (url.pathname === '/api/personal/knowledge/search' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const query = url.searchParams.get('q') ?? ''
+          const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '5', 10), 20)
+          if (!query.trim()) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing q param' }))
+            return
+          }
+          const results = await searchKnowledge('neb', query, limit)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ results }))
+        } catch (err) {
+          log.error({ err }, 'Knowledge search API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // ── POST /api/personal/knowledge — ingest note or URL ──────────────────
+    if (url.pathname === '/api/personal/knowledge' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+          const sourceType = payload['sourceType'] as string
+          const tags = Array.isArray(payload['tags'])
+            ? (payload['tags'] as unknown[]).filter((t): t is string => typeof t === 'string')
+            : []
+
+          let item
+          if (sourceType === 'url') {
+            const urlParam = typeof payload['url'] === 'string' ? payload['url'] : null
+            if (!urlParam) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Missing url' }))
+              return
+            }
+            item = await ingestKnowledgeUrl('neb', urlParam, tags)
+          } else {
+            const content = typeof payload['content'] === 'string' ? payload['content'] : null
+            if (!content) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Missing content' }))
+              return
+            }
+            const title = typeof payload['title'] === 'string' ? payload['title'] : undefined
+            item = await ingestKnowledgeItem({
+              ownerSlug: 'neb',
+              content,
+              ...(title ? { title } : {}),
+              sourceType: 'note',
+              tags,
+            })
+          }
+
+          if (!item) {
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true, duplicate: true, item: null }))
+            return
+          }
+
+          res.writeHead(201, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, item }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Ingest failed'
+          log.error({ err }, 'Knowledge ingest API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    // ── DELETE /api/personal/knowledge/:id ─────────────────────────────────
+    const knowledgeDeleteMatch = url.pathname.match(/^\/api\/personal\/knowledge\/([a-f0-9-]{36})$/)
+    if (knowledgeDeleteMatch && req.method === 'DELETE') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+          const id = knowledgeDeleteMatch[1]!
+          await deleteKnowledgeItem(id)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Delete failed'
+          log.error({ err }, 'Knowledge delete API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: message }))
         }
       })()
