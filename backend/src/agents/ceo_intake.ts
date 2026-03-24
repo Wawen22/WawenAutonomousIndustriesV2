@@ -63,6 +63,7 @@ import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import { runCeoAgent } from './ceo.js'
 import { runQaAgent } from './qa.js'
 import { createAgentMemory } from '../services/memory.js'
+import { ingestNote, ingestUrl as ingestKnowledgeUrl, searchKnowledge } from '../services/knowledge.js'
 import type { Client, DeliveryConfig, Payment, Project, ProjectType, SystemEvent, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -251,6 +252,9 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - browser_read       → params: url?, summary?  (naviga + legge il testo della pagina via PinchTab — ideale per SPA e siti JS-heavy)
 - browser_screenshot → params: url?, caption?  (naviga + screenshot live del browser PinchTab → invia foto su Telegram)
 - browser_snapshot   → params: url?  (naviga + snapshot DOM compatto → utile per ispezionare la struttura della pagina)
+- brain_save         → params: text, tags?  (salva una nota/testo nel Second Brain personale)
+- brain_url          → params: url, tags?   (scarica e salva una pagina web nel Second Brain)
+- brain_search       → params: query        (cerca semanticamente nel Second Brain)
 
 Valid project types: ${PROJECT_TYPES.join(', ')}
 
@@ -288,6 +292,9 @@ ${clientContext}
 28. Use browser_screenshot when Neb asks for a live browser screenshot via PinchTab (e.g. "browser screenshot di X", "screenshot con pinchtab di Y"). If url param provided it navigates first.
 29. Use browser_snapshot when Neb wants to inspect the DOM structure of a page (e.g. "dimmi gli elementi interattivi di X", "vedi il DOM di Y"). If url param provided it navigates first.
 30. All browser_* commands require PinchTab running on http://127.0.0.1:9867. They fail gracefully with a clear message if PinchTab is unavailable. Never call browser_read/browser_screenshot/browser_snapshot without either a url param or a preceding browser_navigate in the same plan.
+31. Use brain_save when Neb wants to save a note, insight, or text to his personal knowledge base / Second Brain (e.g. "salva questa nota", "ricorda questo", "aggiungi al brain", "brain: ...").
+32. Use brain_url when Neb wants to save a web page to his Second Brain (e.g. "salva questo link nel brain", "aggiungi questo URL alla knowledge base", "brain url: https://...").
+33. Use brain_search when Neb wants to search/recall something from his Second Brain (e.g. "cerca nel brain", "cosa so su X", "trova nel knowledge base", "brain search: ...").
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -336,6 +343,39 @@ function detectFounderShortcutIntent(text: string): IntentResponse | null {
       action: 'execute',
       message: `Leggo e analizzo il contenuto di ${url}.`,
       commands: [{ type: 'read_url', params: { url } }],
+    }
+  }
+
+  // --- Second Brain: save note ---
+  const brainSaveMatch = text.match(/^(?:ricorda(?:ti)?|salva\s+nota|brain\s+save|secondo\s+cervello\s+salva)[:\s]+(.+)$/is)
+  if (brainSaveMatch?.[1]) {
+    const content = brainSaveMatch[1].trim()
+    return {
+      action: 'execute',
+      message: `Salvo nel Second Brain: "${content.slice(0, 80)}${content.length > 80 ? '…' : ''}"`,
+      commands: [{ type: 'brain_save', params: { text: content } }],
+    }
+  }
+
+  // --- Second Brain: save URL ---
+  const brainUrlMatch = text.match(/^(?:brain\s+url|salva\s+(?:url|articolo|link)|secondo\s+cervello\s+(?:url|link))[:\s]+(https?:\/\/[^\s]+)$/i)
+  if (brainUrlMatch?.[1]) {
+    const targetUrl = brainUrlMatch[1].trim()
+    return {
+      action: 'execute',
+      message: `Salvo nel Second Brain: ${targetUrl}`,
+      commands: [{ type: 'brain_url', params: { url: targetUrl } }],
+    }
+  }
+
+  // --- Second Brain: search ---
+  const brainSearchMatch = text.match(/^(?:cosa\s+so\s+su|cerca\s+nel\s+(?:cervello|second\s+brain|brain)|brain\s+search|secondo\s+cervello[,:\s]+cerca)[:\s]+(.+)$/i)
+  if (brainSearchMatch?.[1]) {
+    const query = brainSearchMatch[1].trim()
+    return {
+      action: 'execute',
+      message: `Cerco nel Second Brain: "${query}"`,
+      commands: [{ type: 'brain_search', params: { query } }],
     }
   }
 
@@ -2346,6 +2386,33 @@ async function executeAction(
         ``,
         formatDeliveryConfigSummary(nextConfig),
       ].join('\n')
+    }
+
+    case 'brain_save': {
+      const text = getString(params, 'text') || getString(params, 'content') || getString(params, 'note')
+      if (!text) return '⚠️ brain_save: testo mancante.'
+      const tags = Array.isArray(params['tags']) ? (params['tags'] as string[]) : undefined
+      const item = await ingestNote('neb', text, tags)
+      if (!item) return '⚠️ Second Brain: nota troppo simile a un contenuto già esistente — salvataggio saltato.'
+      return `🧠 Nota salvata nel Second Brain: *${item.title}*`
+    }
+
+    case 'brain_url': {
+      const url = getString(params, 'url')
+      if (!url) return '⚠️ brain_url: URL mancante.'
+      const tags = Array.isArray(params['tags']) ? (params['tags'] as string[]) : undefined
+      const item = await ingestKnowledgeUrl('neb', url, tags)
+      if (!item) return '⚠️ Second Brain: contenuto troppo simile a un elemento già esistente — salvataggio saltato.'
+      return `🧠 URL salvato nel Second Brain: *${item.title}*`
+    }
+
+    case 'brain_search': {
+      const query = getString(params, 'query') || getString(params, 'q')
+      if (!query) return '⚠️ brain_search: query mancante.'
+      const matches = await searchKnowledge('neb', query, 5)
+      if (matches.length === 0) return `🧠 Nessun risultato trovato nel Second Brain per: "${query}"`
+      const lines = matches.map((m, i) => `${i + 1}. *${m.title}* (${Math.round(m.similarity * 100)}%)\n${m.content.slice(0, 200)}…`)
+      return `🧠 Second Brain — risultati per "${query}":\n\n${lines.join('\n\n')}`
     }
 
     // reply is not a real command — the LLM sometimes wraps informational
