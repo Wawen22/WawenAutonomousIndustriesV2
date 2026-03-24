@@ -16,6 +16,7 @@ import {
   getPersonalOutputPath,
   getProjectOutputPath,
   getProjectWorkspacePath,
+  getWorkspaceRoot,
   resolveWorkspacePath,
 } from './workspace.js'
 import { getClientBySlug, getProjectBySlug } from './supabase.js'
@@ -97,6 +98,14 @@ async function resolveOutputDirectory(input: FileExportInput): Promise<{ absolut
     }
   }
 
+  if (input.clientSlug) {
+    const clientDir = join(getWorkspaceRoot(), input.clientSlug, 'output')
+    return {
+      absoluteDir: clientDir,
+      relativeDir: `workspace/${input.clientSlug}/output`,
+    }
+  }
+
   if (input.mode === 'company') {
     throw new Error('file_export in company mode requires workspacePath or clientSlug/projectSlug')
   }
@@ -127,10 +136,6 @@ async function executeFileExport(
 ): Promise<ToolExecutionResult> {
   if (!input.content.trim()) {
     throw new Error('file_export requires non-empty content')
-  }
-
-  if (input.clientSlug && !input.projectSlug) {
-    throw new Error('file_export requires projectSlug when clientSlug is provided')
   }
 
   if (input.clientSlug && input.projectSlug) {

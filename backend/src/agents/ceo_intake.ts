@@ -293,7 +293,7 @@ ${clientContext}
 29. Use browser_snapshot when Neb wants to inspect the DOM structure of a page (e.g. "dimmi gli elementi interattivi di X", "vedi il DOM di Y"). If url param provided it navigates first.
 30. All browser_* commands require PinchTab running on http://127.0.0.1:9867. They fail gracefully with a clear message if PinchTab is unavailable. Never call browser_read/browser_screenshot/browser_snapshot without either a url param or a preceding browser_navigate in the same plan.
 31. Use brain_save when Neb wants to save a note, insight, or text to his personal knowledge base / Second Brain (e.g. "salva questa nota", "ricorda questo", "aggiungi al brain", "brain: ...").
-32. Use brain_url when Neb wants to save a web page to his Second Brain (e.g. "salva questo link nel brain", "aggiungi questo URL alla knowledge base", "brain url: https://...").
+32. Use brain_url when Neb wants to save a web page — including phrases like "salva questo URL", "salva questo link", "aggiungi questo sito". If Neb adds context like "per il cliente X" or "per il progetto Y", pass that as tags (e.g. tags: ["bayou"]). Do NOT use create_document for URL-saving requests.
 33. Use brain_search when Neb wants to search/recall something from his Second Brain (e.g. "cerca nel brain", "cosa so su X", "trova nel knowledge base", "brain search: ...").
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
