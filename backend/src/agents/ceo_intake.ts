@@ -358,9 +358,10 @@ function detectFounderShortcutIntent(text: string): IntentResponse | null {
   }
 
   // --- Second Brain: save URL ---
-  const brainUrlMatch = text.match(/^(?:brain\s+url|salva\s+(?:url|articolo|link)|secondo\s+cervello\s+(?:url|link))[:\s]+(https?:\/\/[^\s]+)$/i)
+  const brainUrlMatch = text.match(/^(?:brain\s+url|salva\s+(?:url|articolo|link)|secondo\s+cervello\s+(?:url|link))[:\s]+(https?:\/\/[^\s]+|[a-z0-9.-]+\.[a-z]{2,}[^\s]*)$/i)
   if (brainUrlMatch?.[1]) {
-    const targetUrl = brainUrlMatch[1].trim()
+    let targetUrl = brainUrlMatch[1].trim()
+    if (!targetUrl.startsWith('http')) targetUrl = `https://${targetUrl}`
     return {
       action: 'execute',
       message: `Salvo nel Second Brain: ${targetUrl}`,
@@ -2417,8 +2418,9 @@ async function executeAction(
     }
 
     case 'brain_url': {
-      const url = getString(params, 'url')
-      if (!url) return '⚠️ brain_url: URL mancante.'
+      const rawUrl = getString(params, 'url')
+      if (!rawUrl) return '⚠️ brain_url: URL mancante.'
+      const url = rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`
       const tags = Array.isArray(params['tags']) ? (params['tags'] as string[]) : undefined
       const item = await ingestKnowledgeUrl('neb', url, tags)
       if (!item) return '⚠️ Second Brain: contenuto troppo simile a un elemento già esistente — salvataggio saltato.'
