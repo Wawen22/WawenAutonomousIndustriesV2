@@ -19,7 +19,7 @@ import {
   formatMarkProjectPaidMessage,
 } from './services/founder_revenue_actions.js'
 import { getTelegramBot } from './services/telegram.js'
-import { updateAgentStatus, upsertAgentRecord, getProjectState } from './services/supabase.js'
+import { updateAgentStatus, upsertAgentRecord, upsertModelRecord, getProjectState } from './services/supabase.js'
 import { AGENTS, getAllAgentIds } from './config/agents.js'
 import { pingLiteLLM } from './services/llm.js'
 import { getMcpBridgeStatus } from './services/mcp-bridge.js'
@@ -1907,6 +1907,25 @@ async function main(): Promise<void> {
     severity: 'info',
     payload: { version: '0.1.0', agents: getAllAgentIds() },
   })
+
+  // --- Sync models from config (must run before agents due to FK) ---
+  try {
+    for (const model of Object.values(MODELS)) {
+      await upsertModelRecord({
+        id: model.id,
+        display_name: model.display_name,
+        provider: model.provider,
+        context_window: model.context_window,
+        cost_per_1k_input_tokens: model.cost_per_1k_input_tokens,
+        cost_per_1k_output_tokens: model.cost_per_1k_output_tokens,
+        is_active: model.is_active,
+        ...(model.notes ? { notes: model.notes } : {}),
+      })
+    }
+    log.info({ count: Object.keys(MODELS).length }, 'Models synced')
+  } catch (err) {
+    log.warn({ err }, 'Failed to sync model records (DB may not be ready yet)')
+  }
 
   // --- Sync agents from config (upsert) then mark all online ---
   // This ensures new agents added to config/agents.ts are auto-registered in the DB.

@@ -2422,9 +2422,17 @@ async function executeAction(
       if (!rawUrl) return '⚠️ brain_url: URL mancante.'
       const url = rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`
       const tags = Array.isArray(params['tags']) ? (params['tags'] as string[]) : undefined
-      const item = await ingestKnowledgeUrl('neb', url, tags)
-      if (!item) return '⚠️ Second Brain: contenuto troppo simile a un elemento già esistente — salvataggio saltato.'
-      return `🧠 URL salvato nel Second Brain: *${item.title}*`
+      try {
+        const item = await ingestKnowledgeUrl('neb', url, tags)
+        if (!item) return '⚠️ Second Brain: contenuto troppo simile a un elemento già esistente — salvataggio saltato.'
+        return `🧠 URL salvato nel Second Brain: *${item.title}*`
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (/name.*not.*resolved|invalid url|navigation|timeout/i.test(msg)) {
+          return `⚠️ Impossibile raggiungere \`${url}\` — verifica che il dominio sia online e accessibile.`
+        }
+        throw err
+      }
     }
 
     case 'brain_search': {

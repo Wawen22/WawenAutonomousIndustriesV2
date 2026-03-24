@@ -124,6 +124,36 @@ export async function upsertAgentRecord(agent: {
   if (error) throw new Error(`Failed to upsert agent ${agent.id}: ${error.message}`)
 }
 
+export async function upsertModelRecord(model: {
+  id: string
+  display_name: string
+  provider: string
+  context_window: number
+  cost_per_1k_input_tokens: number
+  cost_per_1k_output_tokens: number
+  is_active: boolean
+  notes?: string
+}): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('models')
+    .upsert(
+      {
+        id: model.id,
+        display_name: model.display_name,
+        provider: model.provider,
+        context_window: model.context_window,
+        cost_per_1k_input_tokens: model.cost_per_1k_input_tokens,
+        cost_per_1k_output_tokens: model.cost_per_1k_output_tokens,
+        is_active: model.is_active,
+        notes: model.notes ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id', ignoreDuplicates: false }
+    )
+
+  if (error) throw new Error(`Failed to upsert model ${model.id}: ${error.message}`)
+}
+
 export async function updateAgentModel(id: string, modelId: string): Promise<void> {
   const { error } = await getSupabaseClient()
     .from('agents')
