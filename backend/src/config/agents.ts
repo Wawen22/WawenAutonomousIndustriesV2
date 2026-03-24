@@ -33,8 +33,10 @@ function makeConfig(overrides: Partial<AgentConfig['permissions']> & {
   }
 }
 
-function assignedModel(agentId: string, fallback: string): string {
-  return AGENT_MODEL_DEFAULTS[agentId] ?? fallback
+const DEFAULT_FALLBACK_MODEL = 'nemotron-120b'
+
+function assignedModel(agentId: string): string {
+  return AGENT_MODEL_DEFAULTS[agentId] ?? DEFAULT_FALLBACK_MODEL
 }
 
 // ---------------------------------------------------------------------------
@@ -50,7 +52,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'CEO Agent',
     role: 'Global vision, orchestration, task delegation, Neb reporting',
     team: 'executive',
-    model_id: assignedModel('ceo', 'gpt-5.4'),
+    model_id: assignedModel('ceo'),
     config: makeConfig({
       tools: ['supabase_read', 'supabase_write_tasks', 'supabase_write_events', 'telegram_notify', 'file_export', 'email', 'web_search'],
       maxCostPerTaskUsd: 20,
@@ -69,7 +71,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Product Manager – SaaS',
     role: 'Roadmap, feature prioritization, user stories, acceptance criteria',
     team: 'saas',
-    model_id: assignedModel('pm_saas', 'gpt-5.4'),
+    model_id: assignedModel('pm_saas'),
     config: makeConfig({
       tools: ['supabase_read', 'supabase_write_tasks', 'github_issues', 'browser'],
       thinkingLevel: 'high',
@@ -82,7 +84,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Dev Lead – SaaS',
     role: 'Technical planning, sprint planning, subtask creation, PR reviews',
     team: 'saas',
-    model_id: assignedModel('dev_lead_saas', 'gpt-5.4'),
+    model_id: assignedModel('dev_lead_saas'),
     config: makeConfig({
       tools: ['supabase_read', 'supabase_write_tasks', 'github', 'shell_readonly'],
       thinkingLevel: 'high',
@@ -96,7 +98,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Developer SaaS #1',
     role: 'Code implementation, tests, PRs, deploy prep',
     team: 'saas',
-    model_id: assignedModel('dev_saas_1', 'gpt-5.4'),
+    model_id: assignedModel('dev_saas_1'),
     config: makeConfig({
       tools: ['github', 'shell', 'vercel', 'supabase_read', 'file_system'],
       maxCostPerTaskUsd: 10,
@@ -111,7 +113,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Developer SaaS #2',
     role: 'Boilerplate, documentation, simple features',
     team: 'saas',
-    model_id: assignedModel('dev_saas_2', 'gemini-2.5-flash'),
+    model_id: assignedModel('dev_saas_2'),
     config: makeConfig({
       tools: ['github', 'shell', 'file_system'],
       maxCostPerTaskUsd: 3,
@@ -127,7 +129,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Architect',
     role: 'System design, tech stack decisions, architecture diagrams',
     team: 'dev',
-    model_id: assignedModel('architect', 'gpt-5.4'),
+    model_id: assignedModel('architect'),
     config: makeConfig({
       tools: ['github', 'browser', 'supabase_read', 'file_system'],
       maxCostPerTaskUsd: 15,
@@ -142,7 +144,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Developer General #1',
     role: 'Implementation, refactoring, debugging',
     team: 'dev',
-    model_id: assignedModel('dev_general_1', 'gpt-5.4'),
+    model_id: assignedModel('dev_general_1'),
     config: makeConfig({
       tools: ['github', 'shell', 'file_system', 'supabase_read'],
       maxCostPerTaskUsd: 10,
@@ -156,7 +158,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Developer General #2',
     role: 'Simple implementations, boilerplate',
     team: 'dev',
-    model_id: assignedModel('dev_general_2', 'gemini-2.5-flash'),
+    model_id: assignedModel('dev_general_2'),
     config: makeConfig({
       tools: ['github', 'shell', 'file_system'],
       maxCostPerTaskUsd: 3,
@@ -170,7 +172,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'QA Agent',
     role: 'Test writing, test execution, quality checklists, bug reports',
     team: 'dev',
-    model_id: assignedModel('qa', 'gemini-2.5-flash'),
+    model_id: assignedModel('qa'),
     config: makeConfig({
       tools: ['shell', 'github', 'supabase_read'],
       maxCostPerTaskUsd: 2,
@@ -186,7 +188,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Consulting Lead',
     role: 'Client request intake, scope definition, delivery management',
     team: 'consulting',
-    model_id: assignedModel('consulting_lead', 'gpt-5.4'),
+    model_id: assignedModel('consulting_lead'),
     config: makeConfig({
       tools: ['supabase_read', 'supabase_write_tasks', 'email', 'browser', 'file_export', 'web_search'],
       maxCostPerTaskUsd: 15,
@@ -201,7 +203,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Analyst',
     role: 'Research, data gathering, report writing',
     team: 'consulting',
-    model_id: assignedModel('analyst', 'gpt-5.4'),
+    model_id: assignedModel('analyst'),
     config: makeConfig({
       tools: ['browser', 'file_system', 'supabase_read', 'file_export', 'web_search'],
       maxCostPerTaskUsd: 10,
@@ -215,7 +217,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Marketing Strategist',
     role: 'Marketing strategy, campaign planning, funnel design',
     team: 'marketing',
-    model_id: assignedModel('marketing_strategist', 'gpt-5.4'),
+    model_id: assignedModel('marketing_strategist'),
     config: makeConfig({
       tools: ['supabase_read', 'browser', 'email', 'file_export'],
       maxCostPerTaskUsd: 10,
@@ -229,7 +231,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Content Creator',
     role: 'Blog posts, social copy, video scripts, email newsletters',
     team: 'marketing',
-    model_id: assignedModel('content_creator', 'gemini-2.5-flash'),
+    model_id: assignedModel('content_creator'),
     config: makeConfig({
       tools: ['file_system', 'browser', 'supabase_read', 'file_export'],
       maxCostPerTaskUsd: 2,
@@ -241,7 +243,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Social Media Manager',
     role: 'Content scheduling, engagement monitoring, metrics reporting',
     team: 'marketing',
-    model_id: assignedModel('social_manager', 'gemini-2.5-flash'),
+    model_id: assignedModel('social_manager'),
     config: makeConfig({
       tools: ['browser', 'supabase_read', 'email', 'file_export'],
       maxCostPerTaskUsd: 1,
@@ -256,7 +258,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Ops Agent',
     role: 'System monitoring, uptime checks, incident response',
     team: 'ops',
-    model_id: assignedModel('ops', 'gemini-2.5-flash'),
+    model_id: assignedModel('ops'),
     config: makeConfig({
       tools: ['supabase_read', 'supabase_write_events', 'shell_readonly', 'telegram_notify'],
       maxCostPerTaskUsd: 1,
@@ -270,7 +272,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Finance Agent',
     role: 'API cost tracking, budget alerts, monthly reports',
     team: 'ops',
-    model_id: assignedModel('finance', 'gpt-5.4'),
+    model_id: assignedModel('finance'),
     config: makeConfig({
       tools: ['supabase_read', 'supabase_write_events', 'email', 'telegram_notify', 'file_export'],
       maxCostPerTaskUsd: 2,
@@ -285,7 +287,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'HR Agent',
     role: 'Agent documentation, role definitions, process docs',
     team: 'ops',
-    model_id: assignedModel('hr', 'gemini-2.5-flash'),
+    model_id: assignedModel('hr'),
     config: makeConfig({
       tools: ['file_system', 'supabase_read', 'supabase_write_events', 'file_export'],
       maxCostPerTaskUsd: 2,
@@ -299,7 +301,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Executive Summary Agent',
     role: 'Transform long documents, agent outputs, and reports into concise actionable summaries',
     team: 'ops',
-    model_id: assignedModel('executive_summary', 'glm-4.5-air'),
+    model_id: assignedModel('executive_summary'),
     config: makeConfig({
       tools: ['file_system', 'supabase_read', 'file_export'],
       maxCostPerTaskUsd: 2,
@@ -311,7 +313,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Feedback Synthesizer',
     role: 'Analyze feedback from clients and users, identify patterns, priority scores, and action items',
     team: 'consulting',
-    model_id: assignedModel('feedback_synthesizer', 'nemotron-120b'),
+    model_id: assignedModel('feedback_synthesizer'),
     config: makeConfig({
       tools: ['file_system', 'supabase_read', 'file_export'],
       maxCostPerTaskUsd: 5,
@@ -323,7 +325,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Security Auditor',
     role: 'Analyze code, infrastructure, and dependencies for security vulnerabilities and OWASP Top 10',
     team: 'ops',
-    model_id: assignedModel('security_auditor', 'nemotron-120b'),
+    model_id: assignedModel('security_auditor'),
     config: makeConfig({
       tools: ['file_system', 'supabase_read', 'shell_readonly', 'file_export'],
       maxCostPerTaskUsd: 10,
@@ -338,7 +340,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'API Tester',
     role: 'Test API endpoints for authentication, edge cases, contract testing, and response validation',
     team: 'dev',
-    model_id: assignedModel('api_tester', 'nemotron-120b'),
+    model_id: assignedModel('api_tester'),
     config: makeConfig({
       tools: ['file_system', 'supabase_read', 'shell_readonly', 'file_export'],
       maxCostPerTaskUsd: 5,
@@ -351,7 +353,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'DB Optimizer',
     role: 'Review DB schema, query performance, missing indexes, and N+1 query patterns',
     team: 'dev',
-    model_id: assignedModel('db_optimizer', 'nemotron-120b'),
+    model_id: assignedModel('db_optimizer'),
     config: makeConfig({
       tools: ['supabase_read', 'file_system', 'file_export'],
       maxCostPerTaskUsd: 5,
@@ -364,7 +366,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Legal Compliance Agent',
     role: 'Review contracts, GDPR compliance, privacy policies, and terms of service — analysis only, not legal advice',
     team: 'ops',
-    model_id: assignedModel('legal_compliance', 'nemotron-120b'),
+    model_id: assignedModel('legal_compliance'),
     config: makeConfig({
       tools: ['file_system', 'supabase_read', 'file_export'],
       maxCostPerTaskUsd: 10,
@@ -377,7 +379,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Proposal Strategist',
     role: 'Build complete commercial proposals with executive summary, scope, tiered pricing, and ROI',
     team: 'consulting',
-    model_id: assignedModel('proposal_strategist', 'nemotron-120b'),
+    model_id: assignedModel('proposal_strategist'),
     config: makeConfig({
       tools: ['file_system', 'supabase_read', 'file_export'],
       maxCostPerTaskUsd: 10,
@@ -390,7 +392,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     name: 'Behavioral Coach',
     role: 'Personal habit tracker, accountability check-ins, and productivity nudges for Neb via Telegram',
     team: 'ops',
-    model_id: assignedModel('behavioral_coach', 'glm-4.5-air'),
+    model_id: assignedModel('behavioral_coach'),
     config: makeConfig({
       tools: ['supabase_read', 'telegram_notify'],
       maxCostPerTaskUsd: 1,
