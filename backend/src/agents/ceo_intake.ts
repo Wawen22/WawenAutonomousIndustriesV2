@@ -63,7 +63,7 @@ import { loadAllWorkspaceContext } from './software_delivery_utils.js'
 import { runCeoAgent } from './ceo.js'
 import { runQaAgent } from './qa.js'
 import { createAgentMemory } from '../services/memory.js'
-import { ingestNote, ingestUrl as ingestKnowledgeUrl, searchKnowledge } from '../services/knowledge.js'
+import { ingestNote, ingestUrl as ingestKnowledgeUrl, listKnowledgeItems, searchKnowledge } from '../services/knowledge.js'
 import type { Client, DeliveryConfig, Payment, Project, ProjectType, SystemEvent, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -939,6 +939,7 @@ function buildFounderDailyBriefReport(input: {
   inboxSummary: string
   calendarSummary: string
   recentDriveSummary: string
+  recentKnowledgeSummary?: string
   generatedAt?: Date
 }): string {
   const generatedAt = input.generatedAt ?? new Date()
@@ -963,6 +964,10 @@ function buildFounderDailyBriefReport(input: {
     '',
     input.recentDriveSummary.trim() || 'No recent Drive activity available.',
   ]
+
+  if (input.recentKnowledgeSummary) {
+    sections.push('', '## Second Brain — Recent Items', '', input.recentKnowledgeSummary.trim())
+  }
 
   return sections.join('\n').trim()
 }
@@ -1601,6 +1606,19 @@ async function executeAction(
           ? `No Drive files modified in the last ${driveDays} days.`
           : driveResult.text
 
+        // Second Brain: surface the 5 most recently saved items
+        let recentKnowledgeSummary: string | undefined
+        try {
+          const knowledgeItems = await listKnowledgeItems('neb', { limit: 5 })
+          if (knowledgeItems.length > 0) {
+            recentKnowledgeSummary = knowledgeItems
+              .map((item) => `- **${item.title}** *(${item.source_type}, ${item.created_at.slice(0, 10)})*`)
+              .join('\n')
+          }
+        } catch {
+          // non-fatal: brief still works without knowledge section
+        }
+
         const title = `Daily Founder Brief — ${new Date().toISOString().slice(0, 10)}`
         const report = buildFounderDailyBriefReport({
           founderName: personalContext.profile.displayName,
@@ -1610,6 +1628,7 @@ async function executeAction(
           inboxSummary,
           calendarSummary,
           recentDriveSummary: truncateReplyText(driveSummary, 3000),
+          ...(recentKnowledgeSummary ? { recentKnowledgeSummary } : {}),
         })
 
         const exportResult = await executeTool('file_export', {
