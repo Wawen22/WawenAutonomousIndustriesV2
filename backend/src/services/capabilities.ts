@@ -24,6 +24,7 @@ import { getPersonalAutomationStatus } from './personal-automation.js'
 import { getCapabilityEvents } from './supabase.js'
 import { isPinchTabAvailable } from './pinchtab.js'
 import { isPlaywrightBrowserAvailable } from './document-generator.js'
+import { checkSecondBrainHealth, getKnowledgeItemCount } from './knowledge.js'
 import { getPersonalWorkspacePath, getWorkspaceRoot } from './workspace.js'
 
 const DEFAULT_OWNER_SLUG = 'neb'
@@ -553,13 +554,15 @@ function deriveAuditFromEvents(
 
 export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistrySnapshot> {
   const generatedAt = new Date().toISOString()
-  const [mcpBridgeStatus, googleWorkspaceRuntime, automationStatus, recentEvents, pinchTabAvailable, playwrightBrowserAvailable] = await Promise.all([
+  const [mcpBridgeStatus, googleWorkspaceRuntime, automationStatus, recentEvents, pinchTabAvailable, playwrightBrowserAvailable, secondBrainHealth, secondBrainCount] = await Promise.all([
     getMcpBridgeStatus(),
     getGoogleWorkspaceMcpRuntimeStatus(DEFAULT_OWNER_SLUG),
     getPersonalAutomationStatus(DEFAULT_OWNER_SLUG),
     getCapabilityEvents({ limit: 200 }),
     isPinchTabAvailable(),
     Promise.resolve(isPlaywrightBrowserAvailable()),
+    checkSecondBrainHealth().catch(() => ({ ok: false as const, error: 'health check failed', embeddingMode: 'hash' as const })),
+    getKnowledgeItemCount('neb').catch(() => 0),
   ])
 
   const gmailConnector = findConnector(mcpBridgeStatus.connectors, 'gmail')
@@ -1606,6 +1609,50 @@ export async function getCapabilityRegistrySnapshot(): Promise<CapabilityRegistr
       audit: baseAudit({
         capabilityId: 'tool.document_generation',
         summary: 'PDF document generation — enables client-ready proposal and report output from agent markdown.',
+      }),
+    },
+    {
+      capability: baseCapability({
+        id: 'personal.second_brain',
+        type: 'memory_provider',
+        label: 'Second Brain',
+        description: 'Personal knowledge base for ingesting notes, URLs, and files with semantic search via pgvector.',
+        owner: DEFAULT_OWNER_SLUG,
+        runtimeTarget: 'personal',
+        riskLevel: 'low',
+        tags: ['knowledge', 'memory', 'search', 'personal'],
+        usageInstructions: 'From Telegram: "ricorda: <text>", "salva url <url>", "cosa so su <query>". From Dashboard: Personal HQ → Second Brain tab.',
+        examples: [
+          'ricorda: la riunione con Acme è ogni giovedì mattina',
+          'salva url https://example.com/article',
+          'cosa so su competitor pricing?',
+        ],
+      }),
+      assignments: [
+        runtimeAssignment('personal.second_brain', 'personal', 'Personal Runtime (neb)', 'personal'),
+        agentAssignment('personal.second_brain', 'ceo', 'personal'),
+      ],
+      policy: basePolicy({
+        capabilityId: 'personal.second_brain',
+        mode: 'open',
+        notes: 'Personal knowledge base — accessible only to neb runtime.',
+      }),
+      health: baseHealth({
+        capabilityId: 'personal.second_brain',
+        state: !secondBrainHealth.ok ? 'failing' : secondBrainHealth.embeddingMode === 'llm' ? 'connected' : 'degraded',
+        label: !secondBrainHealth.ok ? 'DB Error' : secondBrainHealth.embeddingMode === 'llm' ? 'Connected' : 'Hash Fallback',
+        message: !secondBrainHealth.ok
+          ? `DB error: ${secondBrainHealth.error ?? 'unknown'}`
+          : secondBrainHealth.embeddingMode === 'llm'
+            ? `LLM semantic embeddings active (text-embedding-3-small). Items: ${String(secondBrainCount)}.`
+            : `Local hash embeddings active (LiteLLM unavailable). Items: ${String(secondBrainCount)}.`,
+        checkedAt: generatedAt,
+        freshness: 'fresh',
+        reasonCode: !secondBrainHealth.ok ? 'supabase_error' : secondBrainHealth.embeddingMode === 'llm' ? 'llm_embeddings_active' : 'hash_fallback_active',
+      }),
+      audit: baseAudit({
+        capabilityId: 'personal.second_brain',
+        summary: 'Personal knowledge base — notes, URLs, files with semantic search.',
       }),
     },
   ]

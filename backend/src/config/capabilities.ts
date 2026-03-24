@@ -8,6 +8,7 @@ export const DAILY_FOUNDER_BRIEF_AUTOMATION_CAPABILITY_ID = 'skill.founder.daily
 export const PERSONAL_WORKSPACE_CONTEXT_CAPABILITY_ID = 'memory.personal_workspace_context'
 export const PINCHTAB_CAPABILITY_ID = 'plugin.pinchtab'
 export const DOCUMENT_GENERATION_CAPABILITY_ID = 'tool.document_generation'
+export const SECOND_BRAIN_CAPABILITY_ID = 'personal.second_brain'
 
 export function getFounderQuickActionCapabilityId(
   actionId: PersonalAssistantQuickActionId,
