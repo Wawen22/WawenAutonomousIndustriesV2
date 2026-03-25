@@ -39,6 +39,12 @@ interface DevImplementationOutput {
   acceptanceChecklist: string[]
   testingNotes: string[]
   handoffNotes: string[]
+  shellCommands?: Array<{
+    command: string
+    reason: string
+    cwd?: string
+    blocking?: boolean
+  }>
 }
 
 function parseRelativeWorkspacePath(relPath: string): string | null {
@@ -109,6 +115,23 @@ function parseImplementation(raw: string): DevImplementationOutput | null {
   const normalize = (items: unknown[]): string[] =>
     items.filter((item): item is string => typeof item === 'string' && item.length > 0)
 
+  type ShellCmd = NonNullable<DevImplementationOutput['shellCommands']>[number]
+  const shellCommands: ShellCmd[] | undefined = Array.isArray(parsed['shellCommands'])
+    ? (parsed['shellCommands'] as unknown[])
+        .map((item): ShellCmd | null => {
+          if (typeof item !== 'object' || item === null) return null
+          const cmd = item as Record<string, unknown>
+          if (typeof cmd['command'] !== 'string' || typeof cmd['reason'] !== 'string') return null
+          return {
+            command: cmd['command'],
+            reason: cmd['reason'],
+            ...(typeof cmd['cwd'] === 'string' ? { cwd: cmd['cwd'] } : {}),
+            ...(typeof cmd['blocking'] === 'boolean' ? { blocking: cmd['blocking'] } : {}),
+          }
+        })
+        .filter((item): item is ShellCmd => item !== null)
+    : undefined
+
   return {
     title,
     summary,
@@ -118,6 +141,7 @@ function parseImplementation(raw: string): DevImplementationOutput | null {
     acceptanceChecklist: normalize(acceptanceChecklist as unknown[]),
     testingNotes: normalize(testingNotes as unknown[]),
     handoffNotes: normalize(handoffNotes as unknown[]),
+    ...(shellCommands !== undefined ? { shellCommands } : {}),
   }
 }
 
@@ -368,14 +392,25 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
   "implementationSteps": ["<step 1>", "<step 2>", "<step 3>"],
   "acceptanceChecklist": ["<item 1>", "<item 2>"],
   "testingNotes": ["<test or validation note 1>", "<test or validation note 2>"],
-  "handoffNotes": ["<handoff item 1>", "<handoff item 2>"]
+  "handoffNotes": ["<handoff item 1>", "<handoff item 2>"],
+  "shellCommands": [
+    {
+      "command": "<shell command, e.g., npm install package-name>",
+      "reason": "<why this is needed>",
+      "blocking": true
+    }
+  ]
 }
 
 Constraints:
 - Be specific about code areas, validations, and handoff expectations.
 - Assume the WAI stack is Node.js 22 + TypeScript strict + React/Vite/Tailwind unless the task context says otherwise.
 - When repo context is present, prefer exact repo-relative file paths in filesToTouch.
-- Do not invent completed work; produce a concrete implementation brief the team can execute immediately.`
+- RESPECT THE REPO: Check the repo context. If "src/" exists, ALL your code goes in "src/". If "app/" exists, match that. Do not create duplicate roots.
+- Do not invent completed work; produce a concrete implementation brief the team can execute immediately.
+- TERMINAL: You MUST include real terminal commands in "shellCommands" to install dependencies, run builds, or execute tests.
+- NO PLACEHOLDERS: Never output "placeholder" results. Perform REAL work or report a blocker.
+- VISION: If you need to verify the UI, mention it in testingNotes.`
 
   const userMessage = [
     `Epic: ${epic}`,
@@ -455,6 +490,7 @@ Constraints:
         technicalApproach ? `Technical approach: ${technicalApproach}` : '',
         techStack.length > 0 ? `Tech stack: ${techStack.join(', ')}` : '',
         acceptanceCriteria.length > 0 ? `Acceptance criteria: ${acceptanceCriteria.join(' | ')}` : '',
+        ...(implementation.shellCommands ? [`Shell commands planned: ${JSON.stringify(implementation.shellCommands)}`] : []),
       ].filter(Boolean),
       ...(repoLocalPath ? { repoLocalPath } : {}),
     })

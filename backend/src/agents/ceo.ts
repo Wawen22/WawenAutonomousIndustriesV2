@@ -17,6 +17,9 @@ import { runContentCreatorAgent } from './content_creator.js'
 import { runSocialManagerAgent } from './social_manager.js'
 import { runArchitectAgent } from './architect.js'
 import { runDevGeneralAgent } from './dev_general.js'
+import { runDevOpsEngineerAgent } from './devops_engineer.js'
+import { runAiEngineerAgent } from './ai_engineer.js'
+import { runAutomationSpecialistAgent } from './automation_specialist.js'
 import { runQaAgent } from './qa.js'
 import { runOpsAgent } from './ops.js'
 import { runFinanceAgent } from './finance.js'
@@ -41,10 +44,8 @@ Available agents:
 - dev_lead_saas   – Dev Lead SaaS: technical planning, sprint planning, subtask breakdown
 - dev_saas_1      – Developer SaaS #1: code implementation, tests, PRs
 - dev_saas_2      – Developer SaaS #2: boilerplate, docs, simple features
-- architect       – Architect: system design, repo-aware planning, execution architecture for website/app/automation/custom software delivery — USE THIS for client software projects that are not SaaS
-- dev_general_1   – Developer General #1: implementation, refactoring, debugging
-- dev_general_2   – Developer General #2: simple implementations, boilerplate
-- qa              – QA Agent: quality gate, release review, bug reports
+- architect            – Architect: system design, repo-aware planning, execution architecture for website/app/automation/custom software delivery — USE THIS for client software projects that are not SaaS; it will orchestrate devops_engineer, dev_general, and ai_engineer automatically
+- qa                   – QA Agent: quality gate, release review, bug reports
 - consulting_lead – Consulting Lead: client proposals, scope definition, consulting delivery pipeline — USE THIS for any client project task, consulting work, or proposal creation
 - analyst         – Analyst: market research, data gathering, competitive analysis, reports — USE THIS for standalone analysis tasks without a consulting proposal
 - marketing_strategist – Marketing Strategist: campaigns, funnels, positioning, content plans — USE THIS for project-scoped marketing, content, copywriting, launch or growth work
@@ -185,7 +186,7 @@ Routing hints:
 - If the task is for saas delivery, prefer pm_saas or dev_lead_saas unless it is clearly a single worker task.
 - If the task is for a client website, app, automation, portal, dashboard, internal tool, integration, or custom software project, prefer architect unless it is explicitly QA-only or a direct follow-up for a specific dev_general worker.
 - If the task is for marketing, content, copywriting, design, launches, funnels, or audience growth, prefer marketing_strategist for coordinated delivery. Use content_creator or social_manager directly only for clearly standalone execution.
-- CRITICAL OVERRIDE: If the task involves CREATING A FILE or WRITING CODE (HTML, CSS, JS, script, page, report file, PDF generator, dashboard, etc.) — regardless of project type — always prefer architect or dev_general_1. The type of work (implementation) overrides the project domain.
+- CRITICAL OVERRIDE: If the task involves CREATING A FILE or WRITING CODE (HTML, CSS, JS, script, page, report file, PDF generator, dashboard, etc.) — regardless of project type — always prefer architect. The type of work (implementation) overrides the project domain. Architect will orchestrate devops_engineer, dev_general, and ai_engineer automatically.
 - CRITICAL OVERRIDE: If the task says "usa i contenuti esistenti", "usa i deliverable", "prendi quello che hai fatto", "crea una pagina da", "generate from existing" — the workspace context below may list those files. Read it and route to architect who can read and use them.
 - If workspace context lists existing deliverables (marketing plans, analysis, proposals, etc.) and the task is to CREATE SOMETHING FROM them, always prefer architect.
 - If the task asks to summarize, condense, or make a brief of a document, meeting, or report, prefer executive_summary.
@@ -327,10 +328,26 @@ Analyze and delegate to the most appropriate agent.`
       void runArchitectAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'Architect Agent failed')
       })
-    } else if (delegation.delegateTo === 'dev_general_1' || delegation.delegateTo === 'dev_general_2') {
-      const workerAgentId = delegation.delegateTo
+    } else if (delegation.delegateTo === 'devops_engineer') {
+      void runDevOpsEngineerAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'DevOps Engineer Agent failed')
+      })
+    } else if (
+      delegation.delegateTo === 'dev_general' ||
+      delegation.delegateTo === 'dev_general_1' || // backward compat
+      delegation.delegateTo === 'dev_general_2'    // backward compat
+    ) {
+      const assigneeId = delegation.delegateTo
       void runDevGeneralAgent(subtask, notify).catch((err: unknown) => {
-        log.error({ err, subtaskId: subtask.id, assignee: workerAgentId }, 'Dev General Agent failed')
+        log.error({ err, subtaskId: subtask.id, assignee: assigneeId }, 'Dev General Agent failed')
+      })
+    } else if (delegation.delegateTo === 'ai_engineer') {
+      void runAiEngineerAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'AI Engineer Agent failed')
+      })
+    } else if (delegation.delegateTo === 'automation_specialist') {
+      void runAutomationSpecialistAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Automation Specialist Agent failed')
       })
     } else if (delegation.delegateTo === 'qa') {
       void runQaAgent(subtask, notify).catch((err: unknown) => {

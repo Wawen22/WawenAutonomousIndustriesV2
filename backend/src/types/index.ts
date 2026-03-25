@@ -213,6 +213,9 @@ export type EventType =
   | 'ops_alert'
   | 'finance_report_generated'
   | 'hr_digest_generated'
+  | 'agent_loop_step'
+  | 'task_unblocked_by_devops'
+  | 'qa_gate_activated'
 
 export interface SystemEvent {
   id: string

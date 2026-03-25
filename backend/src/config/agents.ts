@@ -100,7 +100,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'saas',
     model_id: assignedModel('dev_saas_1'),
     config: makeConfig({
-      tools: ['github', 'shell', 'vercel', 'supabase_read', 'file_system'],
+      tools: ['github', 'shell', 'vercel', 'supabase_read', 'file_system', 'screenshot'],
       maxCostPerTaskUsd: 10,
       thinkingLevel: 'medium',
       canUseShell: true,
@@ -139,29 +139,58 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     }),
   },
 
-  dev_general_1: {
-    id: 'dev_general_1',
-    name: 'Developer General #1',
-    role: 'Implementation, refactoring, debugging',
+  devops_engineer: {
+    id: 'devops_engineer',
+    name: 'DevOps Engineer',
+    role: 'Project scaffold, dependency install, CI/CD setup, build verification',
     team: 'dev',
-    model_id: assignedModel('dev_general_1'),
+    model_id: assignedModel('devops_engineer'),
     config: makeConfig({
-      tools: ['github', 'shell', 'file_system', 'supabase_read'],
+      tools: ['shell', 'file_system', 'github', 'supabase_read'],
       maxCostPerTaskUsd: 10,
       canUseShell: true,
       canUseGitHub: true,
     }),
   },
 
-  dev_general_2: {
-    id: 'dev_general_2',
-    name: 'Developer General #2',
-    role: 'Simple implementations, boilerplate',
+  dev_general: {
+    id: 'dev_general',
+    name: 'Developer General',
+    role: 'Full application implementation, refactoring, debugging, tests',
     team: 'dev',
-    model_id: assignedModel('dev_general_2'),
+    model_id: assignedModel('dev_general'),
     config: makeConfig({
-      tools: ['github', 'shell', 'file_system'],
-      maxCostPerTaskUsd: 3,
+      tools: ['github', 'shell', 'file_system', 'supabase_read', 'screenshot'],
+      maxCostPerTaskUsd: 10,
+      canUseShell: true,
+      canUseGitHub: true,
+    }),
+  },
+
+  ai_engineer: {
+    id: 'ai_engineer',
+    name: 'AI Engineer',
+    role: 'LLM integrations, prompt engineering, RAG pipelines, vector search, embeddings',
+    team: 'dev',
+    model_id: assignedModel('ai_engineer'),
+    config: makeConfig({
+      tools: ['shell', 'file_system', 'github', 'supabase_read'],
+      maxCostPerTaskUsd: 10,
+      thinkingLevel: 'high',
+      canUseShell: true,
+      canUseGitHub: true,
+    }),
+  },
+
+  automation_specialist: {
+    id: 'automation_specialist',
+    name: 'Automation Specialist',
+    role: 'Workflow automations, n8n/Zapier/Make integrations, webhooks, data pipelines',
+    team: 'dev',
+    model_id: assignedModel('automation_specialist'),
+    config: makeConfig({
+      tools: ['shell', 'file_system', 'github', 'supabase_read', 'browser'],
+      maxCostPerTaskUsd: 10,
       canUseShell: true,
       canUseGitHub: true,
     }),
@@ -174,8 +203,9 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     team: 'dev',
     model_id: assignedModel('qa'),
     config: makeConfig({
-      tools: ['shell', 'github', 'supabase_read'],
-      maxCostPerTaskUsd: 2,
+      tools: ['shell', 'github', 'supabase_read', 'screenshot'],
+      maxCostPerTaskUsd: 5,
+      thinkingLevel: 'high',
       canUseShell: true,
       canUseGitHub: true,
     }),

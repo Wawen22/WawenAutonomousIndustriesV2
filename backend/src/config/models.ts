@@ -110,6 +110,17 @@ export const MODELS: Record<string, ModelConfig & { litellm_model_name: string }
     is_active: true,
     notes: 'Free via OpenRouter — keep only for manual tests; revisit when GLM 4.7/5 coding options are validated',
   },
+  'minimax-m2.7': {
+    id: 'minimax-m2.7',
+    provider: 'openrouter',
+    display_name: 'MiniMax M2.7',
+    litellm_model_name: 'minimax-m2.7',
+    cost_per_1k_input_tokens: 0.0008,
+    cost_per_1k_output_tokens: 0.0032,
+    context_window: 1000000,
+    is_active: true,
+    notes: 'Via OpenRouter (minimax/minimax-m2.7) — 1M context, strong coding; assigned to architect and all dev agents',
+  },
 }
 
 // ---------------------------------------------------------------------------
@@ -127,11 +138,13 @@ export const AGENT_MODEL_DEFAULTS: Record<string, string> = {
   dev_saas_1: 'nemotron-120b',
   dev_saas_2: 'nemotron-120b',
 
-  // Team Dev — coding → nemotron-120b
-  architect: 'nemotron-120b',
-  dev_general_1: 'nemotron-120b',
-  dev_general_2: 'nemotron-120b',
-  qa: 'nemotron-120b',
+  // Team Dev — coding → minimax-m2.7 (1M context, strong at code generation)
+  architect: 'minimax-m2.7',
+  devops_engineer: 'minimax-m2.7',
+  dev_general: 'minimax-m2.7',
+  ai_engineer: 'minimax-m2.7',
+  automation_specialist: 'minimax-m2.7',
+  qa: 'minimax-m2.7',
 
   // Team Consulting — analysis → nemotron-120b
   consulting_lead: 'nemotron-120b',

@@ -24,12 +24,21 @@ import { getToolsForAgent, validateToolEnvVars } from '../tools/index.js'
 import { ensurePersonalProfile } from './personal-context.js'
 import { recordCapabilityEvent } from './logger.js'
 import { generatePdfFromHtml, markdownToPdfHtml } from './document-generator.js'
+import { captureScreenshot } from './screenshot.js'
 
-export type ExecutableToolId = 'file_export' | 'email' | 'web_search'
+export type ExecutableToolId = 'file_export' | 'email' | 'web_search' | 'screenshot'
 
 export interface ToolExecutionContext {
   agentId: string
   taskId?: string
+}
+
+export interface ScreenshotToolInput {
+  url: string
+  filename?: string
+  clientSlug?: string
+  projectSlug?: string
+  workspacePath?: string
 }
 
 export interface FileExportInput {
@@ -240,9 +249,53 @@ async function executeWebSearchTool(input: WebSearchToolInput): Promise<ToolExec
   }
 }
 
+async function executeScreenshotTool(input: ScreenshotToolInput): Promise<ToolExecutionResult> {
+  const url = input.url.trim()
+  if (!url) {
+    throw new Error('screenshot requires a non-empty url')
+  }
+
+  const filename = input.filename?.trim() || `screenshot-${Date.now()}.png`
+  const { absoluteDir, relativeDir } = await resolveOutputDirectory({
+    content: '',
+    filename,
+    ...(input.clientSlug !== undefined ? { clientSlug: input.clientSlug } : {}),
+    ...(input.projectSlug !== undefined ? { projectSlug: input.projectSlug } : {}),
+    ...(input.workspacePath !== undefined ? { workspacePath: input.workspacePath } : {}),
+  })
+
+  await mkdir(absoluteDir, { recursive: true })
+  const absolutePath = join(absoluteDir, filename)
+  const relativePath = `${relativeDir}/${filename}`.replace(/\\/g, '/')
+
+  const result = await captureScreenshot(url, absolutePath)
+  if (!result.ok) {
+    throw new Error(`Screenshot failed: ${result.error}`)
+  }
+
+  await recordCapabilityEvent({
+    capability_id: 'research.browser_screenshot',
+    event_type: 'used',
+    actor_type: 'agent',
+    source: 'tool-executor:screenshot',
+    summary: `Screenshot captured: ${url}`,
+    payload: {
+      url,
+      relative_path: relativePath,
+    },
+  })
+
+  return {
+    toolId: 'screenshot',
+    summary: `Screenshot catturato per ${url} salvato in \`${relativePath}\``,
+    relativePath,
+    absolutePath,
+  }
+}
+
 export async function executeTool(
   toolId: ExecutableToolId,
-  input: FileExportInput | EmailToolInput | WebSearchToolInput,
+  input: FileExportInput | EmailToolInput | WebSearchToolInput | ScreenshotToolInput,
   context: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
   await assertToolAccess(context.agentId, toolId)
@@ -253,14 +306,18 @@ export async function executeTool(
     ? `${toolId} ${(input as FileExportInput).filename ?? (input as FileExportInput).title ?? 'document'}`
     : toolId === 'email'
       ? `${toolId} ${(input as EmailToolInput).subject ?? 'message'}`
-      : `${toolId} ${(input as WebSearchToolInput).query ?? 'query'}`
+      : toolId === 'web_search'
+        ? `${toolId} ${(input as WebSearchToolInput).query ?? 'query'}`
+        : `${toolId} ${(input as ScreenshotToolInput).url ?? 'url'}`
 
   try {
     const result = toolId === 'file_export'
       ? await executeFileExport(input as FileExportInput)
       : toolId === 'email'
         ? await executeEmailTool(input as EmailToolInput)
-        : await executeWebSearchTool(input as WebSearchToolInput)
+        : toolId === 'web_search'
+          ? await executeWebSearchTool(input as WebSearchToolInput)
+          : await executeScreenshotTool(input as ScreenshotToolInput)
 
     await recordRun({
       agent_id: context.agentId,

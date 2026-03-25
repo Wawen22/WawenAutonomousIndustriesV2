@@ -13,6 +13,7 @@ import {
   createClient,
   createProject,
   createTask,
+  findClientFuzzy,
   getClientBySlug,
   getClients,
   getInProgressTasksByProject,
@@ -1670,9 +1671,9 @@ async function executeAction(
       const email = getString(params, 'email')
       const slug = slugify(name)
 
-      const existing = await getClientBySlug(slug)
+      const existing = await findClientFuzzy(slug)
       if (existing) {
-        return `⚠️ Cliente *${existing.name}* già esistente (\`${slug}\`) — uso quello esistente`
+        return `⚠️ Cliente *${existing.name}* già esistente (\`${existing.slug}\`) — uso quello esistente`
       }
 
       const client = await createClient({ name, slug, email })
@@ -1695,7 +1696,7 @@ async function executeAction(
       if (!clientSlug) throw new Error('client_slug mancante per create_project')
       if (!projectName) throw new Error('project_name mancante per create_project')
 
-      const client = await getClientBySlug(clientSlug)
+      const client = await findClientFuzzy(clientSlug)
       if (!client) throw new Error(`Cliente \`${clientSlug}\` non trovato`)
 
       const type: ProjectType = PROJECT_TYPES.includes(projectTypeRaw as ProjectType)
@@ -1740,7 +1741,7 @@ async function executeAction(
       if (!projectSlug) throw new Error('project_slug mancante per write_brief')
       if (!briefText) throw new Error('brief_text mancante per write_brief')
 
-      const client = await getClientBySlug(clientSlug)
+      const client = await findClientFuzzy(clientSlug)
       if (!client) throw new Error(`Cliente \`${clientSlug}\` non trovato`)
 
       const project = await getProjectBySlug(client.id, projectSlug)
@@ -1769,7 +1770,7 @@ async function executeAction(
       if (!projectSlug) throw new Error('project_slug mancante per update_brief')
       if (!updateText) throw new Error('update_text mancante per update_brief')
 
-      const client = await getClientBySlug(clientSlug)
+      const client = await findClientFuzzy(clientSlug)
       if (!client) throw new Error(`Cliente \`${clientSlug}\` non trovato`)
 
       const project = await getProjectBySlug(client.id, projectSlug)
@@ -1812,7 +1813,7 @@ async function executeAction(
       let clientObj: Client | null = null
 
       if (clientSlug) {
-        clientObj = await getClientBySlug(clientSlug)
+        clientObj = await findClientFuzzy(clientSlug)
         if (!clientObj) throw new Error(`Cliente \`${clientSlug}\` non trovato`)
 
         if (projectSlug) {

@@ -37,6 +37,7 @@ These are the documents that should cover almost all day-to-day needs.
 ### 3. Technical handbook
 
 - [ARCHITECTURE.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/ARCHITECTURE.md)
+- [SUPERPOWERS.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/SUPERPOWERS.md)
 - [CAPABILITY_PLATFORM_AND_OPENCLAW_PLAN.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/CAPABILITY_PLATFORM_AND_OPENCLAW_PLAN.md)
 - [AGENTS_AND_TEAMS.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/AGENTS_AND_TEAMS.md)
 - [SUPABASE_SCHEMA.md](/home/rnebili/Progetti/NEB/WAI%20V2/docs/SUPABASE_SCHEMA.md)

@@ -7,7 +7,8 @@ import { getProjectWorkspacePath } from '../services/workspace.js'
 import { buildRepoContext } from './software_repo_runtime.js'
 import type { Task } from '../types/index.js'
 
-export const DEV_GENERAL_WORKERS = new Set(['dev_general_1', 'dev_general_2'])
+export const DEV_GENERAL_WORKERS = new Set(['dev_general'])
+export const DEV_WORKERS = new Set(['dev_general', 'devops_engineer', 'ai_engineer'])
 export const DEV_SAAS_WORKERS = new Set(['dev_saas_1', 'dev_saas_2'])
 
 function parseRelativeWorkspacePath(relPath: string): string | null {

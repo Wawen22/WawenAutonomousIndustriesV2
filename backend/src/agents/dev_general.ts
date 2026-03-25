@@ -19,7 +19,7 @@ import { log, recordEvent } from '../services/logger.js'
 import { appendProjectProgress } from '../services/workspace.js'
 import { runQaAgent } from './qa.js'
 import {
-  DEV_GENERAL_WORKERS,
+  DEV_WORKERS,
   getBlockedDependencyIds,
   getPendingDependencyIds,
   loadRepoContext,
@@ -28,7 +28,7 @@ import {
   sanitizeFilePart,
 } from './software_delivery_utils.js'
 import {
-  executeRepoImplementation,
+  executeAgenticLoop,
   executeWorkspaceFileCreation,
   renderRepoExecutionMarkdown,
 } from './software_repo_runtime.js'
@@ -44,6 +44,12 @@ interface DevGeneralOutput {
   acceptanceChecklist: string[]
   testingNotes: string[]
   handoffNotes: string[]
+  shellCommands?: Array<{
+    command: string
+    reason: string
+    cwd?: string
+    blocking?: boolean
+  }>
 }
 
 function normalizeStringArray(items: unknown): string[] {
@@ -70,6 +76,23 @@ function parseImplementation(raw: string): DevGeneralOutput | null {
     return null
   }
 
+  type ShellCmd = NonNullable<DevGeneralOutput['shellCommands']>[number]
+  const shellCommands: ShellCmd[] | undefined = Array.isArray(parsed['shellCommands'])
+    ? (parsed['shellCommands'] as unknown[])
+        .map((item): ShellCmd | null => {
+          if (typeof item !== 'object' || item === null) return null
+          const cmd = item as Record<string, unknown>
+          if (typeof cmd['command'] !== 'string' || typeof cmd['reason'] !== 'string') return null
+          return {
+            command: cmd['command'],
+            reason: cmd['reason'],
+            ...(typeof cmd['cwd'] === 'string' ? { cwd: cmd['cwd'] } : {}),
+            ...(typeof cmd['blocking'] === 'boolean' ? { blocking: cmd['blocking'] } : {}),
+          }
+        })
+        .filter((item): item is ShellCmd => item !== null)
+    : undefined
+
   return {
     title: parsed['title'],
     summary: parsed['summary'],
@@ -79,11 +102,12 @@ function parseImplementation(raw: string): DevGeneralOutput | null {
     acceptanceChecklist: normalizeStringArray(parsed['acceptanceChecklist']),
     testingNotes: normalizeStringArray(parsed['testingNotes']),
     handoffNotes: normalizeStringArray(parsed['handoffNotes']),
+    ...(shellCommands !== undefined ? { shellCommands } : {}),
   }
 }
 
-function taskTypeForAgent(agentId: string): TaskType {
-  return agentId === 'dev_general_1' ? 'dev_complex' : 'dev_simple'
+function taskTypeForAgent(_agentId: string): TaskType {
+  return 'dev_complex'
 }
 
 function implementationToMarkdown(
@@ -250,7 +274,7 @@ async function processDevGeneralFollowUps(
 
   for (const sibling of siblings) {
     if (sibling.id === task.id || sibling.status !== 'todo') continue
-    if (!sibling.assignee_agent_id || !DEV_GENERAL_WORKERS.has(sibling.assignee_agent_id)) continue
+    if (!sibling.assignee_agent_id || !DEV_WORKERS.has(sibling.assignee_agent_id)) continue
 
     const blockedDependencyIds = getBlockedDependencyIds(sibling, siblings)
     if (blockedDependencyIds.length > 0) {
@@ -298,7 +322,7 @@ async function processDevGeneralFollowUps(
 
   siblings = await getChildTasks(task.parent_task_id)
   const devTasks = siblings.filter((item) =>
-    item.assignee_agent_id ? DEV_GENERAL_WORKERS.has(item.assignee_agent_id) : false
+    item.assignee_agent_id ? DEV_WORKERS.has(item.assignee_agent_id) : false
   )
   const allDevTasksTerminal =
     devTasks.length > 0 && devTasks.every((item) => item.status === 'done' || item.status === 'blocked')
@@ -343,10 +367,7 @@ export async function runDevGeneralAgent(
   task: Task,
   notify: (message: string) => Promise<void>
 ): Promise<void> {
-  const agentId =
-    task.assignee_agent_id === 'dev_general_1' || task.assignee_agent_id === 'dev_general_2'
-      ? task.assignee_agent_id
-      : 'dev_general_1'
+  const agentId = task.assignee_agent_id ?? 'dev_general'
 
   log.info({ taskId: task.id, agentId, title: task.title }, 'Dev General Agent: starting')
 
@@ -404,14 +425,25 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
   "implementationSteps": ["<step 1>", "<step 2>", "<step 3>"],
   "acceptanceChecklist": ["<item 1>", "<item 2>"],
   "testingNotes": ["<test or validation note 1>", "<test or validation note 2>"],
-  "handoffNotes": ["<handoff item 1>", "<handoff item 2>"]
+  "handoffNotes": ["<handoff item 1>", "<handoff item 2>"],
+  "shellCommands": [
+    {
+      "command": "<shell command, e.g., npm install package-name>",
+      "reason": "<why this is needed>",
+      "blocking": true
+    }
+  ]
 }
 
 Constraints:
 - Be specific about implementation ownership, code areas, and validations.
 - Use the architecture plan and repo context when present.
 - When repo context is present, prefer exact repo-relative file paths in filesToTouch.
-- Do not claim completed coding work; produce an execution-ready implementation deliverable.`
+- RESPECT THE REPO: Check the repo context. If "src/" exists, ALL your code goes in "src/". If "app/" exists, match that. Do not create duplicate roots.
+- Do not claim completed coding work; produce an execution-ready implementation deliverable.
+- TERMINAL: You MUST include real terminal commands in "shellCommands" to install dependencies, run builds, or execute tests.
+- NO PLACEHOLDERS: Never output "placeholder" results. Perform REAL work or report a blocker.
+- VISION: If you need to verify the UI, mention it in testingNotes.`
 
   const userMessage = [
     `Client: ${clientName}`,
@@ -446,7 +478,7 @@ Constraints:
         agentId,
         taskId: task.id,
         taskType: taskTypeForAgent(agentId),
-        requiresComplex: agentId === 'dev_general_1',
+        requiresComplex: true,
         ...(projectId ? { projectId } : {}),
         ...(clientId ? { clientId } : {}),
       }
@@ -483,27 +515,22 @@ Constraints:
       )
     }
 
-    // Try repo-based execution first
-    const repoExecution = repoLocalPath ? await executeRepoImplementation({
-      agentId,
+    // Repo-based execution via agentic loop
+    const repoExecution = repoLocalPath ? await executeAgenticLoop({
       task,
-      taskType: taskTypeForAgent(agentId),
-      projectName,
-      clientName,
-      projectType,
-      taskDescription: task.description,
-      implementationTitle: implementation.title,
-      implementationSummary: implementation.summary,
-      implementationApproach: implementation.implementationApproach,
-      filesToTouch: implementation.filesToTouch,
-      testingNotes: implementation.testingNotes,
-      architecturePlanContent,
-      additionalContext: [
+      repoPath: repoLocalPath,
+      agentId,
+      agentRole: 'an expert software developer (Dev General). You implement custom software for clients, working on the main application logic, routes, components, business logic, and database integration.',
+      taskDescription: [
+        `Task: ${task.title}`,
+        task.description ? `Description: ${task.description}` : '',
+        `Project: ${projectName} | Client: ${clientName} | Type: ${projectType}`,
         solutionOverview ? `Solution overview: ${solutionOverview}` : '',
-        technicalApproach ? `Architect technical approach: ${technicalApproach}` : '',
+        technicalApproach ? `Technical approach: ${technicalApproach}` : '',
         implementationFocus ? `Implementation focus: ${implementationFocus}` : '',
-      ].filter(Boolean),
-      repoLocalPath,
+        acceptanceCriteria.length > 0 ? `Acceptance criteria:\n${acceptanceCriteria.map((c) => `- ${c}`).join('\n')}` : '',
+      ].filter(Boolean).join('\n'),
+      architecturePlan: architecturePlanContent ?? '',
     }) : null
 
     // If no repo: write actual output files directly into the workspace output/ dir

@@ -146,7 +146,6 @@ export async function upsertModelRecord(model: {
         cost_per_1k_output_tokens: model.cost_per_1k_output_tokens,
         is_active: model.is_active,
         notes: model.notes ?? null,
-        updated_at: new Date().toISOString(),
       },
       { onConflict: 'id', ignoreDuplicates: false }
     )
@@ -411,6 +410,51 @@ export async function getClientBySlug(slug: string): Promise<Client | null> {
   if (error?.code === 'PGRST116') return null
   if (error) throw new Error(`Failed to get client ${slug}: ${error.message}`)
   return data as Client
+}
+
+export async function findClientFuzzy(query: string): Promise<Client | null> {
+  // 1. Try exact slug match first
+  const exact = await getClientBySlug(query.toLowerCase())
+  if (exact) return exact
+
+  // 2. Load all clients for fuzzy matching
+  const allClients = await getClients()
+  if (allClients.length === 0) return null
+
+  const target = query.toLowerCase()
+  
+  // 3. Check for substring match (e.g. "neb" matches "nebili")
+  const substringMatch = allClients.find(c => 
+    c.slug.includes(target) || target.includes(c.slug) || 
+    c.name.toLowerCase().includes(target)
+  )
+  if (substringMatch) return substringMatch
+
+  // 4. Simple Levenshtein-like check (allow 1-2 char diff)
+  // Since we don't have a library, we do a simple char overlap check
+  for (const client of allClients) {
+    const source = client.slug.toLowerCase()
+    if (Math.abs(source.length - target.length) > 3) continue
+    
+    let diffs = 0
+    let i = 0, j = 0
+    while (i < source.length && j < target.length) {
+      if (source[i] !== target[j]) {
+        diffs++
+        // Try skipping char in either string to handle insertion/deletion
+        if (source[i+1] === target[j]) i++
+        else if (source[i] === target[j+1]) j++
+      }
+      i++
+      j++
+    }
+    
+    // Allow max 2 errors for short strings, 3 for long
+    const threshold = source.length > 6 ? 3 : 2
+    if (diffs <= threshold) return client
+  }
+
+  return null
 }
 
 export async function getClientById(id: string): Promise<Client | null> {

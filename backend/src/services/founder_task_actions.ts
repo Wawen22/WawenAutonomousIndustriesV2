@@ -19,6 +19,9 @@ import { runContentCreatorAgent } from '../agents/content_creator.js'
 import { runSocialManagerAgent } from '../agents/social_manager.js'
 import { runArchitectAgent } from '../agents/architect.js'
 import { runDevGeneralAgent } from '../agents/dev_general.js'
+import { runDevOpsEngineerAgent } from '../agents/devops_engineer.js'
+import { runAiEngineerAgent } from '../agents/ai_engineer.js'
+import { runAutomationSpecialistAgent } from '../agents/automation_specialist.js'
 import { resumeApprovedDeliveryGates, runQaAgent } from '../agents/qa.js'
 import { runOpsAgent } from '../agents/ops.js'
 import { runFinanceAgent } from '../agents/finance.js'
@@ -132,9 +135,19 @@ async function dispatchRetriedTask(
     case 'architect':
       await runArchitectAgent(task, notify)
       return
-    case 'dev_general_1':
-    case 'dev_general_2':
+    case 'devops_engineer':
+      await runDevOpsEngineerAgent(task, notify)
+      return
+    case 'dev_general':
+    case 'dev_general_1': // backward compat for existing tasks
+    case 'dev_general_2': // backward compat for existing tasks
       await runDevGeneralAgent(task, notify)
+      return
+    case 'ai_engineer':
+      await runAiEngineerAgent(task, notify)
+      return
+    case 'automation_specialist':
+      await runAutomationSpecialistAgent(task, notify)
       return
     case 'qa':
       await runQaAgent(task, notify)

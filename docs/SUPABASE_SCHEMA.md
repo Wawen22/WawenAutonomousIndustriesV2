@@ -33,7 +33,7 @@ Registry of all available LLM models.
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `text` PK | Model ID (e.g., `gpt-5.4`, `gemini-2.5-flash`) |
-| `provider` | `text` | `azure` \| `google` \| `local` \| `openai` |
+| `provider` | `text` | `azure` \| `google` \| `openai` \| `openrouter` \| `anthropic` \| `local` |
 | `display_name` | `text` | Human-readable name |
 | `cost_per_1k_input_tokens` | `numeric` | USD cost per 1K input tokens |
 | `cost_per_1k_output_tokens` | `numeric` | USD cost per 1K output tokens |

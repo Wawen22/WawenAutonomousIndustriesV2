@@ -3,15 +3,17 @@
 ## Agent Structure Overview
 
 ```
-CEO Agent (GPT-5.4)
+CEO Agent (nemotron-120b)
 ├── Team SaaS
-│   ├── PM_SaaS (GPT-5.4)
-│   ├── Dev Lead SaaS (GPT-5.4)
-│   └── Dev SaaS (GPT-5.4 / Gemini 2.5 Flash)
+│   ├── PM_SaaS (nemotron-120b)
+│   ├── Dev Lead SaaS (nemotron-120b)
+│   └── Dev SaaS (nemotron-120b)
 ├── Team Software Dev
-│   ├── Architect (GPT-5.4)
-│   ├── Dev General (GPT-5.4 / Gemini 2.5 Flash)
-│   └── QA (Gemini 2.5 Flash)
+│   ├── Architect (nemotron-120b)           ← orchestrates the 3 workers below
+│   ├── DevOps Engineer (nemotron-120b)     ← scaffold phase (always first)
+│   ├── Dev General (nemotron-120b)         ← application implementation
+│   ├── AI Engineer (nemotron-120b)         ← LLM/AI integrations (optional)
+│   └── QA (nemotron-120b)
 ├── Team Consulting
 │   ├── Consulting Lead (GPT-5.4)
 │   └── Analyst (GPT-5.4 / Gemini 2.5 Flash)
@@ -54,7 +56,7 @@ CEO Agent (GPT-5.4)
 
 ## Runtime Implementation Status
 
-All 25 agents are fully operational. The backend marks all agents as `online` at startup. All agents have a real runtime implementation — see the table below.
+All agents are fully operational. The backend marks all agents as `online` at startup. All agents have a real runtime implementation — see the table below.
 
 | Agent / Group | Registry Status | Runtime Status | Notes |
 |--------------|-----------------|----------------|-------|
@@ -64,8 +66,11 @@ All 25 agents are fully operational. The backend marks all agents as `online` at
 | `dev_saas_1`, `dev_saas_2` | configured | ✅ implemented | Worker runtime active; can read/edit linked repos, run defensive checks, and writes implementation + `repo-execution-*.md` deliverables |
 | `consulting_lead` | configured | ✅ implemented | Proposal delivery active |
 | `analyst` | configured | ✅ implemented | Analysis delivery active |
-| `architect` | configured | ✅ implemented | Architecture plan + worker orchestration active; reads real repo inventory/git status when linked |
-| `dev_general_1`, `dev_general_2` | configured | ✅ implemented | Worker runtime active; can read/edit linked repos, run defensive checks, and writes custom software + `repo-execution-*.md` deliverables |
+| `architect` | configured | ✅ implemented | Architecture plan + worker orchestration; creates devops_engineer, dev_general, ai_engineer tasks with explicit phase ordering |
+| `devops_engineer` | configured | ✅ implemented | **NEW** Agentic loop; scaffold phase — npm init, install deps, CI/CD, build verification; activates sibling dev tasks when done |
+| `dev_general` | configured | ✅ implemented | **REFACTORED** Agentic loop (iterative LLM→action→result); full application implementation with real shell/file access |
+| `ai_engineer` | configured | ✅ implemented | **NEW** Agentic loop; LLM/AI integrations, prompt engineering, RAG, embeddings, vector search |
+| `automation_specialist` | configured | ✅ implemented | **NEW** Agentic loop; workflow automations, n8n/Zapier/Make patterns, webhooks, data pipelines |
 | `qa` | configured | ✅ implemented | QA gate active; re-checks linked repo state, writes `qa_report.md`, and sets final project status |
 | `marketing_strategist` | configured | ✅ implemented | Marketing plan + worker orchestration active |
 | `content_creator` | configured | ✅ implemented | Content package delivery active |
@@ -120,20 +125,43 @@ Handles custom software projects for clients or internal tooling.
 
 ### Architect
 - **ID:** `architect`
-- **Role:** System design, tech stack decisions, architecture diagrams
-- **Model:** GPT-5.4
+- **Role:** System design, tech stack decisions, architecture diagrams, worker orchestration
+- **Model:** nemotron-120b
 - **Tools:** Supabase, GitHub, Browser (research)
-- **Outputs:** Architecture docs, ADRs, component diagrams
-- **Runtime:** Reads `brief.md` plus linked repo inventory/git status when present, writes `deliverables/architecture_plan.md`, creates worker tasks for `dev_general_1` and `dev_general_2`, stages QA
-- **Orchestration:** Independent subtasks can run in parallel, but on empty/bootstrap repos the architect queues `dev_general_2` behind `dev_general_1` with explicit dependency metadata
+- **Outputs:** `deliverables/architecture_plan.md`, worker tasks with explicit phase ordering
+- **Runtime:** Reads `brief.md` plus linked repo inventory/git status, creates 2–3 worker tasks: `devops_engineer` (always first, no deps), `dev_general` (depends on devops), `ai_engineer` (optional, depends on devops), then stages QA
+
+### DevOps Engineer
+- **ID:** `devops_engineer`
+- **Role:** Scaffold and infrastructure phase — runs first before any coding begins
+- **Model:** nemotron-120b
+- **Tools:** Shell, File system, GitHub
+- **Runtime:** Agentic loop (up to 20 iterations). Initializes project with npx/npm/pnpm, writes package.json/tsconfig/.env.example, installs dependencies, configures CI/CD, verifies the build. After success, activates sibling `dev_general` and `ai_engineer` tasks that were waiting.
+- **Outputs:** `deliverables/devops-scaffold-{taskId}.md`
 
 ### Dev General
-- **ID:** `dev_general_1`, `dev_general_2` (scalable)
-- **Role:** Implementation, refactoring, debugging
-- **Model:** GPT-5.4 (complex) | Gemini 2.5 Flash (simple)
+- **ID:** `dev_general`
+- **Role:** Full application implementation, refactoring, debugging, tests
+- **Model:** nemotron-120b
 - **Tools:** GitHub, Shell, File system, Supabase
-- **Runtime:** Produces `dev-general-*.md` implementation deliverables, can edit the linked repo with safe targeted file operations, runs defensive `install`/`typecheck`/`build`/`test` checks where applicable, writes `repo-execution-*.md`, updates `PROGRESS.md`, and activates the QA gate once sibling worker tasks reach a terminal state
-- **Failure handling:** If a dependency fails or times out, downstream queued worker tasks are moved to `blocked` automatically so the chain can still close via QA instead of stalling
+- **Runtime:** Agentic loop (up to 20 iterations, iterative LLM→action→result). The agent sees real shell output after each command and adapts. Writes `deliverables/dev-general-{taskId}.md`. Activates QA gate once all DEV_WORKERS (devops_engineer, dev_general, ai_engineer) are done.
+- **Backward compat:** Existing tasks with `dev_general_1` or `dev_general_2` are dispatched to the same runtime.
+
+### AI Engineer
+- **ID:** `ai_engineer`
+- **Role:** LLM/AI integrations, prompt engineering, RAG pipelines, embeddings, vector search
+- **Model:** nemotron-120b
+- **Tools:** Shell, File system, GitHub
+- **Runtime:** Agentic loop. Implements AI/LLM features on top of the scaffolded repo. Runs after `devops_engineer` completes. Coordinates with `dev_general` in parallel.
+- **Outputs:** `deliverables/ai-engineer-{taskId}.md`
+
+### Automation Specialist
+- **ID:** `automation_specialist`
+- **Role:** Workflow automations, n8n/Zapier/Make integrations, webhooks, data pipelines
+- **Model:** nemotron-120b
+- **Tools:** Shell, File system, GitHub, Browser
+- **Runtime:** Agentic loop. Used for cross-team automation tasks not tied to a specific software delivery phase. Can be dispatched independently by CEO or as a sibling in a delivery chain.
+- **Outputs:** `deliverables/automation-specialist-{taskId}.md`
 
 ### QA Agent
 - **ID:** `qa`

@@ -12,6 +12,8 @@ import { createTask, getProjectById, updateProjectRepo, updateProjectStatus, upd
 import { log, recordEvent } from '../services/logger.js'
 import { appendProjectProgress } from '../services/workspace.js'
 import { runDevGeneralAgent } from './dev_general.js'
+import { runDevOpsEngineerAgent } from './devops_engineer.js'
+import { runAiEngineerAgent } from './ai_engineer.js'
 import {
   loadAllWorkspaceContext,
   loadRepoContext,
@@ -23,7 +25,7 @@ import { initWorkspaceRepo } from './software_repo_runtime.js'
 import type { Task } from '../types/index.js'
 
 interface ArchitectureImplementationTask {
-  assignee: 'dev_general_1' | 'dev_general_2'
+  assignee: 'devops_engineer' | 'dev_general' | 'ai_engineer'
   title: string
   focus: string
   description: string
@@ -40,6 +42,7 @@ interface ArchitecturePlanOutput {
   implementationPhases: string[]
   qualityGates: string[]
   risks: string[]
+  initializationCommand?: string
   implementationTasks: ArchitectureImplementationTask[]
 }
 
@@ -53,7 +56,7 @@ function parseImplementationTask(value: unknown): ArchitectureImplementationTask
 
   const task = value as Record<string, unknown>
   if (
-    (task['assignee'] !== 'dev_general_1' && task['assignee'] !== 'dev_general_2') ||
+    (task['assignee'] !== 'devops_engineer' && task['assignee'] !== 'dev_general' && task['assignee'] !== 'ai_engineer') ||
     typeof task['title'] !== 'string' ||
     typeof task['focus'] !== 'string' ||
     typeof task['description'] !== 'string'
@@ -87,14 +90,13 @@ function parseArchitecturePlan(raw: string): ArchitecturePlanOutput | null {
         .filter((item): item is ArchitectureImplementationTask => item !== null)
     : []
 
-  const assignees = new Set(implementationTasks.map((task) => task.assignee))
   if (
     typeof parsed['title'] !== 'string' ||
     typeof parsed['executiveSummary'] !== 'string' ||
     typeof parsed['solutionOverview'] !== 'string' ||
     typeof parsed['technicalApproach'] !== 'string' ||
-    implementationTasks.length !== 2 ||
-    assignees.size !== 2
+    implementationTasks.length < 2 ||
+    implementationTasks.length > 3
   ) {
     return null
   }
@@ -109,6 +111,7 @@ function parseArchitecturePlan(raw: string): ArchitecturePlanOutput | null {
     implementationPhases: normalizeStringArray(parsed['implementationPhases']),
     qualityGates: normalizeStringArray(parsed['qualityGates']),
     risks: normalizeStringArray(parsed['risks']),
+    ...(typeof parsed['initializationCommand'] === 'string' ? { initializationCommand: parsed['initializationCommand'] } : {}),
     implementationTasks,
   }
 }
@@ -222,29 +225,29 @@ export async function runArchitectAgent(
   const repoInitWarnings: string[] = []
   if (!repoLocalPath && workspaceAbsPath && projectId) {
     try {
-      const initResult = await initWorkspaceRepo({
+      const repoResult = await initWorkspaceRepo({
         workspaceAbsPath,
         projectName,
         projectType,
       })
-      effectiveRepoLocalPath = initResult.repoPath
-      repoInitWarnings.push(...initResult.warnings)
+      effectiveRepoLocalPath = repoResult.repoPath
+      repoInitWarnings.push(...repoResult.warnings)
 
-      if (initResult.repoUrl) {
-        effectiveRepoUrl = initResult.repoUrl
+      if (repoResult.repoUrl) {
+        effectiveRepoUrl = repoResult.repoUrl
       }
 
-      if (!initResult.alreadyExisted) {
+      if (!repoResult.alreadyExisted) {
         await updateProjectRepo(projectId, {
-          repo_local_path: initResult.repoPath,
-          ...(initResult.repoUrl ? { repo_url: initResult.repoUrl, repo_provider: 'github' } : {}),
+          repo_local_path: repoResult.repoPath,
+          ...(repoResult.repoUrl ? { repo_url: repoResult.repoUrl, repo_provider: 'github' } : {}),
         })
         log.info(
           {
             taskId: task.id,
-            repoPath: initResult.repoPath,
-            committed: initResult.committed,
-            repoUrl: initResult.repoUrl,
+            repoPath: repoResult.repoPath,
+            committed: repoResult.committed,
+            repoUrl: repoResult.repoUrl,
           },
           'Architect: auto-initialized workspace repo'
         )
@@ -267,9 +270,19 @@ export async function runArchitectAgent(
   const bootstrapRepo = repoWasAutoInit || await repoNeedsBootstrap(effectiveRepoLocalPath)
 
   const systemPrompt = `You are the Architect Agent of WAI (Wawen Autonomous Industries).
-Your role: translate a request into an execution-ready plan and split work between exactly two implementation workers.
+Your role: translate a request into an execution-ready architecture plan and split work across 2-3 specialized workers.
 
-IMPORTANT: If workspace context includes existing deliverables (marketing plans, analysis, content packages, etc.), your workers MUST read and use them. Do not recreate content that already exists — build ON TOP of it. Reference specific file names from the workspace context in the worker task descriptions.
+IMPORTANT: If workspace context includes existing deliverables, your workers MUST build ON TOP of them. Reference specific file names from the workspace context in worker task descriptions.
+
+## Worker Team (use EXACTLY these IDs):
+- devops_engineer: project scaffolding, npm init, install, CI/CD, Docker, env setup — ALWAYS include this worker, ALWAYS first
+- dev_general: main application code, routes, components, business logic, database integration — ALWAYS include this worker
+- ai_engineer: AI/LLM integrations, RAG pipelines, embeddings, prompt engineering — ONLY include if the project involves AI features
+
+## Phasing Rules:
+1. devops_engineer runs FIRST with no dependencies
+2. dev_general runs SECOND, depends on devops_engineer
+3. ai_engineer (if included) runs in parallel with dev_general after devops_engineer
 
 Respond with ONLY a JSON object — no markdown, no text outside JSON:
 {
@@ -280,32 +293,33 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
   "techStack": ["<technology 1>", "<technology 2>"],
   "systemComponents": ["<component 1>", "<component 2>"],
   "implementationPhases": ["<phase 1>", "<phase 2>", "<phase 3>"],
-  "qualityGates": ["<qa gate 1>", "<qa gate 2>"],
+  "qualityGates": ["<standard 1>", "<standard 2>"],
   "risks": ["<risk 1>", "<risk 2>"],
   "implementationTasks": [
     {
-      "assignee": "dev_general_1",
-      "title": "<core implementation task>",
-      "focus": "<main ownership area>",
-      "description": "<specific execution brief>",
+      "assignee": "devops_engineer",
+      "title": "Project Setup & Scaffold",
+      "focus": "infrastructure and project initialization",
+      "description": "<what to scaffold: e.g. npx create-vite@latest, install deps, configure tsconfig, setup CI>",
       "acceptanceCriteria": ["<criterion 1>", "<criterion 2>"]
     },
     {
-      "assignee": "dev_general_2",
-      "title": "<supporting implementation task>",
-      "focus": "<main ownership area>",
-      "description": "<specific execution brief>",
+      "assignee": "dev_general",
+      "title": "<main application implementation>",
+      "focus": "<core application logic, UI, API, database>",
+      "description": "<specific execution brief for the main application code>",
       "acceptanceCriteria": ["<criterion 1>", "<criterion 2>"]
     }
   ]
 }
 
 Constraints:
-- Always return exactly 2 implementationTasks.
-- One task must be assigned to dev_general_1 and the other to dev_general_2.
-- Keep the plan grounded in real client delivery for website, app, automation, portal, dashboard, or custom software work.
-- When repo context exists, reference real repo-relative modules and folders instead of generic placeholders.
-- If the repo is effectively empty, make dev_general_1 own the bootstrap/foundation work and dev_general_2 own work that can layer on top once that base exists.
+- ALWAYS include devops_engineer as the first task.
+- ALWAYS include dev_general as the second task.
+- ONLY include ai_engineer (as third task) if the project requires AI/LLM features.
+- devops_engineer must scaffold the project cleanly so dev_general can implement on top.
+- Keep the plan grounded in real client delivery: website, app, automation, portal, dashboard, or custom software.
+- When repo context exists, reference real repo-relative modules and folders.
 - Use repo context when present instead of inventing a blank architecture.`
 
   const userMessage = [
@@ -350,6 +364,10 @@ Constraints:
       )
     }
 
+    // Force bootstrap sequence if the plan includes an initialization command
+    const planRequiresBootstrap = Boolean(architecturePlan.initializationCommand)
+    void (bootstrapRepo || planRequiresBootstrap) // noted but devops_engineer handles scaffolding
+
     let architecturePlanPath: string | null = null
     if (workspaceAbsPath) {
       const deliverableDir = join(workspaceAbsPath, 'deliverables')
@@ -386,21 +404,28 @@ Constraints:
       ...(effectiveRepoUrl ? { repo_url: effectiveRepoUrl } : {}),
     }
 
-    const orderedImplementationTasks = [...architecturePlan.implementationTasks].sort((a, b) =>
-      a.assignee.localeCompare(b.assignee)
+    // Phase ordering: devops_engineer first (no deps), then dev_general + ai_engineer (dep on devops_engineer)
+    const phaseOrder: Array<ArchitectureImplementationTask['assignee']> = ['devops_engineer', 'dev_general', 'ai_engineer']
+    const orderedImplementationTasks = [...architecturePlan.implementationTasks].sort(
+      (a, b) => phaseOrder.indexOf(a.assignee) - phaseOrder.indexOf(b.assignee)
     )
 
     for (const implementationTask of orderedImplementationTasks) {
+      const devopsTaskId = createdTaskIdsByAssignee.get('devops_engineer')
+      // dev_general and ai_engineer always depend on devops_engineer being done first
       const dependencyTaskIds =
-        bootstrapRepo && implementationTask.assignee === 'dev_general_2'
-          ? [createdTaskIdsByAssignee.get('dev_general_1')].filter(
-              (value): value is string => typeof value === 'string' && value.length > 0
-            )
+        implementationTask.assignee !== 'devops_engineer' && devopsTaskId
+          ? [devopsTaskId]
           : []
       const dependencyReason =
         dependencyTaskIds.length > 0
-          ? 'Repo bootstrap required before supporting implementation can start.'
+          ? 'Scaffold phase (devops_engineer) must complete before implementation starts.'
           : undefined
+
+      const taskType =
+        implementationTask.assignee === 'devops_engineer' ? 'dev_simple'
+        : implementationTask.assignee === 'ai_engineer' ? 'dev_complex'
+        : 'dev_complex'
 
       const createdTask = await createTask({
         title: implementationTask.title.substring(0, 100),
@@ -414,7 +439,7 @@ Constraints:
           `Acceptance Criteria:`,
           ...implementationTask.acceptanceCriteria.map((item) => `- ${item}`),
         ].join('\n'),
-        type: implementationTask.assignee === 'dev_general_1' ? 'dev_complex' : 'dev_simple',
+        type: taskType,
         priority: task.priority,
         parent_task_id: task.id,
         ...(projectId ? { project_id: projectId } : {}),
@@ -439,11 +464,17 @@ Constraints:
         title: createdTask.title,
       })
 
+      // Only dispatch tasks with no dependencies immediately (devops_engineer)
       if (dependencyTaskIds.length === 0) {
-        void runDevGeneralAgent(createdTask, notify).catch((err: unknown) => {
+        const runner =
+          implementationTask.assignee === 'devops_engineer' ? runDevOpsEngineerAgent
+          : implementationTask.assignee === 'ai_engineer' ? runAiEngineerAgent
+          : runDevGeneralAgent
+
+        void runner(createdTask, notify).catch((err: unknown) => {
           log.error(
             { err, subtaskId: createdTask.id, assignee: implementationTask.assignee },
-            'Dev General Agent failed'
+            'Architect: worker agent failed'
           )
         })
       }

@@ -6,12 +6,47 @@ import { promisify } from 'node:util'
 
 import { getModelForAgent } from '../config/models.js'
 import { createGitHubRepo, isGitHubConfigured } from '../services/github.js'
-import { runAgent } from '../services/llm.js'
+import { runAgent, type ChatMessage } from '../services/llm.js'
 import { log, recordEvent, recordRun } from '../services/logger.js'
 import { getSpecialModelOverride } from '../services/model-routing-policy.js'
 import type { Task, TaskType } from '../types/index.js'
 
 const execFileAsync = promisify(execFile)
+
+// ── Agentic Loop ─────────────────────────────────────────────────────────────
+const MAX_AGENTIC_ITERATIONS = 40
+
+const EXEC_ALLOWED_COMMANDS = new Set([
+  'npm', 'npx', 'pnpm', 'pnpx', 'yarn', 'bun', 'bunx',
+  'node', 'git', 'tsc', 'vite', 'next', 'eslint', 'prettier',
+  'mkdir', 'cp', 'mv', 'rm', 'chmod', 'touch', 'ls',
+])
+
+export type AgentLoopActionType = 'exec_command' | 'create_file' | 'edit_file' | 'read_file' | 'done'
+
+export interface AgentLoopAction {
+  type: AgentLoopActionType
+  command?: string    // exec_command: executable only, e.g. "npm"
+  args?: string[]     // exec_command: arguments, e.g. ["install"]
+  cwd?: string        // exec_command: relative to repoPath, defaults to "."
+  path?: string       // create_file | edit_file | read_file: relative to repoPath
+  content?: string    // create_file only
+  oldText?: string    // edit_file only
+  newText?: string    // edit_file only
+  reason?: string
+  summary?: string    // done only
+  result?: 'success' | 'partial' | 'blocked'  // done only
+  blockers?: string[] // done only
+}
+
+interface AgentLoopStep {
+  iteration: number
+  action: AgentLoopAction
+  output: string
+  durationMs: number
+  error?: string
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 const MAX_REPO_FILE_BYTES = 120_000
 const MAX_TOTAL_CONTEXT_BYTES = 220_000
@@ -55,7 +90,7 @@ interface RepoFileSnapshot {
 
 type PackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun'
 type RepoEditType = 'create_file' | 'replace_in_file'
-type RepoCommandName = 'install' | 'typecheck' | 'build' | 'test'
+type RepoCommandName = 'install' | 'typecheck' | 'build' | 'test' | 'custom'
 type RepoCommandStatus = 'passed' | 'failed' | 'skipped'
 
 interface RepoEditPlan {
@@ -63,6 +98,14 @@ interface RepoEditPlan {
   warnings: string[]
   blockers: string[]
   edits: RepoEdit[]
+  shellCommands?: RepoShellCommand[]
+}
+
+interface RepoShellCommand {
+  command: string
+  cwd?: string
+  reason: string
+  blocking?: boolean
 }
 
 interface RepoEdit {
@@ -123,13 +166,15 @@ async function runCommand(
   command: string,
   args: string[],
   cwd: string,
-  timeoutMs: number
+  timeoutMs: number,
+  extraEnv?: Record<string, string>
 ): Promise<{ stdout: string; stderr: string; durationMs: number }> {
   const startMs = Date.now()
   const { stdout, stderr } = await execFileAsync(command, args, {
     cwd,
     timeout: timeoutMs,
     maxBuffer: 1024 * 1024 * 4,
+    ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}),
   })
 
   return {
@@ -463,6 +508,24 @@ function parseRepoEditPlan(raw: string): RepoEditPlan | null {
           .filter((item): item is RepoEdit => item !== null)
       : []
 
+    const shellCommands = Array.isArray(parsed['shellCommands'])
+      ? parsed['shellCommands']
+          .map((item): RepoShellCommand | null => {
+            if (typeof item !== 'object' || item === null) return null
+            const cmd = item as Record<string, unknown>
+            if (typeof cmd['command'] !== 'string' || typeof cmd['reason'] !== 'string') {
+              return null
+            }
+            return {
+              command: cmd['command'],
+              reason: cmd['reason'],
+              ...(typeof cmd['cwd'] === 'string' ? { cwd: cmd['cwd'] } : {}),
+              blocking: typeof cmd['blocking'] === 'boolean' ? cmd['blocking'] : true,
+            }
+          })
+          .filter((item): item is RepoShellCommand => item !== null)
+      : []
+
     if (typeof parsed['summary'] !== 'string') {
       return null
     }
@@ -472,6 +535,7 @@ function parseRepoEditPlan(raw: string): RepoEditPlan | null {
       warnings: sanitizeStringArray(parsed['warnings']),
       blockers: sanitizeStringArray(parsed['blockers']),
       edits,
+      shellCommands,
     }
   } catch {
     return null
@@ -493,11 +557,7 @@ async function applyRepoEdits(
 
     try {
       if (edit.type === 'create_file') {
-        if (existsSync(absolutePath)) {
-          blockers.push(`Refused to create already existing file: ${relativePath}`)
-          continue
-        }
-
+        // If file already exists, overwrite it (agent knows what content it wants)
         await mkdir(dirname(absolutePath), { recursive: true })
         await writeFile(absolutePath, edit.content ?? '', 'utf-8')
         touchedFiles.add(relativePath)
@@ -628,13 +688,19 @@ async function runRepoCommand(
   const relativeDir = manifest.relativeDir
   const cwd = manifest.dir
   const commandLabel = [command, ...args].join(' ')
+  const cmdStart = Date.now()
+
+  // Build/typecheck/test must run with NODE_ENV=production so Next.js (and similar
+  // frameworks) don't use development-mode React during static prerendering.
+  const buildEnv = name !== 'install' ? { NODE_ENV: 'production' } : undefined
 
   try {
     const { stdout, stderr, durationMs } = await runCommand(
       command,
       args,
       cwd,
-      name === 'test' ? 600_000 : 300_000
+      name === 'install' ? 300_000 : 600_000,
+      buildEnv
     )
 
     const summary = stdout.trim() || stderr.trim() || `${name} passed`
@@ -683,10 +749,7 @@ async function runRepoCommand(
       stderr.trim() ||
       stdout.trim() ||
       (error instanceof Error ? error.message : `Command failed: ${commandLabel}`)
-    const durationMs =
-      typeof error === 'object' && error !== null && 'killed' in error
-        ? 300_000
-        : 0
+    const durationMs = Date.now() - cmdStart
 
     await recordToolRun(
       agentId,
@@ -894,6 +957,14 @@ You must output ONLY a JSON object with this schema:
       "newText": "<replacement text>",
       "reason": "<why the replacement is needed>"
     }
+  ],
+  "shellCommands": [
+    {
+      "command": "<shell command to run, e.g., npm install package-name>",
+      "reason": "<why this command is needed>",
+      "cwd": "<optional repo-relative directory>",
+      "blocking": true
+    }
   ]
 }
 
@@ -912,7 +983,11 @@ Write COMPLETE, WORKING file contents. No placeholders. No "TODO" comments.
 - Use replace_in_file ONLY for files shown in "Current repo files selected for editing" — copy oldText exactly.
 - Keep edits focused on the task.
 - Write complete, production-quality file contents — not stubs or placeholders.
-- If the repo context is insufficient, leave edits empty and explain blockers.`
+- If the repo context is insufficient, leave edits empty and explain blockers.
+- SHELL COMMANDS: Use "shellCommands" to run ANY necessary terminal commands. 
+  * If you add a library, run 'npm install <library>'.
+  * If you need to build, run 'npm run build'.
+  * These run AFTER file edits. Use them to maintain a WORKING environment.`
 
   const editUserMessage = [
     `Client: ${clientName}`,
@@ -978,6 +1053,33 @@ Write COMPLETE, WORKING file contents. No placeholders. No "TODO" comments.
     }
   }
 
+  // Execute custom shell commands
+  const customCommandResults: RepoCommandResult[] = []
+  for (const cmd of parsedPlan.shellCommands ?? []) {
+    const [command, ...args] = cmd.command.split(' ')
+    const cmdCwd = cmd.cwd ? join(repoLocalPath, cmd.cwd) : repoLocalPath
+    const result = await runRepoCommand(
+      agentId,
+      taskType,
+      task.id,
+      {
+        dir: cmdCwd,
+        relativeDir: cmd.cwd || '.',
+        manager: 'npm', // fallback, runRepoCommand uses it for labelling
+        scripts: {}
+      },
+      repoLocalPath,
+      'custom',
+      command!,
+      args,
+      cmd.blocking ?? true
+    )
+    customCommandResults.push(result)
+    if (result.status === 'failed' && result.blocking) {
+      break
+    }
+  }
+
   const manifests = await discoverPackageManifests(repoLocalPath)
   const checkResult = await runRepoChecks(
     repoLocalPath,
@@ -994,6 +1096,7 @@ Write COMPLETE, WORKING file contents. No placeholders. No "TODO" comments.
     ...parsedPlan.blockers,
     ...applyResult.blockers,
     ...checkResult.blockingIssues,
+    ...customCommandResults.filter(c => c.status === 'failed' && c.blocking).map(c => `Custom command failed: ${c.command}`)
   ]
   const warnings = [
     ...filesBefore.warnings,
@@ -1002,8 +1105,8 @@ Write COMPLETE, WORKING file contents. No placeholders. No "TODO" comments.
     ...checkResult.warnings,
   ]
 
-  if (applyResult.touchedFiles.length === 0) {
-    warnings.push('No repo files were changed during this execution step.')
+  if (applyResult.touchedFiles.length === 0 && customCommandResults.length === 0) {
+    warnings.push('No repo files were changed and no commands were executed during this step.')
   }
 
   return {
@@ -1017,12 +1120,362 @@ Write COMPLETE, WORKING file contents. No placeholders. No "TODO" comments.
     resolvedFiles: filesBefore.files.map((file) => file.resolvedPath),
     touchedFiles: applyResult.touchedFiles,
     appliedEditCount: applyResult.appliedEditCount,
-    commands: checkResult.commands,
+    commands: [...customCommandResults, ...checkResult.commands],
     gitStatusBefore,
     gitStatusAfter,
     diffFiles,
   }
 }
+
+// ── Agentic Loop helpers ─────────────────────────────────────────────────────
+
+/** Extract the first complete JSON object from raw text using brace-depth tracking.
+ *  Avoids the greedy-regex problem where /\{[\s\S]*\}/ spans multiple objects. */
+function extractFirstJsonObject(raw: string): string | null {
+  let depth = 0
+  let start = -1
+  let inString = false
+  let escapeNext = false
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]!
+    if (escapeNext) { escapeNext = false; continue }
+    if (ch === '\\' && inString) { escapeNext = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === '{') {
+      if (depth === 0) start = i
+      depth++
+    } else if (ch === '}') {
+      depth--
+      if (depth === 0 && start !== -1) return raw.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
+function parseAgentLoopAction(raw: string): AgentLoopAction | null {
+  const jsonStr = extractFirstJsonObject(raw)
+  if (!jsonStr) return null
+  try {
+    const parsed = JSON.parse(jsonStr) as Record<string, unknown>
+    const validTypes: AgentLoopActionType[] = ['exec_command', 'create_file', 'edit_file', 'read_file', 'done']
+    if (!validTypes.includes(parsed['type'] as AgentLoopActionType)) return null
+
+    // Normalise exec_command: if the model put the full shell string in "command"
+    // (e.g. "ls -la src/") instead of separating command + args, auto-split it.
+    if (parsed['type'] === 'exec_command' && typeof parsed['command'] === 'string') {
+      const fullCmd = (parsed['command'] as string).trim()
+      const existingArgs = Array.isArray(parsed['args']) ? parsed['args'] as string[] : []
+      if (fullCmd.includes(' ') && existingArgs.length === 0) {
+        const parts = fullCmd.split(/\s+/).filter(Boolean)
+        parsed['command'] = parts[0]
+        parsed['args'] = parts.slice(1)
+      }
+    }
+
+    return parsed as unknown as AgentLoopAction
+  } catch {
+    return null
+  }
+}
+
+function buildAgentLoopSystemPrompt(agentRole: string, taskDescription: string, architecturePlan: string): string {
+  return `You are ${agentRole}. Implement the assigned task by taking ONE action at a time and reacting to results.
+
+## Your Task
+${taskDescription}
+
+## Architecture Plan
+${architecturePlan || 'No architecture plan provided — use your best judgement.'}
+
+## CRITICAL OUTPUT FORMAT
+You MUST respond with EXACTLY ONE raw JSON object — no prose, no markdown, no code fences, no explanation before or after.
+Any response that is not a single JSON object will be treated as an error and you will be asked to try again.
+
+## Available Actions
+
+exec_command — run a shell command. IMPORTANT: put the executable in "command" and all arguments in "args" as an array:
+{"type":"exec_command","command":"npm","args":["install","recharts"],"cwd":".","reason":"install recharts"}
+{"type":"exec_command","command":"ls","args":["src/app"],"cwd":".","reason":"inspect directory"}
+{"type":"exec_command","command":"npx","args":["create-next-app@latest",".","--typescript","--tailwind","--eslint","--app","--yes"],"cwd":".","reason":"scaffold"}
+
+create_file — create a new file (fails if file already exists):
+{"type":"create_file","path":"src/index.ts","content":"export default {}","reason":"main entry point"}
+
+edit_file — replace text in existing file (exact string match required):
+{"type":"edit_file","path":"package.json","oldText":"\\"version\\": \\"0.0.0\\"","newText":"\\"version\\": \\"1.0.0\\"","reason":"update version"}
+
+read_file — read a file to inspect current state:
+{"type":"read_file","path":"package.json","reason":"check current dependencies"}
+
+done — signal task completion:
+{"type":"done","summary":"Implemented X. Build passes.","result":"success"}
+or if blocked:
+{"type":"done","summary":"Could not complete: reason.","result":"blocked","blockers":["specific reason"]}
+
+## Rules
+- ONE JSON action per turn — output ONLY the JSON object, absolutely nothing else
+- exec_command: "command" must be a single executable (e.g. "npm"), put all flags/arguments in "args" array
+- Allowed exec_command executables: npm, npx, pnpm, pnpx, yarn, bun, bunx, node, git, tsc, vite, next, eslint, prettier, mkdir, cp, mv, rm, chmod, touch, ls
+- If a command fails, read the error and try to fix the issue before giving up
+- Use read_file before edit_file if you need to verify current content
+- create_file fails if the file already exists — read first, then use edit_file for existing files
+- When done, output the done action with a concise summary of what was accomplished`
+}
+
+function buildAgentLoopUserMessage(
+  repoState: string,
+  history: AgentLoopStep[],
+  iteration: number,
+  maxIterations: number
+): string {
+  const historyText = history.length === 0
+    ? 'No actions taken yet. Begin with your first action.'
+    : history.map((step) => {
+        const actionLabel = step.action.type === 'exec_command'
+          ? `exec_command: ${step.action.command ?? ''} ${(step.action.args ?? []).join(' ')} (cwd: ${step.action.cwd ?? '.'})`
+          : step.action.type === 'done'
+          ? `done: ${step.action.result ?? 'unknown'}`
+          : `${step.action.type}: ${step.action.path ?? ''}`
+        return `[Step ${step.iteration}/${maxIterations}] ${actionLabel}\nResult:\n${step.output.slice(0, 1000)}${step.error ? `\nError: ${step.error}` : ''}`
+      }).join('\n\n---\n\n')
+
+  return `## Current Repository State\n${repoState}\n\n## Action History (${history.length} steps done, ${maxIterations - iteration + 1} remaining)\n${historyText}\n\nOutput your next action as JSON.`
+}
+
+export async function executeAgenticLoop(options: {
+  task: Task
+  repoPath: string
+  agentId: string
+  agentRole: string
+  taskDescription: string
+  architecturePlan: string
+  maxIterations?: number
+}): Promise<RepoExecutionResult> {
+  const { task, repoPath, agentId, agentRole, taskDescription, architecturePlan } = options
+  const maxIterations = options.maxIterations ?? MAX_AGENTIC_ITERATIONS
+  const startMs = Date.now()
+
+  const history: AgentLoopStep[] = []
+  const allTouchedFiles = new Set<string>()
+  const allCommands: RepoCommandResult[] = []
+  const allWarnings: string[] = []
+  const allBlockers: string[] = []
+
+  const systemPrompt = buildAgentLoopSystemPrompt(agentRole, taskDescription, architecturePlan)
+  const gitStatusBefore = await getGitStatusShort(repoPath)
+  let consecutiveParseFailures = 0
+
+  for (let iteration = 1; iteration <= maxIterations; iteration++) {
+    const repoState = await buildRepoContext(repoPath)
+    const userMessage = buildAgentLoopUserMessage(repoState, history, iteration, maxIterations)
+
+    let raw: string
+    try {
+      const messages: ChatMessage[] = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ]
+      const result = await runAgent(messages, { agentId, taskType: task.type as TaskType })
+      raw = result.content
+    } catch (err) {
+      allWarnings.push(`LLM call failed at iteration ${iteration}: ${err instanceof Error ? err.message : String(err)}`)
+      break
+    }
+
+    const action = parseAgentLoopAction(raw)
+    if (!action) {
+      consecutiveParseFailures++
+      allWarnings.push(`Iteration ${iteration}: could not parse agent action (failure ${consecutiveParseFailures}/3)`)
+      if (consecutiveParseFailures >= 3) break
+      // Inject a JSON reminder into history so the next turn knows to output JSON
+      history.push({
+        iteration,
+        action: { type: 'read_file', path: '__system__' },
+        output: 'SYSTEM ERROR: Your previous response was not valid JSON. You MUST respond with ONLY a single JSON object — no prose, no markdown fences, no explanation. Example: {"type":"create_file","path":"src/foo.ts","content":"export {}","reason":"create file"}',
+        durationMs: 0,
+      })
+      continue
+    }
+    consecutiveParseFailures = 0
+
+    const stepStart = Date.now()
+    let output = ''
+    let stepError: string | undefined
+
+    // ── done ─────────────────────────────────────────────────────────────────
+    if (action.type === 'done') {
+      if (action.blockers?.length) allBlockers.push(...action.blockers)
+      history.push({ iteration, action, output: action.summary ?? 'Done.', durationMs: Date.now() - stepStart })
+      break
+    }
+
+    // ── exec_command ──────────────────────────────────────────────────────────
+    if (action.type === 'exec_command') {
+      const cmd = (action.command ?? '').trim()
+      const args = action.args ?? []
+      const cwdResolved = action.cwd ? resolve(repoPath, action.cwd) : repoPath
+
+      if (!EXEC_ALLOWED_COMMANDS.has(cmd)) {
+        output = `Command not allowed: "${cmd}". Allowed: ${Array.from(EXEC_ALLOWED_COMMANDS).join(', ')}`
+        stepError = output
+        allWarnings.push(output)
+      } else {
+        try {
+          const cmdResult = await runCommand(cmd, args, cwdResolved, 600_000)
+          const stdoutClean = cmdResult.stdout.trim()
+          const stderrClean = cmdResult.stderr.trim()
+          output = [
+            stdoutClean ? `STDOUT:\n${stdoutClean}` : '',
+            stderrClean ? `STDERR:\n${stderrClean}` : '',
+          ].filter(Boolean).join('\n') || 'Command completed with no output.'
+
+          allCommands.push({
+            name: 'custom' as RepoCommandName,
+            command: [cmd, ...args].join(' '),
+            relativeDir: toRelativeRepoPath(repoPath, cwdResolved),
+            status: 'passed',
+            blocking: true,
+            summary: shortenOutput(stdoutClean || stderrClean, 300),
+            stdoutExcerpt: shortenOutput(stdoutClean),
+            stderrExcerpt: shortenOutput(stderrClean, 300),
+          })
+        } catch (err) {
+          const execErr = err as Record<string, unknown>
+          const stderr = String(execErr['stderr'] ?? '')
+          const stdout = String(execErr['stdout'] ?? '')
+          output = `FAILED:\n${(stderr || stdout || String(err)).trim()}`
+          stepError = shortenOutput(stderr || stdout, 200)
+          allCommands.push({
+            name: 'custom' as RepoCommandName,
+            command: [cmd, ...args].join(' '),
+            relativeDir: toRelativeRepoPath(repoPath, cwdResolved),
+            status: 'failed',
+            blocking: false,
+            summary: stepError ?? 'failed',
+            stdoutExcerpt: shortenOutput(stdout),
+            stderrExcerpt: shortenOutput(stderr),
+          })
+        }
+      }
+    }
+
+    // ── create_file ───────────────────────────────────────────────────────────
+    if (action.type === 'create_file' && action.path) {
+      const editResult = await applyRepoEdits(repoPath, [{
+        type: 'create_file',
+        path: action.path,
+        content: action.content ?? '',
+        ...(action.reason !== undefined ? { reason: action.reason } : {}),
+      }])
+      editResult.touchedFiles.forEach((f) => allTouchedFiles.add(f))
+      allBlockers.push(...editResult.blockers)
+      allWarnings.push(...editResult.warnings)
+      output = editResult.blockers.length > 0
+        ? `FAILED: ${editResult.blockers.join('; ')}`
+        : `Created ${action.path} (${(action.content ?? '').split('\n').length} lines)`
+      if (editResult.blockers.length > 0) stepError = editResult.blockers[0]
+    }
+
+    // ── edit_file ─────────────────────────────────────────────────────────────
+    if (action.type === 'edit_file' && action.path) {
+      const editResult = await applyRepoEdits(repoPath, [{
+        type: 'replace_in_file',
+        path: action.path,
+        oldText: action.oldText ?? '',
+        newText: action.newText ?? '',
+        ...(action.reason !== undefined ? { reason: action.reason } : {}),
+      }])
+      editResult.touchedFiles.forEach((f) => allTouchedFiles.add(f))
+      allBlockers.push(...editResult.blockers)
+      allWarnings.push(...editResult.warnings)
+      output = editResult.blockers.length > 0
+        ? `FAILED: ${editResult.blockers.join('; ')}`
+        : `Edited ${action.path}`
+      if (editResult.blockers.length > 0) stepError = editResult.blockers[0]
+    }
+
+    // ── read_file ─────────────────────────────────────────────────────────────
+    if (action.type === 'read_file' && action.path) {
+      try {
+        const absolutePath = ensurePathInsideRepo(repoPath, action.path)
+        if (existsSync(absolutePath)) {
+          const fileContent = await readFile(absolutePath, 'utf-8')
+          output = fileContent.length > 4000
+            ? `${fileContent.slice(0, 4000)}\n... [truncated — ${fileContent.length} chars total]`
+            : fileContent
+        } else {
+          output = `File not found: ${action.path}`
+          stepError = output
+        }
+      } catch (err) {
+        output = `Error reading ${action.path}: ${err instanceof Error ? err.message : String(err)}`
+        stepError = output
+      }
+    }
+
+    history.push({
+      iteration,
+      action,
+      output: output.slice(0, 1500),
+      durationMs: Date.now() - stepStart,
+      ...(stepError ? { error: stepError } : {}),
+    })
+
+    await recordEvent('agent_loop_step', {
+      agentId,
+      ...(task.id ? { taskId: task.id } : {}),
+      payload: {
+        iteration,
+        action_type: action.type,
+        path: action.path,
+        command: action.command,
+        status: stepError ? 'error' : 'ok',
+        duration_ms: Date.now() - stepStart,
+      },
+    })
+  }
+
+  const gitStatusAfter = await getGitStatusShort(repoPath)
+  const diffFiles = gitStatusAfter.filter((s) => !gitStatusBefore.includes(s))
+  const lastDoneStep = [...history].reverse().find((s) => s.action.type === 'done')
+
+  if (!lastDoneStep) {
+    allWarnings.push(`Agent did not call "done" within ${maxIterations} iterations — treating as complete.`)
+  }
+
+  const summary = lastDoneStep?.action.summary
+    ?? `Completed ${history.length} iterations, touched ${allTouchedFiles.size} files.`
+
+  await recordToolRun(
+    agentId,
+    task.type as TaskType,
+    task.id,
+    ['shell', 'file_system'],
+    taskDescription.slice(0, 500),
+    summary,
+    allBlockers.length > 0 ? 'partial' : 'success',
+    Date.now() - startMs
+  )
+
+  return {
+    repoPath,
+    branch: await getGitBranch(repoPath),
+    summary,
+    inspectionWarnings: [],
+    warnings: allWarnings,
+    blockers: allBlockers,
+    plannedFiles: [],
+    resolvedFiles: [],
+    touchedFiles: Array.from(allTouchedFiles),
+    appliedEditCount: allTouchedFiles.size,
+    commands: allCommands,
+    gitStatusBefore,
+    gitStatusAfter,
+    diffFiles,
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function commandStatusIcon(result: RepoCommandResult): string {
   if (result.status === 'passed') return 'PASS'
@@ -1618,8 +2071,9 @@ export async function initWorkspaceRepo(options: {
   workspaceAbsPath: string
   projectName: string
   projectType: string
+  bootstrapCommand?: string
 }): Promise<WorkspaceRepoInitResult> {
-  const { workspaceAbsPath, projectName, projectType } = options
+  const { workspaceAbsPath, projectName, projectType, bootstrapCommand } = options
   const repoPath = join(workspaceAbsPath, 'repo')
   const warnings: string[] = []
 
@@ -1664,8 +2118,20 @@ export async function initWorkspaceRepo(options: {
     'utf-8'
   )
 
-  // Write type-aware stub files
-  await writeTypeAwareStubs(repoPath, projectName, projectType)
+  if (bootstrapCommand) {
+    try {
+      log.info({ repoPath, bootstrapCommand }, 'Executing bootstrap command')
+      const [cmd, ...args] = bootstrapCommand.split(' ')
+      await runCommand(cmd!, args, repoPath, 600_000)
+    } catch (err) {
+      warnings.push(
+        `Bootstrap command failed: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
+  } else {
+    // Write type-aware stub files
+    await writeTypeAwareStubs(repoPath, projectName, projectType)
+  }
 
   // Initial commit
   let committed = false

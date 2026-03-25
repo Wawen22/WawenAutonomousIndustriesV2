@@ -42,6 +42,12 @@ model_list:
       model: openrouter/qwen/qwen3-coder:free
       api_key: os.environ/OPENROUTER_API_KEY
 
+  # MiniMax M2.7 — 1M context, strong at coding; assigned to architect + dev agents
+  - model_name: minimax-m2.7
+    litellm_params:
+      model: openrouter/minimax/minimax-m2.7
+      api_key: os.environ/OPENROUTER_API_KEY
+
 # =============================================================
 # Router settings
 # =============================================================

@@ -31,7 +31,7 @@ import {
   readOptionalFile,
   resolveSoftwareWorkspacePath,
 } from './software_delivery_utils.js'
-import { assessRepoForQa, renderRepoQaSummary } from './software_repo_runtime.js'
+import { assessRepoForQa, executeAgenticLoop, renderRepoQaSummary } from './software_repo_runtime.js'
 import type { DeliveryConfig, ProjectStatus, Task } from '../types/index.js'
 
 type ChecklistStatus = 'pass' | 'warning' | 'fail'
@@ -662,11 +662,63 @@ export async function runQaAgent(
     ? await loadRelevantDeliverables(workspaceAbsPath)
     : []
   const repoContext = await loadRepoContext(repoLocalPath)
-  const repoAssessment = await assessRepoForQa({
+
+  // ── Auto-fix loop ───────────────────────────────────────────────────────────
+  // If the repo build/typecheck fails, run dev_general's agentic loop to fix it
+  // automatically before the LLM analysis. Max 2 attempts before escalating.
+  const MAX_QA_AUTOFIX = 2
+  const qaAutofixCount = (task.metadata['qa_autofix_count'] as number | undefined) ?? 0
+
+  let repoAssessment = await assessRepoForQa({
     task,
     ...(repoLocalPath ? { repoLocalPath } : {}),
     ...(qaScope.length > 0 ? { qaScope } : {}),
   })
+
+  if (repoLocalPath && repoAssessment && repoAssessment.blockingIssues.length > 0 && qaAutofixCount < MAX_QA_AUTOFIX) {
+    await notify(
+      `🔧 QA: ${repoAssessment.blockingIssues.length} blocking issue(s) found — auto-fix attempt ${qaAutofixCount + 1}/${MAX_QA_AUTOFIX}...`
+    )
+
+    const failedCommands = repoAssessment.commands.filter((c) => c.status === 'failed')
+    const fixDescription = [
+      `QA found the following build/check failures that must be fixed:`,
+      ``,
+      ...repoAssessment.blockingIssues.map((issue, i) => `${i + 1}. ${issue}`),
+      failedCommands.length > 0 ? `\nFailed commands output:` : '',
+      ...failedCommands.map((c) => `- ${c.command}: ${(c.summary ?? 'failed').slice(0, 600)}`),
+      ``,
+      `Fix all issues so the build passes cleanly. Run "npm run build" at the end to confirm.`,
+    ].filter(Boolean).join('\n')
+
+    await executeAgenticLoop({
+      task,
+      repoPath: repoLocalPath,
+      agentId: 'dev_general',
+      agentRole: 'a senior developer. Your sole job is to fix the specific build/type errors listed and make the project compile successfully.',
+      taskDescription: fixDescription,
+      architecturePlan: '',
+    })
+
+    await updateTaskMetadata(task.id, { ...task.metadata, qa_autofix_count: qaAutofixCount + 1 })
+
+    // Re-assess after fix
+    repoAssessment = await assessRepoForQa({
+      task,
+      ...(repoLocalPath ? { repoLocalPath } : {}),
+      ...(qaScope.length > 0 ? { qaScope } : {}),
+    })
+
+    if (repoAssessment && repoAssessment.blockingIssues.length === 0) {
+      await notify(`✅ QA auto-fix succeeded — build is clean. Proceeding with analysis...`)
+    } else {
+      await notify(
+        `⚠️ QA auto-fix attempt ${qaAutofixCount + 1}: ${repoAssessment?.blockingIssues.length ?? 0} issue(s) remain.`
+      )
+    }
+  }
+  // ───────────────────────────────────────────────────────────────────────────
+
   const repoSummary = repoAssessment ? renderRepoQaSummary(repoAssessment) : ''
 
   await updateTaskStatus(task.id, 'in_progress')
@@ -706,7 +758,8 @@ Constraints:
 - Use "blocked" when severe issues stop delivery.
 - Use "review" when work is promising but still needs fixes or clarification.
 - Use "pass" only when the deliverables support release readiness.
-- Always include at least 4 checklist items.`
+- Always include at least 4 checklist items.
+- VISION: You have access to the "screenshot" tool. If a local server is running (e.g. localhost:3000), use it to capture screenshots and verify the UI.`
 
   const userMessage = [
     `Client: ${clientName}`,
@@ -736,6 +789,7 @@ Constraints:
         agentId: 'qa',
         taskId: task.id,
         taskType: 'support',
+        tools: ['screenshot', 'shell'],
         ...(projectId ? { projectId } : {}),
         ...(clientId ? { clientId } : {}),
       }

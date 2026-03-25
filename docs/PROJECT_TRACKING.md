@@ -78,6 +78,7 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
+| T128 | Agentic Loop + Team Software Dev Refactor | ✅ Done | Claude | 1 | Test with a new project from Telegram |
 | T106 | Governed Delivery Pipeline | ✅ Done | Codex | 1 | — |
 | T107 | Security hardening (CORS + bearer token + path traversal) | ✅ Done | Codex | 1 | — |
 | T108 | Invoice email automation | ✅ Done | Claude | 1 | — |
@@ -115,6 +116,7 @@ This now implies a platform decision:
 | T114 | Agent memory system | ✅ Done | pgvector-backed per-agent memory (`agent_memories` table, migrations 005+008), `memory.ts` for store/recall/dedup, `memory_learning.ts` extracts preferences from founder feedback and persists as memories; `entity_type` field for categorization |
 | T115 | Daily brief automation scheduler | ✅ Done | `personal-automation.ts` `startFounderAutomationRuntime()` runs every minute via `setInterval`, fires `daily_founder_brief` at the configured local time (default 08:30 Europe/Rome); on/off toggle + schedule editor live in Assistant HQ |
 | T085 | CEO personal task routing | ✅ Done | Personal mode can create docs, send reports, do research, build digests |
+| T128 | Agentic Loop + Team Software Dev Refactor | ✅ Done | **Major:** Team Software Dev restructured. `dev_general_1/2` → `devops_engineer` + `dev_general` + `ai_engineer` + `automation_specialist`. All dev agents now use iterative `executeAgenticLoop` (LLM sees real shell output, adapts). Projects now bootstrap correctly with full terminal access. |
 | T121 | Agent Roster Expansion | ✅ Done | 8 nuovi agenti specializzati: security_auditor, db_optimizer, api_tester, legal_compliance, proposal_strategist, executive_summary, feedback_synthesizer, behavioral_coach — roster passa da 17 a 25 agenti |
 | T093 | Capability platform contracts | ✅ Done | Backend now has shared contracts for capability catalog, assignments, policy, health, and audit summary |
 | T094 | Capability registry API MVP | ✅ Done | Read-only backend registry now exposes current capabilities for dashboard consumption |

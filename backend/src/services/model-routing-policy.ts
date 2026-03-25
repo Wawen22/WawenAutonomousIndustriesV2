@@ -28,7 +28,7 @@ const SPECIAL_OVERRIDE_DEFINITIONS: Record<SpecialModelOverrideId, Omit<SpecialM
   repo_edit_planning: {
     id: 'repo_edit_planning',
     scope: 'Repo-aware code generation and edit planning',
-    agents: ['dev_general_1', 'dev_general_2', 'dev_saas_1', 'dev_saas_2'],
+    agents: ['devops_engineer', 'dev_general', 'ai_engineer', 'automation_specialist', 'dev_saas_1', 'dev_saas_2'],
     reason: 'Leave this on inherit unless you explicitly want one model forced for large structured repo edits.',
   },
   llm_primary_failure_fallback: {

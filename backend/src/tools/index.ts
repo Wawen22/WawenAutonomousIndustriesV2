@@ -111,6 +111,13 @@ export const TOOL_REGISTRY: Record<string, ToolDefinition> = {
     category: 'system',
     requiredEnvVars: [],
   },
+  screenshot: {
+    id: 'screenshot',
+    name: 'Screenshot',
+    description: 'Capture a screenshot of a website or a running local application',
+    category: 'research',
+    requiredEnvVars: [],
+  },
 }
 
 export function getToolsForAgent(toolIds: string[]): ToolDefinition[] {
