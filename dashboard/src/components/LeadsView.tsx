@@ -54,7 +54,7 @@ const STATUS_FILTERS: Array<{ key: 'all' | LeadStatus; label: string }> = [
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${BACKEND_URL}${path}`, { credentials: 'include' })
+  const res = await fetch(`${BACKEND_URL}${path}`)
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
   return res.json() as Promise<T>
 }
@@ -62,7 +62,6 @@ async function apiGet<T>(path: string): Promise<T> {
 async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BACKEND_URL}${path}`, {
     method: 'POST',
-    credentials: 'include',
     headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
   })
@@ -73,7 +72,6 @@ async function apiPost<T>(path: string, body?: unknown): Promise<T> {
 async function apiPut<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BACKEND_URL}${path}`, {
     method: 'PUT',
-    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
