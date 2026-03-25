@@ -80,6 +80,15 @@ import {
   searchKnowledge,
   deleteKnowledgeItem,
 } from './services/knowledge.js'
+import {
+  getContacts,
+  getContact,
+  upsertContact,
+  deleteContact,
+  getInteractions,
+  addInteraction,
+  deleteInteraction,
+} from './services/crm.js'
 import { MODELS, AGENT_MODEL_DEFAULTS, getModelOverrides } from './config/models.js'
 import {
   assignModelToAgent,
@@ -1784,6 +1793,235 @@ async function main(): Promise<void> {
           log.error({ err }, 'Models special override API error')
           res.writeHead(400, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    // ── CRM routes (T124 Personal CRM) ─────────────────────────────────────
+
+    // GET /api/crm/contacts — list all contacts (optional ?status= filter)
+    if (url.pathname === '/api/crm/contacts' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const status = url.searchParams.get('status')
+          const validStatuses = ['active', 'follow_up', 'dormant']
+          const filter = status && validStatuses.includes(status)
+            ? { status: status as 'active' | 'follow_up' | 'dormant' }
+            : undefined
+          const contacts = await getContacts(filter)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ contacts }))
+        } catch (err) {
+          log.error({ err }, 'CRM: list contacts API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // POST /api/crm/contacts — create a new contact
+    if (url.pathname === '/api/crm/contacts' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+          const name = typeof payload['name'] === 'string' ? payload['name'].trim() : ''
+          if (!name) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'name is required' }))
+            return
+          }
+          const contact = await upsertContact({
+            name,
+            email: typeof payload['email'] === 'string' ? payload['email'] : null,
+            company: typeof payload['company'] === 'string' ? payload['company'] : null,
+            status: (payload['status'] as 'active' | 'follow_up' | 'dormant') ?? 'active',
+            notes: typeof payload['notes'] === 'string' ? payload['notes'] : '',
+            tags: Array.isArray(payload['tags']) ? payload['tags'] as string[] : [],
+            metadata: typeof payload['metadata'] === 'object' && payload['metadata'] !== null
+              ? payload['metadata'] as Record<string, unknown>
+              : {},
+          })
+          res.writeHead(201, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ contact }))
+        } catch (err) {
+          log.error({ err }, 'CRM: create contact API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // Routes under /api/crm/contacts/:id (GET, PUT, DELETE) and /api/crm/contacts/:id/interactions
+    if (url.pathname.startsWith('/api/crm/contacts/')) {
+      const rest = url.pathname.slice('/api/crm/contacts/'.length)
+      const parts = rest.split('/')
+      const contactId = parts[0] ?? ''
+
+      // GET /api/crm/contacts/:id
+      if (parts.length === 1 && req.method === 'GET') {
+        void (async () => {
+          try {
+            const contact = await getContact(contactId)
+            if (!contact) {
+              res.writeHead(404, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Not found' }))
+              return
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ contact }))
+          } catch (err) {
+            log.error({ err, contactId }, 'CRM: get contact API error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
+      // PUT /api/crm/contacts/:id
+      if (parts.length === 1 && req.method === 'PUT') {
+        void (async () => {
+          try {
+            if (!isAuthorizedDashboardRequest(req)) {
+              res.writeHead(403, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Forbidden' }))
+              return
+            }
+            const body = await readJsonBody(req)
+            const payload = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+            const name = typeof payload['name'] === 'string' ? payload['name'].trim() : ''
+            if (!name) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'name is required' }))
+              return
+            }
+            const updateInput: import('./services/crm.js').UpsertContactInput = { id: contactId, name }
+            if ('email' in payload) updateInput.email = typeof payload['email'] === 'string' ? payload['email'] : null
+            if ('company' in payload) updateInput.company = typeof payload['company'] === 'string' ? payload['company'] : null
+            if (payload['status'] === 'active' || payload['status'] === 'follow_up' || payload['status'] === 'dormant') updateInput.status = payload['status']
+            if (typeof payload['notes'] === 'string') updateInput.notes = payload['notes']
+            if (Array.isArray(payload['tags'])) updateInput.tags = payload['tags'] as string[]
+            if (typeof payload['metadata'] === 'object' && payload['metadata'] !== null) updateInput.metadata = payload['metadata'] as Record<string, unknown>
+            const contact = await upsertContact(updateInput)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ contact }))
+          } catch (err) {
+            log.error({ err, contactId }, 'CRM: update contact API error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
+      // DELETE /api/crm/contacts/:id
+      if (parts.length === 1 && req.method === 'DELETE') {
+        void (async () => {
+          try {
+            if (!isAuthorizedDashboardRequest(req)) {
+              res.writeHead(403, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Forbidden' }))
+              return
+            }
+            await deleteContact(contactId)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true }))
+          } catch (err) {
+            log.error({ err, contactId }, 'CRM: delete contact API error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
+      // GET /api/crm/contacts/:id/interactions
+      if (parts.length === 2 && parts[1] === 'interactions' && req.method === 'GET') {
+        void (async () => {
+          try {
+            const interactions = await getInteractions(contactId)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ interactions }))
+          } catch (err) {
+            log.error({ err, contactId }, 'CRM: list interactions API error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
+      // POST /api/crm/contacts/:id/interactions
+      if (parts.length === 2 && parts[1] === 'interactions' && req.method === 'POST') {
+        void (async () => {
+          try {
+            if (!isAuthorizedDashboardRequest(req)) {
+              res.writeHead(403, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Forbidden' }))
+              return
+            }
+            const body = await readJsonBody(req)
+            const payload = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+            const type = typeof payload['type'] === 'string' ? payload['type'] : ''
+            const summary = typeof payload['summary'] === 'string' ? payload['summary'].trim() : ''
+            const validTypes = ['email_in', 'email_out', 'meeting', 'note', 'call']
+            if (!validTypes.includes(type) || !summary) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'type and summary are required' }))
+              return
+            }
+            const intInput: import('./services/crm.js').AddInteractionInput = {
+              type: type as 'email_in' | 'email_out' | 'meeting' | 'note' | 'call',
+              summary,
+              source: typeof payload['source'] === 'string'
+                ? payload['source'] as 'gmail' | 'manual' | 'calendar'
+                : 'manual',
+            }
+            if (typeof payload['occurred_at'] === 'string') intInput.occurred_at = payload['occurred_at']
+            const interaction = await addInteraction(contactId, intInput)
+            res.writeHead(201, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ interaction }))
+          } catch (err) {
+            log.error({ err, contactId }, 'CRM: add interaction API error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
+    }
+
+    // DELETE /api/crm/interactions/:id
+    if (url.pathname.startsWith('/api/crm/interactions/') && req.method === 'DELETE') {
+      const interactionId = url.pathname.slice('/api/crm/interactions/'.length)
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+          if (!interactionId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing interaction id' }))
+            return
+          }
+          await deleteInteraction(interactionId)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } catch (err) {
+          log.error({ err, interactionId }, 'CRM: delete interaction API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
         }
       })()
       return
