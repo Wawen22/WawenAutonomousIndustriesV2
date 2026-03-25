@@ -4,7 +4,7 @@
 // Root: <repo>/workspace/{client-slug}/{project-slug}/
 // ============================================================
 
-import { appendFile, mkdir, writeFile } from 'fs/promises'
+import { appendFile, mkdir, readFile, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
@@ -180,4 +180,28 @@ export async function appendProjectProgress(
   ].join('\n')
 
   await appendFile(join(workspacePath, 'PROGRESS.md'), content, 'utf-8')
+}
+
+/**
+ * Tick a checklist item in PROGRESS.md.
+ * @param workspacePath  absolute path to project workspace
+ * @param item           the exact label to check, e.g. 'Brief approved'
+ */
+export async function tickProgressChecklist(
+  workspacePath: string,
+  item: string
+): Promise<void> {
+  const filePath = join(workspacePath, 'PROGRESS.md')
+  if (!existsSync(filePath)) return
+
+  const content = await readFile(filePath, 'utf-8')
+  // Replace `- [ ] <item>` with `- [x] <item>` (case-insensitive match on item)
+  const escaped = item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const updated = content.replace(
+    new RegExp(`^- \\[ \\] ${escaped}$`, 'm'),
+    `- [x] ${item}`
+  )
+  if (updated !== content) {
+    await writeFile(filePath, updated, 'utf-8')
+  }
 }

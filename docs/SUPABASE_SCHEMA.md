@@ -257,6 +257,31 @@ Notes:
 
 ---
 
+### `project_checklists`
+
+Per-project checklist items created by agents and visible in the dashboard.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `uuid` PK | Auto-generated |
+| `project_id` | `uuid` FK→projects | Owning project |
+| `key` | `text` | Machine key (e.g. `scaffold_done`, `qa_passed`) — unique per project |
+| `label` | `text` | Human-readable label (e.g. `Build passing`) |
+| `status` | `text` | `pending` \| `in_progress` \| `done` \| `failed` \| `skipped` |
+| `category` | `text` | `delivery` \| `technical` \| `quality` \| `business` |
+| `agent_id` | `text` FK→agents | Agent that last updated this item |
+| `notes` | `text` | Optional context |
+| `order_index` | `int` | Display order |
+| `created_at` | `timestamptz` | |
+| `updated_at` | `timestamptz` | Auto-updated |
+
+**Standard keys (seeded by architect):**
+`brief_approved`, `architecture_done`, `scaffold_done`, `implementation_done`, `build_passing`, `qa_passed`, `delivered`, `invoiced`
+
+**RLS:** `anon` SELECT, `authenticated` SELECT, `service_role` full access.
+
+---
+
 ### `project_state`
 
 Aggregate state of WAI as a whole.

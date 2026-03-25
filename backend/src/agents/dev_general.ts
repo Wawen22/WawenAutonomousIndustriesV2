@@ -14,9 +14,10 @@ import {
   getTaskById,
   transitionTaskStatus,
   updateTaskStatus,
+  upsertProjectChecklist,
 } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
-import { appendProjectProgress } from '../services/workspace.js'
+import { appendProjectProgress, tickProgressChecklist } from '../services/workspace.js'
 import { runQaAgent } from './qa.js'
 import {
   DEV_WORKERS,
@@ -645,6 +646,13 @@ Constraints:
     })
 
     await updateTaskStatus(task.id, 'done')
+
+    if (workspaceAbsPath) {
+      await tickProgressChecklist(workspaceAbsPath, 'Work in progress').catch(() => {})
+    }
+    if (projectId) {
+      await upsertProjectChecklist({ project_id: projectId, key: 'implementation_done', label: 'Implementation complete', status: 'done', agent_id: agentId, category: 'technical', order_index: 4 }).catch(() => {})
+    }
 
     const { qaActivated, startedDependentTasks, blockedDependentTasks } =
       await processDevGeneralFollowUps(task, notify, workspaceAbsPath)

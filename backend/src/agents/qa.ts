@@ -16,9 +16,10 @@ import {
   updateTaskMetadata,
   updateTaskRequiresHumanReview,
   updateTaskStatus,
+  upsertProjectChecklist,
 } from '../services/supabase.js'
 import { log, recordCapabilityEvent, recordEvent } from '../services/logger.js'
-import { appendProjectProgress } from '../services/workspace.js'
+import { appendProjectProgress, tickProgressChecklist } from '../services/workspace.js'
 import { getCapabilityById } from '../services/capabilities.js'
 import { getDeliveryConfig } from '../services/delivery-config.js'
 import { deployToNetlify, deployToVercel, pushToGitHub } from '../services/deploy.js'
@@ -925,6 +926,24 @@ Constraints:
         cost_usd: result.costUsd,
       },
     })
+
+    // Update checklist based on QA outcome
+    if (projectId) {
+      const buildPassing = (repoAssessment?.blockingIssues.length ?? 0) === 0
+      await upsertProjectChecklist({ project_id: projectId, key: 'build_passing', label: 'Build passing', status: buildPassing ? 'done' : 'failed', agent_id: 'qa', category: 'quality', order_index: 5 }).catch(() => {})
+      await upsertProjectChecklist({ project_id: projectId, key: 'qa_passed', label: 'QA review passed', status: finalRecommendation === 'pass' ? 'done' : finalRecommendation === 'blocked' ? 'failed' : 'in_progress', agent_id: 'qa', category: 'quality', order_index: 6 }).catch(() => {})
+      if (finalRecommendation !== 'blocked') {
+        await upsertProjectChecklist({ project_id: projectId, key: 'delivered', label: 'Delivered to client', status: projectStatus === 'delivered' ? 'done' : 'pending', agent_id: 'qa', category: 'delivery', order_index: 7 }).catch(() => {})
+      }
+    }
+    if (workspaceAbsPath) {
+      if (finalRecommendation === 'pass') {
+        await tickProgressChecklist(workspaceAbsPath, 'Review').catch(() => {})
+        await tickProgressChecklist(workspaceAbsPath, 'Delivered').catch(() => {})
+      } else if (finalRecommendation === 'review') {
+        await tickProgressChecklist(workspaceAbsPath, 'Review').catch(() => {})
+      }
+    }
 
     // When QA blocks a project, escalate to the founder for human review
     // instead of closing the task. The task surfaces in the Founder Ops

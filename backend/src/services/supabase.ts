@@ -841,3 +841,102 @@ export async function getModels(): Promise<ModelConfig[]> {
   if (error) throw new Error(`Failed to get models: ${error.message}`)
   return data as ModelConfig[]
 }
+
+// ---------------------------------------------------------------------------
+// Project Checklists
+// Per-project checklist items. Upsert by (project_id, key).
+// ---------------------------------------------------------------------------
+
+export type ChecklistStatus = 'pending' | 'in_progress' | 'done' | 'failed' | 'skipped'
+export type ChecklistCategory = 'delivery' | 'technical' | 'quality' | 'business'
+
+export interface ProjectChecklistItem {
+  id: string
+  project_id: string
+  key: string
+  label: string
+  status: ChecklistStatus
+  category: ChecklistCategory
+  agent_id?: string | null
+  notes?: string | null
+  order_index: number
+  created_at: string
+  updated_at: string
+}
+
+export interface UpsertChecklistInput {
+  project_id: string
+  key: string
+  label: string
+  status: ChecklistStatus
+  category?: ChecklistCategory
+  agent_id?: string
+  notes?: string
+  order_index?: number
+}
+
+/**
+ * Upsert a single checklist item for a project.
+ * Idempotent — safe to call multiple times with the same key.
+ */
+export async function upsertProjectChecklist(input: UpsertChecklistInput): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('project_checklists')
+    .upsert(
+      {
+        project_id: input.project_id,
+        key: input.key,
+        label: input.label,
+        status: input.status,
+        category: input.category ?? 'delivery',
+        agent_id: input.agent_id ?? null,
+        notes: input.notes ?? null,
+        order_index: input.order_index ?? 0,
+      },
+      { onConflict: 'project_id,key' }
+    )
+
+  if (error) {
+    // Degrade gracefully — checklist is informational, should not break agent flows
+    console.warn(`[checklist] Failed to upsert item "${input.key}" for project ${input.project_id}: ${error.message}`)
+  }
+}
+
+/**
+ * Seed a project's checklist with default delivery items.
+ * Call once when a software project is created (architect or devops_engineer).
+ * Uses status=pending so items can be ticked as work progresses.
+ */
+export async function seedProjectChecklist(projectId: string): Promise<void> {
+  const items: UpsertChecklistInput[] = [
+    { project_id: projectId, key: 'brief_approved',      label: 'Brief approved',        status: 'pending', category: 'delivery',  order_index: 1 },
+    { project_id: projectId, key: 'architecture_done',   label: 'Architecture plan ready', status: 'pending', category: 'technical', order_index: 2 },
+    { project_id: projectId, key: 'scaffold_done',       label: 'Scaffold complete',       status: 'pending', category: 'technical', order_index: 3 },
+    { project_id: projectId, key: 'implementation_done', label: 'Implementation complete', status: 'pending', category: 'technical', order_index: 4 },
+    { project_id: projectId, key: 'build_passing',       label: 'Build passing',           status: 'pending', category: 'quality',   order_index: 5 },
+    { project_id: projectId, key: 'qa_passed',           label: 'QA review passed',        status: 'pending', category: 'quality',   order_index: 6 },
+    { project_id: projectId, key: 'delivered',           label: 'Delivered to client',     status: 'pending', category: 'delivery',  order_index: 7 },
+    { project_id: projectId, key: 'invoiced',            label: 'Invoiced',                status: 'pending', category: 'business',  order_index: 8 },
+  ]
+
+  for (const item of items) {
+    const { error } = await getSupabaseClient()
+      .from('project_checklists')
+      .upsert(item, { onConflict: 'project_id,key', ignoreDuplicates: true })
+
+    if (error) {
+      console.warn(`[checklist] Failed to seed item "${item.key}": ${error.message}`)
+    }
+  }
+}
+
+export async function getProjectChecklist(projectId: string): Promise<ProjectChecklistItem[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('project_checklists')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('order_index', { ascending: true })
+
+  if (error) throw new Error(`Failed to get checklist for project ${projectId}: ${error.message}`)
+  return (data ?? []) as ProjectChecklistItem[]
+}

@@ -8,9 +8,9 @@ import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 
 import { runAgent } from '../services/llm.js'
-import { createTask, getProjectById, updateProjectRepo, updateProjectStatus, updateTaskStatus } from '../services/supabase.js'
+import { createTask, getProjectById, seedProjectChecklist, updateProjectRepo, updateProjectStatus, updateTaskStatus, upsertProjectChecklist } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
-import { appendProjectProgress } from '../services/workspace.js'
+import { appendProjectProgress, tickProgressChecklist } from '../services/workspace.js'
 import { runDevGeneralAgent } from './dev_general.js'
 import { runDevOpsEngineerAgent } from './devops_engineer.js'
 import { runAiEngineerAgent } from './ai_engineer.js'
@@ -384,6 +384,14 @@ Constraints:
         `Artifact: architecture_plan.md`,
         `Summary: ${architecturePlan.executiveSummary}`,
       ])
+      await tickProgressChecklist(workspaceAbsPath, 'Brief approved')
+      await tickProgressChecklist(workspaceAbsPath, 'Work in progress')
+    }
+
+    if (projectId) {
+      await seedProjectChecklist(projectId).catch(() => {})
+      await upsertProjectChecklist({ project_id: projectId, key: 'brief_approved', label: 'Brief approved', status: 'done', agent_id: 'architect', order_index: 1 }).catch(() => {})
+      await upsertProjectChecklist({ project_id: projectId, key: 'architecture_done', label: 'Architecture plan ready', status: 'done', agent_id: 'architect', category: 'technical', order_index: 2 }).catch(() => {})
     }
 
     const createdTasks: Array<{ id: string; assignee: string; title: string }> = []

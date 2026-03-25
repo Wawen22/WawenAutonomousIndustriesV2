@@ -13,9 +13,10 @@ import {
   getTaskById,
   transitionTaskStatus,
   updateTaskStatus,
+  upsertProjectChecklist,
 } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
-import { appendProjectProgress } from '../services/workspace.js'
+import { appendProjectProgress, tickProgressChecklist } from '../services/workspace.js'
 import {
   DEV_WORKERS,
   getBlockedDependencyIds,
@@ -141,6 +142,10 @@ export async function runDevOpsEngineerAgent(
 
     if (workspaceAbsPath) {
       await appendProjectProgress(workspaceAbsPath, 'DevOps scaffold complete', [`DevOps Engineer completed scaffold for ${projectName}.`])
+      await tickProgressChecklist(workspaceAbsPath, 'Work in progress')
+    }
+    if (projectId) {
+      await upsertProjectChecklist({ project_id: projectId, key: 'scaffold_done', label: 'Scaffold complete', status: 'done', agent_id: 'devops_engineer', category: 'technical', order_index: 3 }).catch(() => {})
     }
 
     await notify(`✅ DevOps Engineer scaffold complete for **${projectName}**`)
