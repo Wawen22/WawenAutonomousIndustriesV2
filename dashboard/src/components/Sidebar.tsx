@@ -10,7 +10,7 @@ import { useKnowledgeBaseManifest } from '../hooks/useKnowledgeBaseManifest.js'
 import type { KnowledgeBaseManifest } from '../types/index.js'
 
 export type CompanyViewId = 'overview' | 'tasks' | 'activity' | 'costs' | 'runs' | 'clients' | 'projects' | 'revenue' | 'founder' | 'team' | 'office' | 'memory' | 'capabilities' | 'models' | 'settings' | 'docs'
-export type PersonalViewId = 'assistant' | 'capabilities' | 'models' | 'documents' | 'activity' | 'settings' | 'docs'
+export type PersonalViewId = 'assistant' | 'crm' | 'capabilities' | 'models' | 'documents' | 'activity' | 'settings' | 'docs'
 export type ViewId = CompanyViewId | PersonalViewId
 export type DashboardMode = 'company' | 'personal'
 
@@ -73,6 +73,7 @@ const PERSONAL_NAV_SECTIONS: NavSection[] = [
     title: 'PERSONAL',
     items: [
       { id: 'assistant', label: 'Assistant HQ', icon: 'overview' },
+      { id: 'crm', label: 'Contacts', icon: 'contacts' },
       { id: 'capabilities', label: 'Capabilities', icon: 'cpu' },
       { id: 'models', label: 'Models', icon: 'models' },
       { id: 'documents', label: 'Documents', icon: 'folder' },

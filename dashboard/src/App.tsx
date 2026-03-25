@@ -15,6 +15,7 @@ import { FounderOpsView } from './components/FounderOpsView.js'
 import { TeamOrgView } from './components/TeamOrgView.js'
 import { MemoryView } from './components/MemoryView.js'
 import { PersonalHQView } from './components/PersonalHQView.js'
+import { PersonalCRMView } from './components/PersonalCRMView.js'
 import { PersonalDocumentsView } from './components/PersonalDocumentsView.js'
 import { DocsView } from './components/DocsView.js'
 import { CapabilitiesView } from './components/CapabilitiesView.js'
@@ -84,6 +85,7 @@ const VIEW_META: Record<ViewId, { title: string; description: string }> = {
   models:   { title: 'Models',         description: 'Model registry, agent assignments, and cost governance'        },
   docs:     { title: 'Docs',           description: 'Live knowledge base — canonical docs and archive'      },
   assistant:{ title: 'Assistant HQ',   description: 'Personal execution layer for Neb'                      },
+  crm:      { title: 'Contacts',       description: 'Contact tracking — relationships, follow-ups, interactions' },
   documents:{ title: 'Documents',      description: 'Personal files, notes, and generated reports'          },
   settings: { title: 'Settings',       description: 'Automations and notification channel routing'          },
 }
@@ -204,6 +206,7 @@ function ViewContent({ view }: { view: ViewId }) {
     case 'settings':  return <SettingsView />
     case 'docs':      return null
     case 'assistant': return <PersonalHQView />
+    case 'crm':       return <PersonalCRMView />
     case 'documents': return <PersonalDocumentsView />
   }
 }
