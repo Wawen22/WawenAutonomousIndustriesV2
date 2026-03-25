@@ -622,3 +622,24 @@ export interface ContactInteraction {
   occurred_at: string
   created_at: string
 }
+
+// --- Meeting Notes (T125) ---
+
+export interface ActionItem {
+  text: string
+  done: boolean
+}
+
+export interface MeetingNote {
+  id: string
+  title: string
+  meeting_date: string
+  attendees: string[]
+  raw_notes: string
+  summary: string
+  action_items: ActionItem[]
+  calendar_event_id: string | null
+  contact_ids: string[]
+  created_at: string
+  updated_at: string
+}

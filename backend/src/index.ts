@@ -89,6 +89,13 @@ import {
   addInteraction,
   deleteInteraction,
 } from './services/crm.js'
+import {
+  getMeetingNotes,
+  getMeetingNote,
+  saveMeetingNote,
+  deleteMeetingNote,
+  summarizeMeetingNotes,
+} from './services/meeting-notes.js'
 import { MODELS, AGENT_MODEL_DEFAULTS, getModelOverrides } from './config/models.js'
 import {
   assignModelToAgent,
@@ -2025,6 +2032,168 @@ async function main(): Promise<void> {
         }
       })()
       return
+    }
+
+    // ── Meeting Notes routes (T125) ─────────────────────────────────────────
+
+    // GET /api/meeting-notes — list recent meeting notes
+    if (url.pathname === '/api/meeting-notes' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '20', 10), 100)
+          const notes = await getMeetingNotes(limit)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ notes }))
+        } catch (err) {
+          log.error({ err }, 'Meeting notes: list API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // POST /api/meeting-notes — save a new note (optionally auto-summarize)
+    if (url.pathname === '/api/meeting-notes' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+          const payload = await readJsonBody(req) as Record<string, unknown>
+          const title = typeof payload['title'] === 'string' ? payload['title'].trim() : ''
+          if (!title) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'title is required' }))
+            return
+          }
+          const autoSummarize = payload['auto_summarize'] === true
+          const rawNotes = typeof payload['raw_notes'] === 'string' ? payload['raw_notes'] : ''
+          const attendees = Array.isArray(payload['attendees'])
+            ? (payload['attendees'] as unknown[]).filter((a): a is string => typeof a === 'string')
+            : []
+
+          const saveInput: import('./services/meeting-notes.js').SaveMeetingNoteInput = { title }
+          if (typeof payload['meeting_date'] === 'string') saveInput.meeting_date = payload['meeting_date']
+          if (rawNotes) saveInput.raw_notes = rawNotes
+          if (attendees.length > 0) saveInput.attendees = attendees
+          if (Array.isArray(payload['action_items'])) saveInput.action_items = payload['action_items'] as import('./types/index.js').ActionItem[]
+          if (Array.isArray(payload['contact_ids'])) saveInput.contact_ids = payload['contact_ids'] as string[]
+
+          if (autoSummarize && rawNotes.trim().length > 0) {
+            const { summary, action_items } = await summarizeMeetingNotes(title, rawNotes, attendees)
+            saveInput.summary = summary
+            saveInput.action_items = action_items
+          }
+
+          const note = await saveMeetingNote(saveInput)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ note }))
+        } catch (err) {
+          log.error({ err }, 'Meeting notes: create API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // Routes under /api/meeting-notes/:id (GET, PUT, DELETE)
+    if (url.pathname.startsWith('/api/meeting-notes/')) {
+      const noteId = url.pathname.slice('/api/meeting-notes/'.length)
+
+      // GET /api/meeting-notes/:id
+      if (req.method === 'GET') {
+        void (async () => {
+          try {
+            const note = await getMeetingNote(noteId)
+            if (!note) {
+              res.writeHead(404, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Not found' }))
+              return
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ note }))
+          } catch (err) {
+            log.error({ err, noteId }, 'Meeting notes: get API error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
+      // PUT /api/meeting-notes/:id — partial update (+ optional re-summarize)
+      if (req.method === 'PUT') {
+        void (async () => {
+          try {
+            if (!isAuthorizedDashboardRequest(req)) {
+              res.writeHead(403, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Forbidden' }))
+              return
+            }
+            const payload = await readJsonBody(req) as Record<string, unknown>
+            const existing = await getMeetingNote(noteId)
+            if (!existing) {
+              res.writeHead(404, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Not found' }))
+              return
+            }
+            const updateInput: import('./services/meeting-notes.js').SaveMeetingNoteInput = {
+              id: noteId,
+              title: typeof payload['title'] === 'string' ? payload['title'] : existing.title,
+            }
+            if (typeof payload['meeting_date'] === 'string') updateInput.meeting_date = payload['meeting_date']
+            if (typeof payload['raw_notes'] === 'string') updateInput.raw_notes = payload['raw_notes']
+            if (typeof payload['summary'] === 'string') updateInput.summary = payload['summary']
+            if (Array.isArray(payload['attendees'])) updateInput.attendees = payload['attendees'] as string[]
+            if (Array.isArray(payload['action_items'])) updateInput.action_items = payload['action_items'] as import('./types/index.js').ActionItem[]
+            if (Array.isArray(payload['contact_ids'])) updateInput.contact_ids = payload['contact_ids'] as string[]
+            if ('calendar_event_id' in payload) updateInput.calendar_event_id = typeof payload['calendar_event_id'] === 'string' ? payload['calendar_event_id'] : null
+
+            // Re-summarize if raw_notes changed and auto_summarize requested
+            if (payload['auto_summarize'] === true) {
+              const rawNotes = updateInput.raw_notes ?? existing.raw_notes
+              const attendees = updateInput.attendees ?? existing.attendees
+              const { summary, action_items } = await summarizeMeetingNotes(updateInput.title, rawNotes, attendees)
+              updateInput.summary = summary
+              updateInput.action_items = action_items
+            }
+
+            const note = await saveMeetingNote(updateInput)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ note }))
+          } catch (err) {
+            log.error({ err, noteId }, 'Meeting notes: update API error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
+      // DELETE /api/meeting-notes/:id
+      if (req.method === 'DELETE') {
+        void (async () => {
+          try {
+            if (!isAuthorizedDashboardRequest(req)) {
+              res.writeHead(403, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Forbidden' }))
+              return
+            }
+            await deleteMeetingNote(noteId)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true }))
+          } catch (err) {
+            log.error({ err, noteId }, 'Meeting notes: delete API error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
     }
 
     // ── GET /api/personal/knowledge — list knowledge items ─────────────────

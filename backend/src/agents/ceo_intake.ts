@@ -71,6 +71,11 @@ import {
   addInteraction as crmAddInteraction,
   findContactByNameOrEmail,
 } from '../services/crm.js'
+import {
+  getMeetingNotes as listMeetingNotes,
+  saveMeetingNote,
+  summarizeMeetingNotes,
+} from '../services/meeting-notes.js'
 import type { Client, DeliveryConfig, Payment, Project, ProjectType, SystemEvent, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -266,6 +271,8 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - crm_log_interaction → params: contact, type (email_in|email_out|meeting|note|call), summary, occurred_at? (ISO 8601)  (logga un'interazione con un contatto)
 - crm_get_contacts   → params: status? (active|follow_up|dormant)  (recupera lista contatti, opzionale filtro per status)
 - crm_follow_up_due  → no params  (mostra i contatti con status follow_up che aspettano risposta)
+- meeting_save       → params: title, notes, attendees? (nomi separati da virgola), date? (YYYY-MM-DD)  (salva note riunione e genera automaticamente summary + action items con AI)
+- meeting_list       → no params  (mostra le ultime 10 riunioni con titolo, data e action item count)
 
 Valid project types: ${PROJECT_TYPES.join(', ')}
 
@@ -310,6 +317,8 @@ ${clientContext}
 35. Use crm_log_interaction when Neb logs an interaction with someone (e.g. "ho parlato con X", "ho incontrato X", "ho chiamato X", "log call con X", "email a X"). Infer type from wording: "chiamato/call" → call, "incontrato/meeting/riunione" → meeting, "email/risposto" → email_out, "ricevuto email da" → email_in. For occurred_at, if Neb says "ieri" use yesterday's ISO date; if not specified use current datetime.
 36. Use crm_get_contacts when Neb wants to see his contacts (e.g. "mostra contatti", "lista contatti", "chi ho nel CRM", "chi conosco"). Optional status filter if Neb specifies "attivi", "follow-up", "dormienti".
 37. Use crm_follow_up_due when Neb asks who needs follow-up (e.g. "follow-up da fare", "chi devo seguire", "chi aspetta risposta", "follow up pending", "pending follow-ups").
+38. Use meeting_save when Neb wants to save meeting notes (e.g. "salva note riunione X", "prendi nota del meeting X", "meeting con X: ...", "note riunione"). Neb provides raw notes; WAI auto-generates summary and action items. attendees: comma-separated names if mentioned. date: ISO date if specified; omit if not mentioned.
+39. Use meeting_list when Neb wants to see recent meetings (e.g. "mostra riunioni", "ultime meeting notes", "che meeting ho avuto", "lista meeting").
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -2535,6 +2544,62 @@ async function executeAction(
         return `${i + 1}. *${c.name}* | ${lastContact}${notesSnippet}`
       })
       return [`🔔 Follow-up in sospeso (${contacts.length}):`, ...list].join('\n')
+    }
+
+    case 'meeting_save': {
+      const title = getString(params, 'title') || 'Meeting'
+      const rawNotes = getString(params, 'notes') || getString(params, 'raw_notes') || ''
+      const attendeesRaw = getString(params, 'attendees') || ''
+      const attendees = attendeesRaw
+        ? attendeesRaw.split(',').map((a) => a.trim()).filter(Boolean)
+        : []
+      const dateParam = getString(params, 'date') || ''
+      const meetingDate = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
+        ? dateParam
+        : new Date().toISOString().slice(0, 10)
+
+      let summary = ''
+      let actionItems: import('../types/index.js').ActionItem[] = []
+      if (rawNotes.trim().length > 0) {
+        try {
+          const result = await summarizeMeetingNotes(title, rawNotes, attendees)
+          summary = result.summary
+          actionItems = result.action_items
+        } catch (err) {
+          log.warn({ err }, 'CEO Intake: meeting summarization failed — saving without summary')
+        }
+      }
+
+      const note = await saveMeetingNote({
+        title,
+        meeting_date: meetingDate,
+        attendees,
+        raw_notes: rawNotes,
+        summary,
+        action_items: actionItems,
+      })
+
+      const attendeesStr = attendees.length > 0 ? ` con ${attendees.join(', ')}` : ''
+      const actionStr = actionItems.length > 0
+        ? `\n\n📌 Action items:\n${actionItems.map((a, i) => `${i + 1}. ${a.text}`).join('\n')}`
+        : ''
+      const summaryStr = summary ? `\n\n📝 Summary: ${summary}` : ''
+      return `✅ Note riunione salvate: *${note.title}*${attendeesStr} (${meetingDate})${summaryStr}${actionStr}`
+    }
+
+    case 'meeting_list': {
+      const notes = await listMeetingNotes(10)
+      if (notes.length === 0) return '📅 Nessuna nota riunione salvata.'
+      const list = notes.map((n, i) => {
+        const attendeesStr = n.attendees.length > 0 ? ` — ${n.attendees.join(', ')}` : ''
+        const actionCount = Array.isArray(n.action_items) ? n.action_items.length : 0
+        const doneCount = Array.isArray(n.action_items)
+          ? (n.action_items as import('../types/index.js').ActionItem[]).filter((a) => a.done).length
+          : 0
+        const actionStr = actionCount > 0 ? ` | ${doneCount}/${actionCount} action items` : ''
+        return `${i + 1}. 📅 *${n.title}*${attendeesStr} (${n.meeting_date})${actionStr}`
+      })
+      return [`📅 Ultime riunioni (${notes.length}):`, ...list].join('\n')
     }
 
     // reply is not a real command — the LLM sometimes wraps informational

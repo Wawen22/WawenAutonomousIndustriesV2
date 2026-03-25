@@ -72,6 +72,7 @@ This now implies a platform decision:
 - Run a daily brief automation with persistent on/off control
 - Inspect personal and shared capabilities from the same dashboard control plane used by Company mode
 - Track contacts, log interactions, and follow up via the Personal CRM (`Contacts` view + CEO NL shortcuts)
+- Save meeting notes and auto-generate AI summaries + action items via `Meeting Notes` tab in Assistant HQ
 
 ---
 
@@ -169,7 +170,7 @@ Ispirato da `awesome-openclaw-usecases-main/`. Use case di produttività persona
 |----|-------|----------|--------|------|
 | T123 | Second Brain — personal knowledge ingestion + search | 2 | ✅ Done | `knowledge_items` table (pgvector 1536-dim), LiteLLM embedding + local hash fallback, dedup 0.88. API routes GET/POST/DELETE. CEO Intake shortcuts (brain_save/url/search). Daily brief section. Dashboard SecondBrainPanel + tab in Personal HQ. |
 | T124 | Personal CRM — contact tracking + follow-up automation | 2 | ✅ Done | `contacts` + `contact_interactions` tables, `crm.ts` service, 8 API routes, 4 CEO NL commands, `PersonalCRMView` split-panel dashboard |
-| T125 | Meeting Notes automation — Calendar + trascrizione + summary | 3 | ⬜ Todo | Google Calendar MCP + action items |
+| T125 | Meeting Notes automation — Calendar + trascrizione + summary | 3 | ✅ Done | `meeting_notes` table, `meeting-notes.ts` service, 5 API routes, 2 CEO NL commands, `MeetingNotesPanel` tab in Assistant HQ |
 
 ### Fase 4 — Document skills reali
 
@@ -194,6 +195,25 @@ Ispirato da `skills-main/` (Anthropic). Generazione documenti DOCX/PDF reali inv
 ---
 
 ## Recent Changes
+
+### 2026-03-25 — T125: Meeting Notes Automation
+
+**New:**
+- `supabase/migrations/20260326020000_meeting_notes.sql`: `meeting_notes` table — id, title, meeting_date (date), attendees (text[]), raw_notes, summary (AI-generated), action_items (jsonb `[{text, done}]`), calendar_event_id (nullable), contact_ids (uuid[]). RLS policies. Reuses `set_updated_at()` trigger.
+- `backend/src/services/meeting-notes.ts`: `getMeetingNotes(limit)`, `getMeetingNote(id)`, `saveMeetingNote(input)`, `deleteMeetingNote(id)`, `summarizeMeetingNotes(title, rawNotes, attendees)` — calls LLM (nemotron-120b) to extract structured summary + action items from raw notes.
+- `backend/src/index.ts`: 5 new routes — `GET/POST /api/meeting-notes`, `GET/PUT/DELETE /api/meeting-notes/:id`. POST and PUT support `auto_summarize: true` to trigger LLM summarization inline.
+- `backend/src/agents/ceo_intake.ts`: 2 NL commands — `meeting_save` (saves note + auto-summarizes, replies with summary + action items list), `meeting_list` (shows last 10 meetings with action item progress).
+- `dashboard/src/components/MeetingNotesPanel.tsx`: expandable note cards with summary, checkable action items (PUT on toggle), raw notes toggle, delete. New note form with title/date/attendees/raw notes textarea → "Save & Summarize" button.
+- `dashboard/src/components/PersonalHQView.tsx`: `meetings` tab added after `brain` tab.
+- `dashboard/src/types/index.ts` + `backend/src/types/index.ts`: `ActionItem` + `MeetingNote` interfaces.
+
+**How to test:**
+1. Personal mode → Assistant HQ → "Meeting Notes" tab → click "+ New Note" → fill title + raw notes → "Save & Summarize" → card appears with AI summary and checkable action items
+2. Expand a note card → check an action item → badge updates immediately
+3. CEO NL (Telegram): `"salva note riunione Q1 con Alice, Bob: abbiamo discusso il budget 2026. Decisione: aumentare team di 2. Next: mandare proposta entro venerdì"` → gets summary + action items back
+4. CEO NL: `"mostra riunioni"` → list of last 10 meetings with action item progress
+5. `GET /api/meeting-notes` → `{ notes: [...] }`
+6. `POST /api/meeting-notes` with `{ title, raw_notes, auto_summarize: true }` → returns note with AI-generated summary
 
 ### 2026-03-25 — T124: Personal CRM
 

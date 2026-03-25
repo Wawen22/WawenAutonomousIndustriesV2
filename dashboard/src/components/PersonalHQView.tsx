@@ -4,6 +4,7 @@ import { Icon } from './ui/Icon.js'
 import { Badge } from './ui/Badge.js'
 import { usePersonalContext } from '../hooks/usePersonalContext.js'
 import { SecondBrainPanel } from './SecondBrainPanel.js'
+import { MeetingNotesPanel } from './MeetingNotesPanel.js'
 import type { PersonalAutomationStatus, WhatsAppStatus } from '../types/index.js'
 
 const BACKEND_URL = (import.meta.env['VITE_BACKEND_URL'] as string | undefined) ?? ''
@@ -80,12 +81,13 @@ const FOUNDER_QUICK_ACTIONS: FounderQuickAction[] = [
   },
 ]
 
-type HQTab = 'exec' | 'automations' | 'setup' | 'profile' | 'brain'
+type HQTab = 'exec' | 'automations' | 'setup' | 'profile' | 'brain' | 'meetings'
 
 const HQ_TABS: { id: HQTab; label: string }[] = [
   { id: 'exec', label: 'Exec' },
   { id: 'automations', label: 'Automations' },
   { id: 'brain', label: 'Second Brain' },
+  { id: 'meetings', label: 'Meeting Notes' },
   { id: 'setup', label: 'Setup' },
   { id: 'profile', label: 'Profile' },
 ]
@@ -936,6 +938,17 @@ export function PersonalHQView() {
             <p className="mt-1 text-xs text-slate-500">Personal knowledge base — save notes, URLs, and files; search semantically.</p>
           </div>
           <SecondBrainPanel />
+        </section>
+      )}
+
+      {/* Tab: Meeting Notes */}
+      {activeTab === 'meetings' && (
+        <section className="rounded-3xl border border-white/5 bg-white/[0.02] p-6">
+          <div className="mb-6">
+            <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">Meeting Notes</h2>
+            <p className="mt-1 text-xs text-slate-500">Save raw notes from any meeting — AI generates summary and action items automatically.</p>
+          </div>
+          <MeetingNotesPanel />
         </section>
       )}
 
