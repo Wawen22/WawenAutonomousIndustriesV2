@@ -18,6 +18,7 @@ import {
   useAgentStats,
   useEventsWithContext,
   useProjectChecklist,
+  useProjectEvents,
 } from '../hooks/useSupabaseRealtime.js'
 import { getClientColor } from '../lib/clientColors.js'
 import { getAgentColor } from '../lib/agentColors.js'
@@ -72,7 +73,7 @@ interface DeliverableFile {
   dir: 'deliverable' | 'output' | 'repo'
 }
 
-type ProjectCommandTab = 'agent' | 'project' | 'delivery' | 'checklist'
+type ProjectCommandTab = 'agent' | 'project' | 'delivery' | 'checklist' | 'events'
 
 function deliveryProviderLabel(provider: DeliveryDeployProvider): string {
   if (provider === 'vercel') return 'Vercel'
@@ -420,6 +421,87 @@ function DeliveryTabContent({ project }: { project: Project }) {
 }
 
 // ---------------------------------------------------------------------------
+// Project Events Tab (per-project event feed)
+// ---------------------------------------------------------------------------
+
+const SEV_DOT: Record<string, string> = {
+  info:     'bg-sky-400',
+  warning:  'bg-amber-400',
+  error:    'bg-rose-400',
+  critical: 'bg-rose-600',
+}
+const SEV_TEXT: Record<string, string> = {
+  info:     'text-sky-400',
+  warning:  'text-amber-400',
+  error:    'text-rose-400',
+  critical: 'text-rose-500',
+}
+
+function ProjectEventsTab({ projectId }: { projectId: string }) {
+  const { data: events, loading, error } = useProjectEvents(projectId, 100)
+
+  if (loading) {
+    return (
+      <div className="py-20 flex flex-col items-center gap-4 opacity-30">
+        <div className="w-8 h-8 border-2 border-[#00D4FF]/20 border-t-[#00D4FF] rounded-full animate-spin" />
+        <span className="text-[10px] font-black uppercase tracking-[0.3em]">Loading Events...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return <div className="py-12 text-center text-rose-400 font-mono text-xs">Error: {error}</div>
+  }
+
+  if (events.length === 0) {
+    return (
+      <div className="py-16 text-center space-y-2">
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600">No events yet</p>
+        <p className="text-[9px] font-mono text-slate-700">Events appear here when agents work on this project.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {events.map((ev) => {
+        const dot = SEV_DOT[ev.severity] ?? SEV_DOT['info']
+        const txt = SEV_TEXT[ev.severity] ?? SEV_TEXT['info']
+        const ts  = new Date(ev.created_at)
+        return (
+          <div key={ev.id} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:border-white/10 transition-all">
+            <div className="mt-1.5 shrink-0">
+              <div className={clsx('w-1.5 h-1.5 rounded-full', dot)} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-black text-slate-200 uppercase tracking-tight">
+                  {ev.type.replace(/_/g, ' ')}
+                </span>
+                <span className={clsx('text-[9px] font-black uppercase tracking-widest', txt)}>
+                  {ev.severity}
+                </span>
+                {ev.agent_id && (
+                  <span className="text-[9px] font-mono text-slate-600 uppercase">{ev.agent_id}</span>
+                )}
+              </div>
+              {typeof ev.payload?.['summary'] === 'string' && (
+                <p className="mt-0.5 text-[10px] font-mono text-slate-500 leading-relaxed line-clamp-2">
+                  {ev.payload['summary'] as string}
+                </p>
+              )}
+            </div>
+            <span className="text-[9px] font-mono text-slate-700 shrink-0 mt-0.5">
+              {format(ts, 'HH:mm:ss')}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Project Command Center (Modal)
 // ---------------------------------------------------------------------------
 
@@ -439,6 +521,8 @@ function ProjectCommandCenter({
   const { files, loading } = useDeliverables(project.workspace_path)
   const { data: checklistItems } = useProjectChecklist(project.id)
   const [tab, setTab] = useState<ProjectCommandTab>('agent')
+  const [restarting, setRestarting] = useState(false)
+  const [restartMsg, setRestartMsg] = useState<string | null>(null)
   const agentFiles = files.filter(f => f.dir === 'deliverable')
   const projectFiles = files.filter(f => f.dir === 'output' || f.dir === 'repo')
   const color = STATUS_COLOR[project.status] ?? 'bg-slate-500'
@@ -526,7 +610,7 @@ function ProjectCommandCenter({
               <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Assigned Neural Nodes</h4>
               <div className="grid grid-cols-4 gap-2">
                 {involvedAgents.map(a => (
-                  <button 
+                  <button
                     key={a.id} onClick={() => onAgentClick(a)}
                     className={clsx("w-12 h-12 rounded-xl border flex items-center justify-center font-black text-xs transition-transform hover:scale-110", getAgentColor(a.id).bg, getAgentColor(a.id).border, getAgentColor(a.id).text)}
                     title={a.name}
@@ -536,6 +620,34 @@ function ProjectCommandCenter({
                 ))}
               </div>
             </section>
+
+            {(project.status === 'blocked' || project.status === 'paused') && (
+              <section className="space-y-3">
+                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Actions</h4>
+                <button
+                  disabled={restarting}
+                  onClick={async () => {
+                    setRestarting(true)
+                    setRestartMsg(null)
+                    try {
+                      const r = await fetch(`${BACKEND_URL}/api/projects/${encodeURIComponent(project.id)}/restart`, { method: 'POST' })
+                      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+                      setRestartMsg('✅ Project reset to active')
+                    } catch (err) {
+                      setRestartMsg(`❌ ${err instanceof Error ? err.message : 'Error'}`)
+                    } finally {
+                      setRestarting(false)
+                    }
+                  }}
+                  className="w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all bg-emerald-400/10 border border-emerald-400/30 text-emerald-400 hover:bg-emerald-400/20 hover:border-emerald-400/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {restarting ? '⏳ Restarting…' : '▶ Restart Delivery'}
+                </button>
+                {restartMsg && (
+                  <p className="text-[10px] font-mono text-center text-slate-400">{restartMsg}</p>
+                )}
+              </section>
+            )}
           </div>
 
           <div className="flex-1 flex flex-col overflow-hidden">
@@ -545,12 +657,15 @@ function ProjectCommandCenter({
                 <button onClick={() => setTab('project')} className={clsx("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", tab === 'project' ? "bg-violet-500 text-white shadow-[0_0_15px_rgba(139,92,246,0.3)]" : "text-slate-500 hover:text-slate-300")}>System Source Tree</button>
                 <button onClick={() => setTab('delivery')} className={clsx("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", tab === 'delivery' ? "bg-amber-300 text-black shadow-[0_0_20px_rgba(252,211,77,0.28)]" : "text-slate-500 hover:text-slate-300")}>Delivery</button>
                 <button onClick={() => setTab('checklist')} className={clsx("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", tab === 'checklist' ? "bg-emerald-400 text-black shadow-[0_0_20px_rgba(52,211,153,0.3)]" : "text-slate-500 hover:text-slate-300")}>Checklist</button>
+                <button onClick={() => setTab('events')} className={clsx("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", tab === 'events' ? "bg-sky-400 text-black shadow-[0_0_20px_rgba(56,189,248,0.3)]" : "text-slate-500 hover:text-slate-300")}>Events</button>
               </div>
               <span className="text-[10px] font-mono text-slate-700 uppercase font-bold tracking-tighter">Root: {project.workspace_path}</span>
             </div>
             <div className="flex-1 overflow-y-auto p-8 pt-4 custom-scrollbar">
               {tab === 'checklist' ? (
                 <ProjectChecklist projectId={project.id} />
+              ) : tab === 'events' ? (
+                <ProjectEventsTab projectId={project.id} />
               ) : tab === 'delivery' ? (
                 <DeliveryTabContent project={project} />
               ) : loading ? (

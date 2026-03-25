@@ -19,7 +19,7 @@ import {
   formatMarkProjectPaidMessage,
 } from './services/founder_revenue_actions.js'
 import { getTelegramBot } from './services/telegram.js'
-import { updateAgentStatus, upsertAgentRecord, upsertModelRecord, getProjectState } from './services/supabase.js'
+import { updateAgentStatus, upsertAgentRecord, upsertModelRecord, getProjectState, updateProjectStatus } from './services/supabase.js'
 import { AGENTS, getAllAgentIds } from './config/agents.js'
 import { pingLiteLLM } from './services/llm.js'
 import { getMcpBridgeStatus } from './services/mcp-bridge.js'
@@ -586,6 +586,38 @@ async function main(): Promise<void> {
           const statusCode = /not found/i.test(message) ? 404 : 500
           log.error({ err }, 'Project delivery config PATCH API error')
           res.writeHead(statusCode, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    // POST /api/projects/:id/restart — reset a blocked/paused project back to active
+    const projectRestartMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/restart$/)
+    if (projectRestartMatch && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+          const projectId = decodeURIComponent(projectRestartMatch[1] ?? '').trim()
+          if (!projectId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing project id' }))
+            return
+          }
+          await updateProjectStatus(projectId, 'active')
+          await recordEvent('founder_command', {
+            payload: { command: 'restart_project', project_id: projectId, source: 'dashboard' },
+          })
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Project restart API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: message }))
         }
       })()

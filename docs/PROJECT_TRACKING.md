@@ -81,6 +81,7 @@ This now implies a platform decision:
 | T128 | Agentic Loop + Team Software Dev Refactor | ✅ Done | Claude | 1 | Stable — QA auto-fix loop active |
 | T129 | Project Checklists + QA stability | ✅ Done | Claude | 1 | `project_checklists` table, NODE_ENV fix, QA auto-fix loop, PROGRESS.md ticking |
 | T130 | Dashboard Project Checklist View | ✅ Done | Claude | 1 | `ProjectChecklist` component, Realtime hook, Checklist tab in Projects modal |
+| T131 | Dashboard Project Governance UX | ✅ Done | Claude | 1 | Restart Delivery button (POST /api/projects/:id/restart), per-project Events tab with Realtime feed |
 | T106 | Governed Delivery Pipeline | ✅ Done | Codex | 1 | — |
 | T107 | Security hardening (CORS + bearer token + path traversal) | ✅ Done | Codex | 1 | — |
 | T108 | Invoice email automation | ✅ Done | Claude | 1 | — |
@@ -192,6 +193,21 @@ Ispirato da `skills-main/` (Anthropic). Generazione documenti DOCX/PDF reali inv
 ---
 
 ## Recent Changes
+
+### 2026-03-25 — T131: Dashboard Project Governance UX
+
+**New:**
+- `backend/src/index.ts`: `POST /api/projects/:id/restart` — resetta status da `blocked`/`paused` ad `active`, logga evento `founder_command`. Protetto da `isAuthorizedDashboardRequest`.
+- `dashboard/src/hooks/useSupabaseRealtime.ts`: `useProjectEvents(projectId, limit)` — fetch in due step (task IDs → eventi filtrati per `task_id`), Realtime subscription sulla tabella `events`.
+- `dashboard/src/components/ProjectsView.tsx`:
+  - `ProjectEventsTab` — feed eventi scoped al progetto, con colori severity e timestamp.
+  - Tab "Events" (sky) nel `ProjectCommandCenter` modal.
+  - Pulsante "▶ Restart Delivery" nel sidebar, visibile solo quando `status === 'blocked' | 'paused'`. Chiama l'endpoint restart e mostra feedback inline.
+
+**How to test:**
+1. Apri un progetto bloccato → vedi il pulsante "Restart Delivery" nel sidebar → clicca → status torna `active`
+2. Tab "Events" mostra tutti gli eventi legati ai task del progetto, live
+3. `POST /api/projects/:uuid/restart` → `{ ok: true }` + evento `founder_command` loggato
 
 ### 2026-03-23 — T126: Document Generation (PDF output)
 

@@ -328,6 +328,60 @@ export function useProjectChecklist(projectId: string | null) {
   return { data, loading, error }
 }
 
+/** Per-project system events — realtime, filtered by project_id via task join. */
+export function useProjectEvents(projectId: string | null, limit = 100) {
+  const [data, setData] = useState<SystemEventWithContext[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const channelId = useState(() => `rt-project_events-${++_channelSeq}`)[0]
+
+  const doFetch = useCallback(async () => {
+    if (!projectId) { setData([]); setLoading(false); return }
+    try {
+      setLoading(true)
+      // Step 1: get task IDs for the project
+      const { data: taskRows, error: taskErr } = await supabase
+        .from('tasks')
+        .select('id')
+        .eq('project_id', projectId)
+      if (taskErr) throw new Error(taskErr.message)
+
+      const taskIds = (taskRows ?? []).map((t) => t.id as string)
+      if (taskIds.length === 0) { setData([]); setError(null); return }
+
+      // Step 2: fetch events for those tasks
+      const { data: evRows, error: evErr } = await supabase
+        .from('events')
+        .select('*, task:tasks(metadata, project_id)')
+        .in('task_id', taskIds)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+      if (evErr) throw new Error(evErr.message)
+
+      setData((evRows ?? []) as SystemEventWithContext[])
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+    } finally {
+      setLoading(false)
+    }
+  }, [projectId, limit])
+
+  useEffect(() => {
+    void doFetch()
+    if (!projectId) return
+    const channel = supabase
+      .channel(channelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => {
+        void doFetch()
+      })
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [projectId, doFetch, channelId])
+
+  return { data, loading, error }
+}
+
 /** Per-agent run counts (total) and last 3 runs — for Team Org view. */
 export function useAgentStats() {
   const [runCounts, setRunCounts] = useState<Record<string, number>>({})
