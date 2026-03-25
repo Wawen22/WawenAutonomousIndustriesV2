@@ -65,6 +65,12 @@ import { runCeoAgent } from './ceo.js'
 import { runQaAgent } from './qa.js'
 import { createAgentMemory } from '../services/memory.js'
 import { ingestNote, ingestUrl as ingestKnowledgeUrl, listKnowledgeItems, searchKnowledge } from '../services/knowledge.js'
+import {
+  getContacts as crmGetContacts,
+  upsertContact as crmUpsertContact,
+  addInteraction as crmAddInteraction,
+  findContactByNameOrEmail,
+} from '../services/crm.js'
 import type { Client, DeliveryConfig, Payment, Project, ProjectType, SystemEvent, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -256,6 +262,10 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - brain_save         → params: text, tags?  (salva una nota/testo nel Second Brain personale)
 - brain_url          → params: url, tags?   (scarica e salva una pagina web nel Second Brain)
 - brain_search       → params: query        (cerca semanticamente nel Second Brain)
+- crm_add_contact    → params: name, email?, company?, notes?, tags?  (aggiunge un nuovo contatto al CRM)
+- crm_log_interaction → params: contact, type (email_in|email_out|meeting|note|call), summary, occurred_at? (ISO 8601)  (logga un'interazione con un contatto)
+- crm_get_contacts   → params: status? (active|follow_up|dormant)  (recupera lista contatti, opzionale filtro per status)
+- crm_follow_up_due  → no params  (mostra i contatti con status follow_up che aspettano risposta)
 
 Valid project types: ${PROJECT_TYPES.join(', ')}
 
@@ -296,6 +306,10 @@ ${clientContext}
 31. Use brain_save when Neb wants to save a note, insight, or text to his personal knowledge base / Second Brain (e.g. "salva questa nota", "ricorda questo", "aggiungi al brain", "brain: ...").
 32. Use brain_url when Neb wants to save a web page — including phrases like "salva questo URL", "salva questo link", "aggiungi questo sito". If Neb adds context like "per il cliente X" or "per il progetto Y", pass that as tags (e.g. tags: ["bayou"]). Do NOT use create_document for URL-saving requests.
 33. Use brain_search when Neb wants to search/recall something from his Second Brain (e.g. "cerca nel brain", "cosa so su X", "trova nel knowledge base", "brain search: ...").
+34. Use crm_add_contact when Neb wants to save a new contact (e.g. "aggiungi contatto X", "salva contatto", "nuovo contatto", "add contact").
+35. Use crm_log_interaction when Neb logs an interaction with someone (e.g. "ho parlato con X", "ho incontrato X", "ho chiamato X", "log call con X", "email a X"). Infer type from wording: "chiamato/call" → call, "incontrato/meeting/riunione" → meeting, "email/risposto" → email_out, "ricevuto email da" → email_in. For occurred_at, if Neb says "ieri" use yesterday's ISO date; if not specified use current datetime.
+36. Use crm_get_contacts when Neb wants to see his contacts (e.g. "mostra contatti", "lista contatti", "chi ho nel CRM", "chi conosco"). Optional status filter if Neb specifies "attivi", "follow-up", "dormienti".
+37. Use crm_follow_up_due when Neb asks who needs follow-up (e.g. "follow-up da fare", "chi devo seguire", "chi aspetta risposta", "follow up pending", "pending follow-ups").
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -2443,6 +2457,84 @@ async function executeAction(
       if (matches.length === 0) return `🧠 Nessun risultato trovato nel Second Brain per: "${query}"`
       const lines = matches.map((m, i) => `${i + 1}. *${m.title}* (${Math.round(m.similarity * 100)}%)\n${m.content.slice(0, 200)}…`)
       return `🧠 Second Brain — risultati per "${query}":\n\n${lines.join('\n\n')}`
+    }
+
+    case 'crm_add_contact': {
+      const name = getString(params, 'name')
+      if (!name) return '⚠️ crm_add_contact: name mancante.'
+      const contact = await crmUpsertContact({
+        name,
+        email: getString(params, 'email') || null,
+        company: getString(params, 'company') || null,
+        notes: getString(params, 'notes') || '',
+        tags: Array.isArray(params['tags']) ? (params['tags'] as string[]) : [],
+      })
+      const companyStr = contact.company ? ` (${contact.company})` : ''
+      return `✅ Contatto salvato: *${contact.name}*${companyStr}`
+    }
+
+    case 'crm_log_interaction': {
+      const contactQuery = getString(params, 'contact') || getString(params, 'name')
+      if (!contactQuery) return '⚠️ crm_log_interaction: contact mancante.'
+      const intType = getString(params, 'type')
+      const validTypes = ['email_in', 'email_out', 'meeting', 'note', 'call']
+      if (!intType || !validTypes.includes(intType)) return `⚠️ crm_log_interaction: type non valido. Valori: ${validTypes.join(', ')}`
+      const summary = getString(params, 'summary')
+      if (!summary) return '⚠️ crm_log_interaction: summary mancante.'
+      const rawOccurredAt = getString(params, 'occurred_at')
+      const occurredAt = rawOccurredAt && !isNaN(Date.parse(rawOccurredAt))
+        ? new Date(rawOccurredAt).toISOString()
+        : new Date().toISOString()
+
+      let contact = await findContactByNameOrEmail(contactQuery)
+      if (!contact) {
+        contact = await crmUpsertContact({ name: contactQuery })
+      }
+
+      await crmAddInteraction(contact.id, {
+        type: intType as 'email_in' | 'email_out' | 'meeting' | 'note' | 'call',
+        summary,
+        source: 'manual',
+        occurred_at: occurredAt,
+      })
+      return `✅ Interazione loggata per *${contact.name}*: ${summary.slice(0, 80)}${summary.length > 80 ? '…' : ''}`
+    }
+
+    case 'crm_get_contacts': {
+      const statusParam = getString(params, 'status')
+      const validStatuses = ['active', 'follow_up', 'dormant']
+      const filter = statusParam && validStatuses.includes(statusParam)
+        ? { status: statusParam as 'active' | 'follow_up' | 'dormant' }
+        : undefined
+      const contacts = await crmGetContacts(filter)
+      if (contacts.length === 0) {
+        return filter
+          ? `📋 Nessun contatto con status "${filter.status}".`
+          : '📋 Nessun contatto nel CRM.'
+      }
+      const list = contacts.slice(0, 15).map((c, i) => {
+        const statusEmoji = c.status === 'follow_up' ? '🟡' : c.status === 'active' ? '🟢' : '⚫'
+        const companyStr = c.company ? ` — ${c.company}` : ''
+        const lastContact = c.last_contact_at
+          ? ` | ultimo contatto: ${new Date(c.last_contact_at).toLocaleDateString('it-IT')}`
+          : ''
+        return `${i + 1}. ${statusEmoji} *${c.name}*${companyStr}${lastContact}`
+      })
+      const header = filter ? `📋 Contatti (${filter.status}):` : `📋 Tutti i contatti (${contacts.length}):`
+      return [header, ...list].join('\n')
+    }
+
+    case 'crm_follow_up_due': {
+      const contacts = await crmGetContacts({ status: 'follow_up' })
+      if (contacts.length === 0) return '✅ Nessun follow-up in sospeso.'
+      const list = contacts.map((c, i) => {
+        const lastContact = c.last_contact_at
+          ? `ultimo contatto: ${new Date(c.last_contact_at).toLocaleDateString('it-IT')}`
+          : 'nessun contatto registrato'
+        const notesSnippet = c.notes ? ` — ${c.notes.slice(0, 80)}${c.notes.length > 80 ? '…' : ''}` : ''
+        return `${i + 1}. *${c.name}* | ${lastContact}${notesSnippet}`
+      })
+      return [`🔔 Follow-up in sospeso (${contacts.length}):`, ...list].join('\n')
     }
 
     // reply is not a real command — the LLM sometimes wraps informational
