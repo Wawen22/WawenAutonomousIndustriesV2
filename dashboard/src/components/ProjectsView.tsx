@@ -10,17 +10,19 @@ import { format } from 'date-fns'
 import { Stat } from './ui/Stat.js'
 import { Icon, type IconName } from './ui/Icon.js'
 import { AgentDetailSidebar } from './AgentDetailSidebar.js'
-import { 
-  useClients, 
-  useProjects, 
-  useTasks, 
-  useAgents, 
-  useAgentStats, 
-  useEventsWithContext 
+import {
+  useClients,
+  useProjects,
+  useTasks,
+  useAgents,
+  useAgentStats,
+  useEventsWithContext,
+  useProjectChecklist,
 } from '../hooks/useSupabaseRealtime.js'
 import { getClientColor } from '../lib/clientColors.js'
 import { getAgentColor } from '../lib/agentColors.js'
 import { renderMarkdown } from '../lib/renderMarkdown.js'
+import { ProjectChecklist } from './ProjectChecklist.js'
 import type { Agent, DeliveryConfig, DeliveryDeployProvider, Project, ProjectStatus, ProjectType } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -70,7 +72,7 @@ interface DeliverableFile {
   dir: 'deliverable' | 'output' | 'repo'
 }
 
-type ProjectCommandTab = 'agent' | 'project' | 'delivery'
+type ProjectCommandTab = 'agent' | 'project' | 'delivery' | 'checklist'
 
 function deliveryProviderLabel(provider: DeliveryDeployProvider): string {
   if (provider === 'vercel') return 'Vercel'
@@ -435,11 +437,19 @@ function ProjectCommandCenter({
   onAgentClick: (a: Agent) => void;
 }) {
   const { files, loading } = useDeliverables(project.workspace_path)
+  const { data: checklistItems } = useProjectChecklist(project.id)
   const [tab, setTab] = useState<ProjectCommandTab>('agent')
   const agentFiles = files.filter(f => f.dir === 'deliverable')
   const projectFiles = files.filter(f => f.dir === 'output' || f.dir === 'repo')
-  const progress = STATUS_LEVEL[project.status] ?? 0
   const color = STATUS_COLOR[project.status] ?? 'bg-slate-500'
+
+  // Derive progress from checklist completion when items exist; fall back to status-based
+  const progress = (() => {
+    const total = checklistItems.filter(i => i.status !== 'skipped').length
+    if (total === 0) return STATUS_LEVEL[project.status] ?? 0
+    const done = checklistItems.filter(i => i.status === 'done').length
+    return Math.round((done / total) * 100)
+  })()
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -476,12 +486,25 @@ function ProjectCommandCenter({
               <div className="space-y-2">
                 <div className="flex justify-between text-[11px] font-bold text-slate-300">
                   <span>Progress</span>
-                  <span>{progress}%</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-mono text-slate-600 uppercase tracking-tight">
+                      {checklistItems.filter(i => i.status !== 'skipped').length > 0 ? 'checklist' : 'status'}
+                    </span>
+                    <span>{progress}%</span>
+                  </div>
                 </div>
                 <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                  <div className={clsx("h-full transition-all duration-1000 shadow-[0_0_10px_currentColor]", color)} style={{ width: `${progress}%` }} />
+                  <div
+                    className={clsx("h-full transition-all duration-1000", project.status === 'blocked' ? 'bg-emerald-400' : color)}
+                    style={{ width: `${progress}%` }}
+                  />
                 </div>
-                <p className={clsx("text-[10px] font-black uppercase tracking-widest text-right", color.replace('bg-', 'text-'))}>{project.status}</p>
+                <div className="flex items-center justify-between">
+                  <span className={clsx("text-[10px] font-black uppercase tracking-widest", color.replace('bg-', 'text-'))}>{project.status}</span>
+                  {project.status === 'blocked' && (
+                    <span className="text-[9px] font-mono text-rose-400 uppercase tracking-wide">⛔ blocked</span>
+                  )}
+                </div>
               </div>
             </section>
 
@@ -521,11 +544,14 @@ function ProjectCommandCenter({
                 <button onClick={() => setTab('agent')} className={clsx("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", tab === 'agent' ? "bg-[#00D4FF] text-black shadow-[0_0_20px_rgba(0,212,255,0.3)]" : "text-slate-500 hover:text-slate-300")}>Neural Output Clusters</button>
                 <button onClick={() => setTab('project')} className={clsx("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", tab === 'project' ? "bg-violet-500 text-white shadow-[0_0_15px_rgba(139,92,246,0.3)]" : "text-slate-500 hover:text-slate-300")}>System Source Tree</button>
                 <button onClick={() => setTab('delivery')} className={clsx("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", tab === 'delivery' ? "bg-amber-300 text-black shadow-[0_0_20px_rgba(252,211,77,0.28)]" : "text-slate-500 hover:text-slate-300")}>Delivery</button>
+                <button onClick={() => setTab('checklist')} className={clsx("px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", tab === 'checklist' ? "bg-emerald-400 text-black shadow-[0_0_20px_rgba(52,211,153,0.3)]" : "text-slate-500 hover:text-slate-300")}>Checklist</button>
               </div>
               <span className="text-[10px] font-mono text-slate-700 uppercase font-bold tracking-tighter">Root: {project.workspace_path}</span>
             </div>
             <div className="flex-1 overflow-y-auto p-8 pt-4 custom-scrollbar">
-              {tab === 'delivery' ? (
+              {tab === 'checklist' ? (
+                <ProjectChecklist projectId={project.id} />
+              ) : tab === 'delivery' ? (
                 <DeliveryTabContent project={project} />
               ) : loading ? (
                 <div className="py-20 flex flex-col items-center gap-4 opacity-30">

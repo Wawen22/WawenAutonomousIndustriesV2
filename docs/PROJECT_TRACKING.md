@@ -80,6 +80,7 @@ This now implies a platform decision:
 |----|-------|--------|-------|----------|-----------|
 | T128 | Agentic Loop + Team Software Dev Refactor | ✅ Done | Claude | 1 | Stable — QA auto-fix loop active |
 | T129 | Project Checklists + QA stability | ✅ Done | Claude | 1 | `project_checklists` table, NODE_ENV fix, QA auto-fix loop, PROGRESS.md ticking |
+| T130 | Dashboard Project Checklist View | ✅ Done | Claude | 1 | `ProjectChecklist` component, Realtime hook, Checklist tab in Projects modal |
 | T106 | Governed Delivery Pipeline | ✅ Done | Codex | 1 | — |
 | T107 | Security hardening (CORS + bearer token + path traversal) | ✅ Done | Codex | 1 | — |
 | T108 | Invoice email automation | ✅ Done | Claude | 1 | — |

@@ -12,6 +12,7 @@ import type {
   Client,
   Payment,
   Project,
+  ProjectChecklistItem,
   ProjectState,
   SystemEvent,
   SystemEventWithContext,
@@ -272,6 +273,59 @@ export function useAgentMemories(limit = 500, agentId?: string) {
   }, [agentId, limit])
 
   return useRealtimeTable<AgentMemory>('agent_memories', fetchMemories)
+}
+
+/** Per-project delivery checklist items — realtime, filtered by project_id. */
+export function useProjectChecklist(projectId: string | null) {
+  const fetchItems = useCallback(async (): Promise<ProjectChecklistItem[]> => {
+    if (!projectId) return []
+    const { data, error } = await supabase
+      .from('project_checklists')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('order_index')
+      .order('created_at')
+    if (error) throw new Error(error.message)
+    return (data ?? []) as ProjectChecklistItem[]
+  }, [projectId])
+
+  const [data, setData] = useState<ProjectChecklistItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const channelId = useState(() => `rt-project_checklists-${++_channelSeq}`)[0]
+
+  const doFetch = useCallback(async () => {
+    try {
+      setLoading(true)
+      const result = await fetchItems()
+      setData(result)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+    } finally {
+      setLoading(false)
+    }
+  }, [fetchItems])
+
+  useEffect(() => {
+    void doFetch()
+
+    if (!projectId) { setData([]); setLoading(false); return }
+
+    const channel = supabase
+      .channel(channelId)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'project_checklists',
+        filter: `project_id=eq.${projectId}`,
+      }, () => { void doFetch() })
+      .subscribe()
+
+    return () => { void supabase.removeChannel(channel) }
+  }, [projectId, doFetch, channelId])
+
+  return { data, loading, error }
 }
 
 /** Per-agent run counts (total) and last 3 runs — for Team Org view. */

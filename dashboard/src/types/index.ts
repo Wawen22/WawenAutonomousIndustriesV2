@@ -586,3 +586,23 @@ export interface FinanceWeeklyAutomationState {
 export interface CompanyAutomationsState {
   financeWeeklyReport: FinanceWeeklyAutomationState
 }
+
+// --- Project Checklists (T130) ---
+
+export type ChecklistStatus = 'pending' | 'in_progress' | 'done' | 'failed' | 'skipped'
+
+export type ChecklistCategory = 'delivery' | 'technical' | 'quality' | 'business'
+
+export interface ProjectChecklistItem {
+  id: string
+  project_id: string
+  key: string
+  label: string
+  status: ChecklistStatus
+  category: ChecklistCategory
+  agent_id: string | null
+  notes: string | null
+  order_index: number
+  created_at: string
+  updated_at: string
+}
