@@ -80,6 +80,7 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
+| T133 | Lead Generation Engine — Proposal Inbox | 📋 Spec Ready | Claude | 1 | Spec approved. Next: implement via writing-plans handoff |
 | T128 | Agentic Loop + Team Software Dev Refactor | ✅ Done | Claude | 1 | Stable — QA auto-fix loop active |
 | T129 | Project Checklists + QA stability | ✅ Done | Claude | 1 | `project_checklists` table, NODE_ENV fix, QA auto-fix loop, PROGRESS.md ticking |
 | T130 | Dashboard Project Checklist View | ✅ Done | Claude | 1 | `ProjectChecklist` component, Realtime hook, Checklist tab in Projects modal |
@@ -180,6 +181,14 @@ Ispirato da `skills-main/` (Anthropic). Generazione documenti DOCX/PDF reali inv
 |----|-------|----------|--------|------|
 | T126 | Document generation — PDF output reale | 2 | ✅ Done | PDF via Playwright headless. `proposal_strategist` genera PDF + MD. Capability `tool.document_generation` in registry con health check Chromium. |
 
+### Fase 5 — Growth & Autonomy (Revenue)
+
+Lead generation autonoma + payment collection. WAI trova clienti in autonomia, Neb approva con un click.
+
+| ID | Title | Priority | Status | Note |
+|----|-------|----------|--------|------|
+| T133 | Lead Generation Engine — supervised autonomy + Proposal Inbox | 1 | 📋 Spec Ready | Spec: `docs/superpowers/specs/2026-03-25-lead-generation-engine-design.md`. Harvester cron, PageSpeed audit, LLM qualifier, LeadsView dashboard, Gmail outreach via MCP. |
+
 ---
 
 ### Backlog completato (ultimi task)
@@ -195,6 +204,21 @@ Ispirato da `skills-main/` (Anthropic). Generazione documenti DOCX/PDF reali inv
 ---
 
 ## Recent Changes
+
+### 2026-03-25 — T133: Lead Generation Engine (Spec)
+
+**Spec designed and approved:** `docs/superpowers/specs/2026-03-25-lead-generation-engine-design.md`
+
+Supervised autonomy lead generation: WAI harvests potential clients autonomously, Neb approves outreach with one click in a Proposal Inbox dashboard.
+
+**Architecture:**
+- Harvester: Google Places API (with key) or Google Search scraping (fallback) → website auditor (PageSpeed + scraper) → qualifier (LLM scoring 0-100, Italian/English outreach draft)
+- `leads` + `harvest_runs` Supabase tables
+- 5 new backend services: `leads.ts`, `website-auditor.ts`, `lead-harvester.ts`, `lead-qualifier.ts`, `outreach-executor.ts`
+- 8 new API routes, 3 CEO NL commands (`leads_harvest`, `leads_show`, `leads_send_approved`)
+- `LeadsView` Company mode dashboard: split-panel Proposal Inbox with score badges, editable outreach, approve/reject/send buttons, harvest modal
+
+**Status:** Spec ready for implementation. See spec for full file list and success criteria.
 
 ### 2026-03-25 — T125: Meeting Notes Automation
 
