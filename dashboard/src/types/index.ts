@@ -279,8 +279,33 @@ export interface DailyFounderBriefAutomationStatus {
   nextPlannedRunLabel?: string
 }
 
+export type WeekDay = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
+
+export interface HarvestSector {
+  query: string
+  location: string
+  limit?: number
+}
+
+export interface WeeklyLeadHarvestAutomationStatus {
+  id: 'weekly_lead_harvest'
+  label: string
+  enabled: boolean
+  scheduleDay: WeekDay
+  scheduleLocalTime: string
+  timezone: string
+  sectors: HarvestSector[]
+  status: PersonalAutomationRunStatus
+  lastRunAt?: string
+  lastSuccessAt?: string
+  lastError?: string
+  lastLeadsFound?: number
+  nextPlannedRunLabel?: string
+}
+
 export interface PersonalAutomationStatus {
   dailyFounderBrief: DailyFounderBriefAutomationStatus
+  weeklyLeadHarvest: WeeklyLeadHarvestAutomationStatus
 }
 
 export type ExportedFileType = 'md' | 'txt' | 'json' | 'csv' | 'html' | 'other'

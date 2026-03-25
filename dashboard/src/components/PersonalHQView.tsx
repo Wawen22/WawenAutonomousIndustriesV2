@@ -111,6 +111,9 @@ export function PersonalHQView() {
   const [automationActionState, setAutomationActionState] = useState<AutomationActionState>({ status: 'idle' })
   const [scheduleInput, setScheduleInput] = useState('')
   const [scheduleEditMode, setScheduleEditMode] = useState(false)
+  const [harvestActionState, setHarvestActionState] = useState<AutomationActionState>({ status: 'idle' })
+  const [harvestSectorInput, setHarvestSectorInput] = useState('')   // "ristoranti, Milano"
+  const [harvestSectorMode, setHarvestSectorMode] = useState(false)
   const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus | null>(null)
   const [whatsAppLoading, setWhatsAppLoading] = useState(false)
   const [whatsAppActionState, setWhatsAppActionState] = useState<{ status: 'idle' | 'working' | 'done' | 'error'; message?: string }>({ status: 'idle' })
@@ -394,6 +397,83 @@ export function PersonalHQView() {
     }
   }
 
+  async function handleHarvestToggle(enabled: boolean) {
+    try {
+      setHarvestActionState({ status: 'working', message: enabled ? 'Enabling...' : 'Disabling...' })
+      const response = await fetch(`${BACKEND_URL}/api/personal/automation/harvest/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      })
+      const payload = await response.json() as { status?: PersonalAutomationStatus; error?: string }
+      if (!response.ok || !payload.status) throw new Error(payload.error ?? `HTTP ${response.status}`)
+      setAutomationStatus(payload.status)
+      setHarvestActionState({ status: 'done', message: enabled ? 'Enabled' : 'Disabled' })
+    } catch (err) {
+      setHarvestActionState({ status: 'error', message: err instanceof Error ? err.message : 'Update failed' })
+    }
+  }
+
+  async function handleHarvestAddSector() {
+    const trimmed = harvestSectorInput.trim()
+    if (!trimmed) return
+    const parts = trimmed.split(',').map((p) => p.trim()).filter(Boolean)
+    if (parts.length < 2) {
+      setHarvestActionState({ status: 'error', message: 'Format: "query, location" (e.g. "ristoranti, Milano")' })
+      return
+    }
+    const newSector = { query: parts[0] ?? '', location: parts[1] ?? '', limit: 10 }
+    const current = automationStatus?.weeklyLeadHarvest.sectors ?? []
+    try {
+      setHarvestActionState({ status: 'working', message: 'Adding sector...' })
+      const response = await fetch(`${BACKEND_URL}/api/personal/automation/harvest/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sectors: [...current, newSector] }),
+      })
+      const payload = await response.json() as { status?: PersonalAutomationStatus; error?: string }
+      if (!response.ok || !payload.status) throw new Error(payload.error ?? `HTTP ${response.status}`)
+      setAutomationStatus(payload.status)
+      setHarvestSectorInput('')
+      setHarvestSectorMode(false)
+      setHarvestActionState({ status: 'done', message: 'Sector added' })
+    } catch (err) {
+      setHarvestActionState({ status: 'error', message: err instanceof Error ? err.message : 'Add sector failed' })
+    }
+  }
+
+  async function handleHarvestRemoveSector(index: number) {
+    const current = automationStatus?.weeklyLeadHarvest.sectors ?? []
+    const updated = current.filter((_, i) => i !== index)
+    try {
+      setHarvestActionState({ status: 'working', message: 'Removing...' })
+      const response = await fetch(`${BACKEND_URL}/api/personal/automation/harvest/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sectors: updated }),
+      })
+      const payload = await response.json() as { status?: PersonalAutomationStatus; error?: string }
+      if (!response.ok || !payload.status) throw new Error(payload.error ?? `HTTP ${response.status}`)
+      setAutomationStatus(payload.status)
+      setHarvestActionState({ status: 'idle' })
+    } catch (err) {
+      setHarvestActionState({ status: 'error', message: err instanceof Error ? err.message : 'Remove failed' })
+    }
+  }
+
+  async function handleHarvestRunNow() {
+    try {
+      setHarvestActionState({ status: 'working', message: 'Starting harvest...' })
+      const response = await fetch(`${BACKEND_URL}/api/personal/automation/harvest/run`, { method: 'POST' })
+      const payload = await response.json() as { ok?: boolean; error?: string }
+      if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`)
+      setHarvestActionState({ status: 'done', message: 'Harvest started — you\'ll get a Telegram notification when done' })
+      setTimeout(() => void fetchAutomationStatus(), 3000)
+    } catch (err) {
+      setHarvestActionState({ status: 'error', message: err instanceof Error ? err.message : 'Run failed' })
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[420px]">
@@ -586,8 +666,8 @@ export function PersonalHQView() {
               <h2 className="text-sm font-black uppercase tracking-[0.25em] text-white">Automation Control</h2>
               <p className="mt-1 text-xs text-slate-500">Founder automations can be paused any time to avoid unnecessary token spend or noise.</p>
             </div>
-            <Badge variant={automationStatus?.dailyFounderBrief.enabled ? 'done' : 'warning'}>
-              {automationStatus?.dailyFounderBrief.enabled ? 'ENABLED' : 'DISABLED'}
+            <Badge variant={(automationStatus?.dailyFounderBrief.enabled || automationStatus?.weeklyLeadHarvest.enabled) ? 'done' : 'warning'}>
+              {(automationStatus?.dailyFounderBrief.enabled || automationStatus?.weeklyLeadHarvest.enabled) ? 'ACTIVE' : 'IDLE'}
             </Badge>
           </div>
 
@@ -720,6 +800,149 @@ export function PersonalHQView() {
               )}
             </div>
           ) : null}
+
+          {/* Weekly Lead Harvest */}
+          {automationStatus?.weeklyLeadHarvest && (
+            <div className="mt-4 rounded-2xl border border-white/5 bg-black/25 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-400/80">
+                    {automationStatus.weeklyLeadHarvest.label}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-300">
+                    Schedule: <span className="font-mono text-slate-400">
+                      {automationStatus.weeklyLeadHarvest.scheduleDay} @ {automationStatus.weeklyLeadHarvest.scheduleLocalTime}
+                    </span>
+                    {' '}<span className="text-slate-500">({automationStatus.weeklyLeadHarvest.timezone})</span>
+                  </p>
+                  <p className="mt-1 text-xs text-slate-300">
+                    Status: <span className="font-mono text-slate-400">{automationStatus.weeklyLeadHarvest.status}</span>
+                  </p>
+                  {automationStatus.weeklyLeadHarvest.nextPlannedRunLabel && (
+                    <p className="mt-1 text-xs text-slate-300">
+                      Next: <span className="text-slate-400">{automationStatus.weeklyLeadHarvest.nextPlannedRunLabel}</span>
+                    </p>
+                  )}
+                  {automationStatus.weeklyLeadHarvest.lastRunAt && (
+                    <p className="mt-1 text-xs text-slate-300">
+                      Last run: <span className="text-slate-400">{new Date(automationStatus.weeklyLeadHarvest.lastRunAt).toLocaleString()}</span>
+                      {automationStatus.weeklyLeadHarvest.lastLeadsFound !== undefined && (
+                        <span className="ml-2 rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-black text-amber-300">
+                          {automationStatus.weeklyLeadHarvest.lastLeadsFound} leads
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  {automationStatus.weeklyLeadHarvest.lastError && (
+                    <p className="mt-2 text-xs text-rose-400">{automationStatus.weeklyLeadHarvest.lastError}</p>
+                  )}
+
+                  {/* Sector list */}
+                  <div className="mt-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">Sectors</p>
+                    {automationStatus.weeklyLeadHarvest.sectors.length === 0 ? (
+                      <p className="text-xs text-slate-600 italic">No sectors configured — add one to enable harvest</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {automationStatus.weeklyLeadHarvest.sectors.map((s, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/20 bg-amber-400/8 px-3 py-1 text-[11px] text-amber-300"
+                          >
+                            {s.query} @ {s.location}
+                            <button
+                              type="button"
+                              onClick={() => void handleHarvestRemoveSector(i)}
+                              disabled={harvestActionState.status === 'working'}
+                              className="ml-1 text-slate-500 hover:text-rose-400 transition"
+                              aria-label="Remove sector"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {harvestSectorMode ? (
+                      <div className="mt-3 flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={harvestSectorInput}
+                          onChange={(e) => setHarvestSectorInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') void handleHarvestAddSector() }}
+                          placeholder="ristoranti, Milano"
+                          className="flex-1 rounded-xl border border-amber-400/30 bg-black/40 px-3 py-1.5 text-xs font-mono text-white outline-none focus:border-amber-400/60"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleHarvestAddSector()}
+                          disabled={harvestActionState.status === 'working'}
+                          className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-amber-300 transition hover:bg-amber-400/18"
+                        >
+                          Add
+                        </button>
+                        <button type="button" onClick={() => setHarvestSectorMode(false)} className="text-[10px] text-slate-500 hover:text-slate-300 transition">
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setHarvestSectorMode(true)}
+                        className="mt-2 text-[10px] font-black uppercase tracking-[0.2em] text-amber-400/60 hover:text-amber-400 transition"
+                      >
+                        + Add Sector
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <Badge
+                  variant={
+                    automationStatus.weeklyLeadHarvest.status === 'success' ? 'done'
+                      : automationStatus.weeklyLeadHarvest.status === 'error' ? 'error'
+                        : 'warning'
+                  }
+                >
+                  {automationStatus.weeklyLeadHarvest.status.toUpperCase()}
+                </Badge>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  disabled={harvestActionState.status === 'working'}
+                  onClick={() => void handleHarvestToggle(!automationStatus.weeklyLeadHarvest.enabled)}
+                  className={clsx(
+                    'rounded-2xl border px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] transition',
+                    automationStatus.weeklyLeadHarvest.enabled
+                      ? 'border-rose-400/30 bg-rose-400/10 text-rose-300 hover:bg-rose-400/18'
+                      : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/18',
+                  )}
+                >
+                  {automationStatus.weeklyLeadHarvest.enabled ? 'Disable Auto Run' : 'Enable Auto Run'}
+                </button>
+                <button
+                  type="button"
+                  disabled={harvestActionState.status === 'working' || automationStatus.weeklyLeadHarvest.sectors.length === 0}
+                  onClick={() => void handleHarvestRunNow()}
+                  className={clsx(
+                    'rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] text-amber-300 transition hover:bg-amber-400/18',
+                    (harvestActionState.status === 'working' || automationStatus.weeklyLeadHarvest.sectors.length === 0) && 'cursor-not-allowed opacity-50',
+                  )}
+                >
+                  Run Now
+                </button>
+              </div>
+
+              {harvestActionState.message && (
+                <p className={clsx('mt-4 text-xs', harvestActionState.status === 'error' ? 'text-rose-400' : 'text-slate-400')}>
+                  {harvestActionState.message}
+                </p>
+              )}
+            </div>
+          )}
         </section>
       )}
 

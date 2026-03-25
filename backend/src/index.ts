@@ -42,8 +42,12 @@ import {
 import {
   getPersonalAutomationStatus,
   runDailyFounderBriefAutomationNow,
+  runWeeklyLeadHarvestNow,
   startFounderAutomationRuntime,
   updateDailyFounderBriefAutomation,
+  updateWeeklyLeadHarvestAutomation,
+  type HarvestSector,
+  type WeekDay,
 } from './services/personal-automation.js'
 import {
   getKnowledgeBaseManifest,
@@ -1189,6 +1193,71 @@ async function main(): Promise<void> {
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error'
           log.error({ err }, 'Personal automation manual run API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/personal/automation/harvest/config' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+
+          const input: Parameters<typeof updateWeeklyLeadHarvestAutomation>[0] = {}
+          if (typeof payload['enabled'] === 'boolean') input.enabled = payload['enabled']
+          if (typeof payload['scheduleDay'] === 'string') input.scheduleDay = payload['scheduleDay'] as WeekDay
+          if (typeof payload['scheduleLocalTime'] === 'string') input.scheduleLocalTime = payload['scheduleLocalTime']
+          if (Array.isArray(payload['sectors'])) input.sectors = payload['sectors'] as HarvestSector[]
+
+          const status = await updateWeeklyLeadHarvestAutomation(input, undefined, 'dashboard')
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, status }))
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Harvest automation config API error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })()
+      return
+    }
+
+    if (url.pathname === '/api/personal/automation/harvest/run' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+
+          // Non-blocking: return immediately, harvest runs in background
+          const state = await getPersonalAutomationStatus()
+          const harvest = state.weeklyLeadHarvest
+          if (harvest.sectors.length === 0) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'No sectors configured — add sectors before running harvest' }))
+            return
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, message: 'Weekly lead harvest started in background' }))
+
+          void runWeeklyLeadHarvestNow('manual').catch((err: unknown) => {
+            log.error({ err }, 'Manual weekly lead harvest failed')
+          })
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          log.error({ err }, 'Harvest automation manual run API error')
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: message }))
         }

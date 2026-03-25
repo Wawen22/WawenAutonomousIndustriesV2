@@ -73,7 +73,8 @@ This now implies a platform decision:
 - Inspect personal and shared capabilities from the same dashboard control plane used by Company mode
 - Track contacts, log interactions, and follow up via the Personal CRM (`Contacts` view + CEO NL shortcuts)
 - Save meeting notes and auto-generate AI summaries + action items via `Meeting Notes` tab in Assistant HQ
-- Harvest potential SMB leads via Google PageSpeed audit + LLM qualification, review and approve outreach in `Leads` dashboard, send via Gmail MCP with automatic CRM logging
+- Harvest potential SMB leads via Google/DuckDuckGo + PageSpeed audit + LLM qualification, review and approve outreach in `Leads` dashboard, send via Gmail MCP with automatic CRM logging
+- Run weekly lead harvest automatically on a configurable schedule (sectors + cities), receive Telegram digest when complete, configure via NL from Telegram or the Automations panel
 
 ---
 
@@ -81,6 +82,7 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
+| T134 | Weekly Lead Harvest Automation + DDG Fallback | ✅ Done | Claude | 1 | DDG HTML fallback, weeklyLeadHarvest automation, Telegram digest, CEO NL config, dashboard panel |
 | T133 | Lead Generation Engine — Proposal Inbox | ✅ Done | Claude | 1 | DB migration, 5 backend services, 8 routes, CEO NL commands, LeadsView dashboard |
 | T128 | Agentic Loop + Team Software Dev Refactor | ✅ Done | Claude | 1 | Stable — QA auto-fix loop active |
 | T129 | Project Checklists + QA stability | ✅ Done | Claude | 1 | `project_checklists` table, NODE_ENV fix, QA auto-fix loop, PROGRESS.md ticking |
@@ -188,7 +190,8 @@ Lead generation autonoma + payment collection. WAI trova clienti in autonomia, N
 
 | ID | Title | Priority | Status | Note |
 |----|-------|----------|--------|------|
-| T133 | Lead Generation Engine — supervised autonomy + Proposal Inbox | 1 | 📋 Spec Ready | Spec: `docs/superpowers/specs/2026-03-25-lead-generation-engine-design.md`. Harvester cron, PageSpeed audit, LLM qualifier, LeadsView dashboard, Gmail outreach via MCP. |
+| T133 | Lead Generation Engine — supervised autonomy + Proposal Inbox | 1 | ✅ Done | Harvester (Google + DDG fallback), PageSpeed audit, LLM qualifier, LeadsView dashboard, Gmail outreach via MCP. |
+| T134 | Weekly Lead Harvest Automation | 1 | ✅ Done | Scheduled weekly harvest, Telegram digest, CEO NL config commands, dashboard panel in Automations tab. |
 
 ---
 

@@ -79,6 +79,13 @@ import {
 import { getLeads as crmGetLeads } from '../services/leads.js'
 import { harvestLeads } from '../services/lead-harvester.js'
 import { executeOutreach } from '../services/outreach-executor.js'
+import {
+  updateWeeklyLeadHarvestAutomation,
+  runWeeklyLeadHarvestNow,
+  getPersonalAutomationStatus,
+  type WeekDay,
+  type HarvestSector,
+} from '../services/personal-automation.js'
 import type { Client, DeliveryConfig, Payment, Project, ProjectType, SystemEvent, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -279,6 +286,9 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - leads_harvest      → params: query (es. "ristoranti"), location (es. "Milano"), limit? (default 10)  — avvia una harvest di lead
 - leads_show         → no params  — mostra il riepilogo del proposal inbox (count per status, top 5 scored)
 - leads_send_approved → no params  — invia l'outreach email a tutti i lead con status 'approved'
+- harvest_automation_status → no params  — mostra lo stato dell'automazione harvest settimanale
+- harvest_automation_config → params: enabled? (bool), scheduleDay? (es. "monday"), scheduleLocalTime? (es. "09:00"), sectors? (array [{query, location, limit?}])  — configura l'automazione harvest settimanale
+- harvest_automation_run → no params  — avvia manualmente l'harvest settimanale ora (usa i settori configurati)
 
 Valid project types: ${PROJECT_TYPES.join(', ')}
 
@@ -328,6 +338,9 @@ ${clientContext}
 40. Use leads_harvest when Neb wants to find potential clients or do prospecting (e.g. "trova lead a Milano", "cerca aziende senza sito a Roma", "prospecting ristoranti Torino", "trova clienti nel settore X").
 41. Use leads_show when Neb asks about the lead pipeline or proposal inbox (e.g. "mostra i lead", "quanti lead ho?", "cosa c'è nell'inbox dei lead?").
 42. Use leads_send_approved when Neb wants to send outreach to already-approved leads (e.g. "manda le email ai lead approvati", "invia l'outreach", "procedi con i lead approvati").
+43. Use harvest_automation_status when Neb asks about the weekly harvest automation status (e.g. "stato harvest automatica", "quando gira il harvest?", "è attiva l'automazione lead?").
+44. Use harvest_automation_config when Neb wants to configure or enable/disable the weekly harvest (e.g. "attiva harvest settimanale", "imposta harvest ogni lunedì per ristoranti a Milano", "aggiungi settore dentisti a Roma", "disattiva harvest automatica"). Extract sectors as array of {query, location, limit?}.
+45. Use harvest_automation_run when Neb wants to trigger the weekly harvest immediately (e.g. "avvia harvest manuale", "run harvest automation ora", "fai girare l'harvest adesso").
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -2665,6 +2678,54 @@ async function executeAction(
       const result = [`✅ Outreach inviato a ${sent.length} contatti: ${sent.join(', ')}`]
       if (failed.length > 0) result.push(`⚠️ Fallito per: ${failed.join(', ')}`)
       return result.join('\n')
+    }
+
+    case 'harvest_automation_status': {
+      const status = await getPersonalAutomationStatus()
+      const h = status.weeklyLeadHarvest
+      const lines = [
+        `🌱 Weekly Lead Harvest Automation`,
+        `Stato: ${h.enabled ? '✅ Attiva' : '⏸ Disattivata'}`,
+        `Scheduling: ${h.scheduleDay} alle ${h.scheduleLocalTime} (${h.timezone})`,
+        `Settori configurati: ${h.sectors.length > 0 ? h.sectors.map((s) => `${s.query} @ ${s.location}`).join(', ') : 'nessuno'}`,
+        `Ultimo run: ${h.lastRunAt ? new Date(h.lastRunAt).toLocaleString('it-IT') : 'mai'}`,
+        h.lastLeadsFound !== undefined ? `Lead trovati l'ultima volta: ${h.lastLeadsFound}` : null,
+        h.nextPlannedRunLabel ? `Prossimo run: ${h.nextPlannedRunLabel}` : null,
+        h.lastError ? `⚠️ Ultimo errore: ${h.lastError}` : null,
+      ].filter(Boolean).join('\n')
+      return lines
+    }
+
+    case 'harvest_automation_config': {
+      const input: Parameters<typeof updateWeeklyLeadHarvestAutomation>[0] = {}
+      if (typeof params['enabled'] === 'boolean') input.enabled = params['enabled']
+      if (typeof params['scheduleDay'] === 'string') input.scheduleDay = params['scheduleDay'] as WeekDay
+      if (typeof params['scheduleLocalTime'] === 'string') input.scheduleLocalTime = params['scheduleLocalTime'] as string
+      if (Array.isArray(params['sectors'])) input.sectors = params['sectors'] as HarvestSector[]
+
+      const status = await updateWeeklyLeadHarvestAutomation(input, undefined, 'telegram')
+      const h = status.weeklyLeadHarvest
+      return [
+        `✅ Harvest automation aggiornata`,
+        `Stato: ${h.enabled ? 'Attiva' : 'Disattivata'} — ${h.scheduleDay} alle ${h.scheduleLocalTime}`,
+        `Settori: ${h.sectors.length > 0 ? h.sectors.map((s) => `${s.query} @ ${s.location}`).join(', ') : 'nessuno'}`,
+        h.nextPlannedRunLabel ? `Prossimo run: ${h.nextPlannedRunLabel}` : null,
+      ].filter(Boolean).join('\n')
+    }
+
+    case 'harvest_automation_run': {
+      const status = await getPersonalAutomationStatus()
+      const h = status.weeklyLeadHarvest
+      if (h.sectors.length === 0) {
+        return '⚠️ Nessun settore configurato. Prima configura i settori con "imposta harvest settimanale: ristoranti a Milano, dentisti a Roma".'
+      }
+      if (h.status === 'running') {
+        return '⏳ Harvest già in corso, attendi che finisca.'
+      }
+      void runWeeklyLeadHarvestNow('manual').catch((err: unknown) => {
+        log.error({ err }, 'CEO Intake: harvest_automation_run failed')
+      })
+      return `🔍 Harvest manuale avviata per ${h.sectors.length} settore${h.sectors.length !== 1 ? 'i' : ''}: ${h.sectors.map((s) => `${s.query} @ ${s.location}`).join(', ')}. Riceverai una notifica Telegram al termine.`
     }
 
     // reply is not a real command — the LLM sometimes wraps informational

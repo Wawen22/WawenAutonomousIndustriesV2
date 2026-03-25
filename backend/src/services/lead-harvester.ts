@@ -97,65 +97,97 @@ function isBusinessUrl(url: string): boolean {
 }
 
 
+function extractBusinessUrlsFromLinks(allLinks: string[]): string[] {
+  const businessUrls: string[] = []
+
+  for (const href of allLinks) {
+    // Google redirect: https://www.google.com/url?q=ACTUAL_URL&...
+    if (href.includes('google.com/url?q=') || href.includes('/url?q=')) {
+      try {
+        const parsed = new URL(href)
+        const q = parsed.searchParams.get('q')
+        if (q && isBusinessUrl(q)) businessUrls.push(q)
+      } catch {
+        const m = href.match(/[?&]q=(https?:\/\/[^&]+)/)
+        if (m?.[1]) {
+          const candidate = decodeURIComponent(m[1])
+          if (isBusinessUrl(candidate)) businessUrls.push(candidate)
+        }
+      }
+      continue
+    }
+
+    // DuckDuckGo redirect: https://duckduckgo.com/l/?uddg=ACTUAL_URL&...
+    if (href.includes('duckduckgo.com/l/')) {
+      try {
+        const parsed = new URL(href)
+        const uddg = parsed.searchParams.get('uddg')
+        if (uddg && isBusinessUrl(uddg)) businessUrls.push(uddg)
+      } catch { /* skip */ }
+      continue
+    }
+
+    // Direct links
+    if (isBusinessUrl(href)) businessUrls.push(href)
+  }
+
+  // Deduplicate by domain
+  const seen = new Set<string>()
+  return businessUrls.filter((u) => {
+    try {
+      const domain = new URL(u).hostname.replace(/^www\./, '').toLowerCase()
+      if (seen.has(domain)) return false
+      seen.add(domain)
+      return true
+    } catch {
+      return false
+    }
+  })
+}
+
+function candidatesFromUrls(urls: string[], location: string): BusinessCandidate[] {
+  return urls.map((url) => ({
+    name: new URL(url).hostname.replace(/^www\./, ''),
+    website: url,
+    phone: null,
+    address: location,
+  }))
+}
+
 async function discoverViaScrape(
   query: string,
   location: string,
   limit: number,
 ): Promise<BusinessCandidate[]> {
+  // --- Try Google ---
   try {
-    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(`${query} ${location} sito web`)}&num=${limit * 2}&hl=it`
+    const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(`${query} ${location} sito web`)}&num=${limit * 2}&hl=it`
+    const allLinks = await fetchLinks(googleUrl)
+    log.info({ count: allLinks.length }, 'LeadHarvester: raw links from Google')
 
-    // Use fetchLinks to get all raw hrefs from the rendered page (bypasses Readability)
-    const allLinks = await fetchLinks(searchUrl)
-    log.info({ count: allLinks.length }, 'LeadHarvester: raw links from search page')
+    const unique = extractBusinessUrlsFromLinks(allLinks)
+    log.info({ found: unique.length }, 'LeadHarvester: business URLs from Google')
 
-    const businessUrls: string[] = []
-
-    for (const href of allLinks) {
-      // Handle Google redirect URLs: https://www.google.com/url?q=ACTUAL_URL&...
-      if (href.includes('google.com/url?q=') || href.includes('/url?q=')) {
-        try {
-          const parsed = new URL(href)
-          const q = parsed.searchParams.get('q')
-          if (q && isBusinessUrl(q)) businessUrls.push(q)
-        } catch {
-          // try extracting manually
-          const m = href.match(/[?&]q=(https?:\/\/[^&]+)/)
-          if (m?.[1]) {
-            const candidate = decodeURIComponent(m[1])
-            if (isBusinessUrl(candidate)) businessUrls.push(candidate)
-          }
-        }
-        continue
-      }
-
-      // Direct links
-      if (isBusinessUrl(href)) businessUrls.push(href)
+    if (unique.length > 0) {
+      return candidatesFromUrls(unique.slice(0, limit), location)
     }
-
-    // Deduplicate by domain
-    const seen = new Set<string>()
-    const unique = businessUrls.filter((u) => {
-      try {
-        const domain = new URL(u).hostname.replace(/^www\./, '').toLowerCase()
-        if (seen.has(domain)) return false
-        seen.add(domain)
-        return true
-      } catch {
-        return false
-      }
-    })
-
-    log.info({ found: unique.length }, 'LeadHarvester: extracted business URLs')
-
-    return unique.slice(0, limit).map((url) => ({
-      name: new URL(url).hostname.replace(/^www\./, ''),
-      website: url,
-      phone: null,
-      address: location,
-    }))
   } catch (err) {
-    log.warn({ err }, 'LeadHarvester: scrape discovery failed')
+    log.warn({ err }, 'LeadHarvester: Google scrape failed, trying DuckDuckGo')
+  }
+
+  // --- Fallback: DuckDuckGo HTML ---
+  try {
+    log.info('LeadHarvester: Google returned 0, falling back to DuckDuckGo HTML')
+    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`${query} ${location}`)}`
+    const allLinks = await fetchLinks(ddgUrl)
+    log.info({ count: allLinks.length }, 'LeadHarvester: raw links from DuckDuckGo')
+
+    const unique = extractBusinessUrlsFromLinks(allLinks)
+    log.info({ found: unique.length }, 'LeadHarvester: business URLs from DuckDuckGo')
+
+    return candidatesFromUrls(unique.slice(0, limit), location)
+  } catch (err) {
+    log.warn({ err }, 'LeadHarvester: DuckDuckGo scrape failed')
     return []
   }
 }

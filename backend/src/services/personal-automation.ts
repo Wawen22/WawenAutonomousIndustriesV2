@@ -1,7 +1,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { DAILY_FOUNDER_BRIEF_AUTOMATION_CAPABILITY_ID } from '../config/capabilities.js'
+import {
+  DAILY_FOUNDER_BRIEF_AUTOMATION_CAPABILITY_ID,
+  WEEKLY_LEAD_HARVEST_AUTOMATION_CAPABILITY_ID,
+} from '../config/capabilities.js'
 import { ensurePersonalProfile } from './personal-context.js'
 import { executePersonalAssistantQuickAction } from './personal-assistant-actions.js'
 import { log, recordCapabilityEvent, recordEvent } from './logger.js'
@@ -23,6 +26,14 @@ export type PersonalAutomationRunStatus =
   | 'success'
   | 'error'
 
+export type WeekDay = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
+
+export interface HarvestSector {
+  query: string    // e.g. 'ristoranti'
+  location: string // e.g. 'Milano'
+  limit?: number   // default 10
+}
+
 interface DailyFounderBriefAutomationPersisted {
   enabled: boolean
   scheduleLocalTime: string
@@ -35,8 +46,23 @@ interface DailyFounderBriefAutomationPersisted {
   lastAttemptLocalDate?: string
 }
 
+interface WeeklyLeadHarvestAutomationPersisted {
+  enabled: boolean
+  scheduleDay: WeekDay
+  scheduleLocalTime: string
+  timezone: string
+  sectors: HarvestSector[]
+  status: PersonalAutomationRunStatus
+  lastRunAt?: string
+  lastSuccessAt?: string
+  lastError?: string
+  lastLeadsFound?: number
+  lastAttemptWeekKey?: string // 'YYYY-Www' format
+}
+
 interface PersonalAutomationPersistedState {
   dailyFounderBrief: DailyFounderBriefAutomationPersisted
+  weeklyLeadHarvest: WeeklyLeadHarvestAutomationPersisted
 }
 
 export interface DailyFounderBriefAutomationStatus {
@@ -53,8 +79,25 @@ export interface DailyFounderBriefAutomationStatus {
   nextPlannedRunLabel?: string
 }
 
+export interface WeeklyLeadHarvestAutomationStatus {
+  id: 'weekly_lead_harvest'
+  label: string
+  enabled: boolean
+  scheduleDay: WeekDay
+  scheduleLocalTime: string
+  timezone: string
+  sectors: HarvestSector[]
+  status: PersonalAutomationRunStatus
+  lastRunAt?: string
+  lastSuccessAt?: string
+  lastError?: string
+  lastLeadsFound?: number
+  nextPlannedRunLabel?: string
+}
+
 export interface PersonalAutomationStatus {
   dailyFounderBrief: DailyFounderBriefAutomationStatus
+  weeklyLeadHarvest: WeeklyLeadHarvestAutomationStatus
 }
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
@@ -84,6 +127,14 @@ function defaultPersistedState(timezone = 'Europe/Rome'): PersonalAutomationPers
       enabled: false,
       scheduleLocalTime: DEFAULT_DAILY_BRIEF_TIME,
       timezone,
+      status: 'idle',
+    },
+    weeklyLeadHarvest: {
+      enabled: false,
+      scheduleDay: 'monday',
+      scheduleLocalTime: '09:00',
+      timezone,
+      sectors: [],
       status: 'idle',
     },
   }
@@ -171,15 +222,24 @@ async function ensurePersistedState(ownerSlug: string = DEFAULT_OWNER_SLUG): Pro
   try {
     const raw = await readFile(filePath, 'utf-8')
     const parsed = JSON.parse(raw) as Partial<PersonalAutomationPersistedState>
+    const defaults = defaultPersistedState(profile.timezone)
     const merged: PersonalAutomationPersistedState = {
       dailyFounderBrief: {
-        ...defaultPersistedState(profile.timezone).dailyFounderBrief,
+        ...defaults.dailyFounderBrief,
         ...(parsed.dailyFounderBrief ?? {}),
+      },
+      weeklyLeadHarvest: {
+        ...defaults.weeklyLeadHarvest,
+        ...(parsed.weeklyLeadHarvest ?? {}),
       },
     }
 
-    if (merged.dailyFounderBrief.timezone !== profile.timezone) {
+    if (
+      merged.dailyFounderBrief.timezone !== profile.timezone ||
+      merged.weeklyLeadHarvest.timezone !== profile.timezone
+    ) {
       merged.dailyFounderBrief.timezone = profile.timezone
+      merged.weeklyLeadHarvest.timezone = profile.timezone
       await writePersistedState(ownerSlug, merged)
     }
 
@@ -191,27 +251,110 @@ async function ensurePersistedState(ownerSlug: string = DEFAULT_OWNER_SLUG): Pro
   }
 }
 
+const WEEK_DAYS: WeekDay[] = [
+  'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
+]
+
+function getISOWeekKey(date: Date, timeZone: string): string {
+  // Returns 'YYYY-Www' using the local date's ISO week
+  const parts = getDateTimeParts(date, timeZone)
+  const localDate = new Date(`${parts.dateKey}T12:00:00Z`)
+  const day = localDate.getUTCDay() || 7 // make Sunday = 7
+  const thursday = new Date(localDate)
+  thursday.setUTCDate(localDate.getUTCDate() - day + 4)
+  const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1))
+  const weekNum = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+  return `${thursday.getUTCFullYear()}-W${String(weekNum).padStart(2, '0')}`
+}
+
+function hasReachedWeeklySchedule(
+  now: Date,
+  scheduleDay: WeekDay,
+  scheduleLocalTime: string,
+  timeZone: string,
+): boolean {
+  const current = getDateTimeParts(now, timeZone)
+  const localDate = new Date(`${current.dateKey}T12:00:00Z`)
+  const dayIndex = localDate.getUTCDay() // 0=Sun, 1=Mon...
+  const targetDayIndex = WEEK_DAYS.indexOf(scheduleDay)
+  if (dayIndex !== targetDayIndex) return false
+  return hasReachedScheduledTime(now, scheduleLocalTime, timeZone)
+}
+
+function getNextWeeklyRunLabel(
+  scheduleDay: WeekDay,
+  scheduleLocalTime: string,
+  timeZone: string,
+  lastAttemptWeekKey: string | undefined,
+  now = new Date(),
+): string {
+  const currentWeekKey = getISOWeekKey(now, timeZone)
+  const alreadyRanThisWeek = lastAttemptWeekKey === currentWeekKey
+  const dayLabel = scheduleDay.charAt(0).toUpperCase() + scheduleDay.slice(1)
+
+  if (alreadyRanThisWeek) {
+    return `Next ${dayLabel} at ${scheduleLocalTime} (${timeZone})`
+  }
+
+  const current = getDateTimeParts(now, timeZone)
+  const localDate = new Date(`${current.dateKey}T12:00:00Z`)
+  const dayIndex = localDate.getUTCDay()
+  const targetDayIndex = WEEK_DAYS.indexOf(scheduleDay)
+  const isPastThisWeek =
+    dayIndex > targetDayIndex ||
+    (dayIndex === targetDayIndex && hasReachedScheduledTime(now, scheduleLocalTime, timeZone))
+
+  return isPastThisWeek
+    ? `Next ${dayLabel} at ${scheduleLocalTime} (${timeZone})`
+    : `This ${dayLabel} at ${scheduleLocalTime} (${timeZone})`
+}
+
 function toAutomationStatus(state: PersonalAutomationPersistedState): PersonalAutomationStatus {
-  const item = state.dailyFounderBrief
+  const brief = state.dailyFounderBrief
+  const harvest = state.weeklyLeadHarvest
 
   return {
     dailyFounderBrief: {
       id: 'daily_founder_brief',
       label: 'Daily Founder Brief',
-      enabled: item.enabled,
-      scheduleLocalTime: item.scheduleLocalTime,
-      timezone: item.timezone,
-      status: item.status,
-      ...(item.lastRunAt ? { lastRunAt: item.lastRunAt } : {}),
-      ...(item.lastSuccessAt ? { lastSuccessAt: item.lastSuccessAt } : {}),
-      ...(item.lastError ? { lastError: item.lastError } : {}),
-      ...(item.lastOutputPath ? { lastOutputPath: item.lastOutputPath } : {}),
-      ...(item.enabled
+      enabled: brief.enabled,
+      scheduleLocalTime: brief.scheduleLocalTime,
+      timezone: brief.timezone,
+      status: brief.status,
+      ...(brief.lastRunAt ? { lastRunAt: brief.lastRunAt } : {}),
+      ...(brief.lastSuccessAt ? { lastSuccessAt: brief.lastSuccessAt } : {}),
+      ...(brief.lastError ? { lastError: brief.lastError } : {}),
+      ...(brief.lastOutputPath ? { lastOutputPath: brief.lastOutputPath } : {}),
+      ...(brief.enabled
         ? {
             nextPlannedRunLabel: getNextPlannedRunLabel(
-              item.scheduleLocalTime,
-              item.timezone,
-              item.lastAttemptLocalDate,
+              brief.scheduleLocalTime,
+              brief.timezone,
+              brief.lastAttemptLocalDate,
+            ),
+          }
+        : {}),
+    },
+    weeklyLeadHarvest: {
+      id: 'weekly_lead_harvest',
+      label: 'Weekly Lead Harvest',
+      enabled: harvest.enabled,
+      scheduleDay: harvest.scheduleDay,
+      scheduleLocalTime: harvest.scheduleLocalTime,
+      timezone: harvest.timezone,
+      sectors: harvest.sectors,
+      status: harvest.status,
+      ...(harvest.lastRunAt ? { lastRunAt: harvest.lastRunAt } : {}),
+      ...(harvest.lastSuccessAt ? { lastSuccessAt: harvest.lastSuccessAt } : {}),
+      ...(harvest.lastError ? { lastError: harvest.lastError } : {}),
+      ...(harvest.lastLeadsFound !== undefined ? { lastLeadsFound: harvest.lastLeadsFound } : {}),
+      ...(harvest.enabled
+        ? {
+            nextPlannedRunLabel: getNextWeeklyRunLabel(
+              harvest.scheduleDay,
+              harvest.scheduleLocalTime,
+              harvest.timezone,
+              harvest.lastAttemptWeekKey,
             ),
           }
         : {}),
@@ -409,27 +552,184 @@ export async function runDailyFounderBriefAutomationNow(
   }
 }
 
+export async function updateWeeklyLeadHarvestAutomation(
+  input: {
+    enabled?: boolean
+    scheduleDay?: WeekDay
+    scheduleLocalTime?: string
+    sectors?: HarvestSector[]
+  },
+  ownerSlug: string = DEFAULT_OWNER_SLUG,
+  source = 'dashboard',
+): Promise<PersonalAutomationStatus> {
+  const state = await ensurePersistedState(ownerSlug)
+  const prev = { ...state.weeklyLeadHarvest }
+
+  if (typeof input.enabled === 'boolean') state.weeklyLeadHarvest.enabled = input.enabled
+  if (typeof input.scheduleDay === 'string') state.weeklyLeadHarvest.scheduleDay = input.scheduleDay
+  if (typeof input.scheduleLocalTime === 'string' && input.scheduleLocalTime.trim()) {
+    state.weeklyLeadHarvest.scheduleLocalTime = normalizeScheduleLocalTime(input.scheduleLocalTime)
+  }
+  if (Array.isArray(input.sectors)) state.weeklyLeadHarvest.sectors = input.sectors
+
+  await writePersistedState(ownerSlug, state)
+
+  const changed = JSON.stringify(prev) !== JSON.stringify(state.weeklyLeadHarvest)
+  if (changed) {
+    await recordCapabilityEvent({
+      capability_id: WEEKLY_LEAD_HARVEST_AUTOMATION_CAPABILITY_ID,
+      event_type: state.weeklyLeadHarvest.enabled ? 'enabled' : 'configured',
+      actor_type: 'dashboard',
+      actor_id: ownerSlug,
+      source,
+      summary: `Weekly Lead Harvest automation updated (${source}).`,
+      payload: {
+        enabled: state.weeklyLeadHarvest.enabled,
+        schedule_day: state.weeklyLeadHarvest.scheduleDay,
+        schedule_local_time: state.weeklyLeadHarvest.scheduleLocalTime,
+        sectors_count: state.weeklyLeadHarvest.sectors.length,
+      },
+    })
+  }
+
+  return toAutomationStatus(state)
+}
+
+export async function runWeeklyLeadHarvestNow(
+  source: 'manual' | 'scheduled',
+  ownerSlug: string = DEFAULT_OWNER_SLUG,
+): Promise<PersonalAutomationStatus> {
+  const state = await ensurePersistedState(ownerSlug)
+  const item = state.weeklyLeadHarvest
+  const now = new Date()
+  const currentWeekKey = getISOWeekKey(now, item.timezone)
+
+  if (item.status === 'running') return toAutomationStatus(state)
+
+  item.status = 'running'
+  delete item.lastError
+  await writePersistedState(ownerSlug, state)
+  await recordCapabilityEvent({
+    capability_id: WEEKLY_LEAD_HARVEST_AUTOMATION_CAPABILITY_ID,
+    event_type: 'used',
+    actor_type: source === 'manual' ? 'dashboard' : 'runtime',
+    actor_id: ownerSlug,
+    source: `personal-automation:${source}`,
+    summary: `Weekly Lead Harvest started (${source}).`,
+    payload: { trigger: source, sectors: item.sectors },
+  })
+
+  try {
+    const { harvestLeads } = await import('./lead-harvester.js')
+    const allSaved: Awaited<ReturnType<typeof harvestLeads>> = []
+
+    for (const sector of item.sectors) {
+      const leads = await harvestLeads({
+        query: sector.query,
+        location: sector.location,
+        limit: sector.limit ?? 10,
+        sector: sector.query,
+      })
+      allSaved.push(...leads)
+    }
+
+    const finishedAt = new Date().toISOString()
+    item.status = 'success'
+    item.lastRunAt = finishedAt
+    item.lastSuccessAt = finishedAt
+    item.lastAttemptWeekKey = currentWeekKey
+    item.lastLeadsFound = allSaved.length
+    delete item.lastError
+    await writePersistedState(ownerSlug, state)
+
+    await recordCapabilityEvent({
+      capability_id: WEEKLY_LEAD_HARVEST_AUTOMATION_CAPABILITY_ID,
+      event_type: 'succeeded',
+      actor_type: source === 'manual' ? 'dashboard' : 'runtime',
+      actor_id: ownerSlug,
+      source: `personal-automation:${source}`,
+      summary: `Weekly Lead Harvest completed: ${allSaved.length} leads found (${source}).`,
+      payload: { trigger: source, leads_found: allSaved.length },
+    })
+    await recordEvent('founder_command', {
+      agentId: 'ceo',
+      payload: { command: 'automation_weekly_lead_harvest', source: 'automation', trigger: source, status: 'success', leads_found: allSaved.length },
+    })
+
+    // Telegram digest
+    if (allSaved.length > 0) {
+      const highScore = allSaved.filter((l) => l.score >= 80)
+      const midScore = allSaved.filter((l) => l.score >= 60 && l.score < 80)
+      const topNames = highScore.slice(0, 3).map((l) => l.company_name).join(', ')
+      const lines = [
+        `🎯 Weekly Lead Harvest complete`,
+        `Found ${allSaved.length} new lead${allSaved.length !== 1 ? 's' : ''} across ${item.sectors.length} sector${item.sectors.length !== 1 ? 's' : ''}`,
+        highScore.length > 0 ? `🔴 High-score (80+): ${highScore.length}${topNames ? ` — ${topNames}` : ''}` : null,
+        midScore.length > 0 ? `🟡 Mid-score (60–79): ${midScore.length}` : null,
+        `Review & approve → Leads dashboard`,
+      ].filter(Boolean).join('\n')
+      await sendFounderNotification(lines).catch((err: unknown) => {
+        log.warn({ err }, 'WeeklyLeadHarvest: failed to send Telegram digest')
+      })
+    } else {
+      await sendFounderNotification(
+        `🎯 Weekly Lead Harvest: no new leads found this week (${item.sectors.length} sector${item.sectors.length !== 1 ? 's' : ''} searched).`
+      ).catch(() => {})
+    }
+
+    return toAutomationStatus(state)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const finishedAt = new Date().toISOString()
+    item.status = 'error'
+    item.lastRunAt = finishedAt
+    item.lastAttemptWeekKey = currentWeekKey
+    item.lastError = message
+    await writePersistedState(ownerSlug, state)
+    await recordCapabilityEvent({
+      capability_id: WEEKLY_LEAD_HARVEST_AUTOMATION_CAPABILITY_ID,
+      event_type: 'failed',
+      actor_type: source === 'manual' ? 'dashboard' : 'runtime',
+      actor_id: ownerSlug,
+      source: `personal-automation:${source}`,
+      summary: `Weekly Lead Harvest failed (${source}).`,
+      payload: { trigger: source, error: message },
+    })
+    throw err
+  }
+}
+
 export async function runFounderAutomationCycle(
   ownerSlug: string = DEFAULT_OWNER_SLUG,
 ): Promise<void> {
   const state = await ensurePersistedState(ownerSlug)
-  const item = state.dailyFounderBrief
-
-  if (!item.enabled || item.status === 'running') {
-    return
-  }
-
   const now = new Date()
-  const currentDateKey = getDateTimeParts(now, item.timezone).dateKey
-  if (item.lastAttemptLocalDate === currentDateKey) {
-    return
+
+  // Daily founder brief
+  const brief = state.dailyFounderBrief
+  if (brief.enabled && brief.status !== 'running') {
+    const currentDateKey = getDateTimeParts(now, brief.timezone).dateKey
+    if (
+      brief.lastAttemptLocalDate !== currentDateKey &&
+      hasReachedScheduledTime(now, brief.scheduleLocalTime, brief.timezone)
+    ) {
+      await runDailyFounderBriefAutomationNow('scheduled', ownerSlug)
+    }
   }
 
-  if (!hasReachedScheduledTime(now, item.scheduleLocalTime, item.timezone)) {
-    return
+  // Weekly lead harvest
+  const harvest = state.weeklyLeadHarvest
+  if (harvest.enabled && harvest.status !== 'running' && harvest.sectors.length > 0) {
+    const currentWeekKey = getISOWeekKey(now, harvest.timezone)
+    if (
+      harvest.lastAttemptWeekKey !== currentWeekKey &&
+      hasReachedWeeklySchedule(now, harvest.scheduleDay, harvest.scheduleLocalTime, harvest.timezone)
+    ) {
+      await runWeeklyLeadHarvestNow('scheduled', ownerSlug).catch((err: unknown) => {
+        log.error({ err, ownerSlug }, 'Weekly lead harvest scheduled run failed')
+      })
+    }
   }
-
-  await runDailyFounderBriefAutomationNow('scheduled', ownerSlug)
 }
 
 export function startFounderAutomationRuntime(
