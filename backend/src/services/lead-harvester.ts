@@ -77,33 +77,89 @@ async function discoverViaPlacesApi(
   }
 }
 
+const NOISE_DOMAINS = [
+  'google.', 'gstatic.', 'youtube.', 'maps.', 'facebook.', 'instagram.',
+  'yelp.', 'tripadvisor.', 'twitter.', 'linkedin.', 'tiktok.', 'whatsapp.',
+  'paginegialle.', 'thefork.', 'booking.', 'trustpilot.', 'wikipedia.',
+  'schema.org', 'w3.org', 'mozilla.org',
+]
+
+function isBusinessUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname.toLowerCase()
+    if (NOISE_DOMAINS.some((d) => host.includes(d))) return false
+    if (!host.includes('.')) return false
+    return true
+  } catch {
+    return false
+  }
+}
+
+function extractGoogleRedirectUrls(markdown: string): string[] {
+  // Google embeds real URLs inside redirect links: /url?q=URL or /url?q=ENCODED_URL
+  // Turndown may leave the href decoded or encoded — handle both.
+  const extracted: string[] = []
+
+  // Pattern 1: unencoded — /url?q=https://...
+  const plainRe = /\/url\?q=(https?:\/\/[^&\s"')]+)/g
+  let m: RegExpExecArray | null
+  while ((m = plainRe.exec(markdown)) !== null) {
+    const url = m[1]?.split('&')[0] ?? ''  // drop trailing &sa=... params
+    if (url && isBusinessUrl(url)) extracted.push(url)
+  }
+
+  // Pattern 2: URL-encoded — /url?q=https%3A%2F%2F...
+  const encodedRe = /\/url\?q=(https?%3A%2F%2F[^&\s"']+)/g
+  while ((m = encodedRe.exec(markdown)) !== null) {
+    try {
+      const decoded = decodeURIComponent(m[1]?.split('%26')[0] ?? '')
+      if (decoded.startsWith('http') && isBusinessUrl(decoded)) extracted.push(decoded)
+    } catch {
+      // skip malformed
+    }
+  }
+
+  return extracted
+}
+
 async function discoverViaScrape(
   query: string,
   location: string,
   limit: number,
 ): Promise<BusinessCandidate[]> {
   try {
-    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(`${query} ${location} sito web`)}&num=${limit * 2}`
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(`${query} ${location} sito web`)}&num=${limit * 2}&hl=it`
     const scraped = await scrapeUrl(searchUrl)
     if (!scraped.ok || !scraped.markdown) return []
 
-    // Extract URLs from markdown — look for http(s) links
-    const urlMatches = scraped.markdown.match(/https?:\/\/[^\s\)\"\']+/g) ?? []
-    const businessUrls = urlMatches
-      .filter(
-        (u) =>
-          !u.includes('google.') &&
-          !u.includes('gstatic.') &&
-          !u.includes('youtube.') &&
-          !u.includes('maps.') &&
-          !u.includes('facebook.') &&
-          !u.includes('instagram.') &&
-          !u.includes('yelp.') &&
-          !u.includes('tripadvisor.'),
-      )
-      .slice(0, limit)
+    log.info({ searchUrl, markdownLen: scraped.markdown.length }, 'LeadHarvester: scrape result')
 
-    return businessUrls.map((url) => ({
+    // 1. Try to extract URLs from Google redirect links (primary path)
+    let businessUrls = extractGoogleRedirectUrls(scraped.markdown)
+
+    // 2. Fallback: extract plain https:// URLs that are not noise domains
+    if (businessUrls.length === 0) {
+      const urlMatches = scraped.markdown.match(/https?:\/\/[^\s\)\"\'<>]+/g) ?? []
+      businessUrls = urlMatches.filter(isBusinessUrl)
+    }
+
+    // Deduplicate by domain
+    const seen = new Set<string>()
+    const unique = businessUrls.filter((u) => {
+      try {
+        const domain = new URL(u).hostname.replace(/^www\./, '')
+        if (seen.has(domain)) return false
+        seen.add(domain)
+        return true
+      } catch {
+        return false
+      }
+    })
+
+    log.info({ found: unique.length }, 'LeadHarvester: extracted business URLs')
+
+    return unique.slice(0, limit).map((url) => ({
       name: new URL(url).hostname.replace(/^www\./, ''),
       website: url,
       phone: null,

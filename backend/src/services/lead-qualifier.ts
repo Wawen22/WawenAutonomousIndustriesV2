@@ -68,8 +68,7 @@ ${findingLines || '- No specific issues found'}`
         { role: 'user', content: userPrompt },
       ],
       {
-        agentId: 'system_learning',
-        modelOverride: 'nemotron-120b',
+        agentId: 'ceo',
         captureMemory: false,
       },
     )
