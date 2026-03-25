@@ -2196,6 +2196,238 @@ async function main(): Promise<void> {
       }
     }
 
+    // ── Leads routes (T133 Lead Generation Engine) ──────────────────────────
+
+    // GET /api/leads — list leads (qs: status, source, minScore, limit)
+    if (url.pathname === '/api/leads' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const { getLeads } = await import('./services/leads.js')
+          const statusParam = url.searchParams.get('status')
+          const sourceParam = url.searchParams.get('source')
+          const minScoreParam = url.searchParams.get('minScore')
+          const limitParam = url.searchParams.get('limit')
+          const filter: Parameters<typeof getLeads>[0] = {}
+          if (statusParam) filter.status = statusParam as import('./types/index.js').LeadStatus
+          if (sourceParam) filter.source = sourceParam as import('./types/index.js').LeadSource
+          if (minScoreParam) filter.minScore = parseInt(minScoreParam, 10)
+          if (limitParam) filter.limit = Math.min(parseInt(limitParam, 10), 200)
+          const leads = await getLeads(filter)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(leads))
+        } catch (err) {
+          log.error({ err }, 'Leads: GET /api/leads error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // POST /api/leads/harvest — trigger harvest (non-blocking, auth required)
+    if (url.pathname === '/api/leads/harvest' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
+            return
+          }
+          const payload = await readJsonBody(req)
+          if (typeof payload !== 'object' || payload === null) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Invalid body' }))
+            return
+          }
+          const body = payload as Record<string, unknown>
+          const query = typeof body['query'] === 'string' ? body['query'] : ''
+          const location = typeof body['location'] === 'string' ? body['location'] : 'Italy'
+          const limit = typeof body['limit'] === 'number' ? Math.min(body['limit'], 20) : 10
+
+          if (!query) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'query is required' }))
+            return
+          }
+
+          // Pre-create the harvest run so we can return the runId immediately
+          const { startHarvestRun } = await import('./services/leads.js')
+          const run = await startHarvestRun('website_audit', query, location)
+
+          // Non-blocking harvest — pass existingRunId to avoid double-creation
+          void (async () => {
+            try {
+              const { harvestLeads } = await import('./services/lead-harvester.js')
+              await harvestLeads({ query, location, limit, sector: query, existingRunId: run.id })
+            } catch (err) {
+              log.error({ err }, 'Leads: background harvest failed')
+            }
+          })()
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, runId: run.id }))
+        } catch (err) {
+          log.error({ err }, 'Leads: POST /api/leads/harvest error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // GET /api/leads/harvest-runs — harvest run history
+    if (url.pathname === '/api/leads/harvest-runs' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const { getHarvestRuns } = await import('./services/leads.js')
+          const runs = await getHarvestRuns(10)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(runs))
+        } catch (err) {
+          log.error({ err }, 'Leads: GET /api/leads/harvest-runs error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // Parameterized routes: /api/leads/:id and sub-actions
+    if (url.pathname.startsWith('/api/leads/')) {
+      const rest = url.pathname.slice('/api/leads/'.length)
+      const parts = rest.split('/')
+      const leadId = parts[0] ?? ''
+
+      // GET /api/leads/:id
+      if (parts.length === 1 && req.method === 'GET') {
+        void (async () => {
+          try {
+            const { getLead } = await import('./services/leads.js')
+            const lead = await getLead(leadId)
+            if (!lead) {
+              res.writeHead(404, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Not found' }))
+              return
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify(lead))
+          } catch (err) {
+            log.error({ err, leadId }, 'Leads: GET /api/leads/:id error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
+      // PUT /api/leads/:id — update draft, notes, contact_email
+      if (parts.length === 1 && req.method === 'PUT') {
+        void (async () => {
+          try {
+            if (!isAuthorizedDashboardRequest(req)) {
+              res.writeHead(403, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Forbidden' }))
+              return
+            }
+            const payload = await readJsonBody(req)
+            if (typeof payload !== 'object' || payload === null) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Invalid body' }))
+              return
+            }
+            const body = payload as Record<string, unknown>
+            const { saveLead } = await import('./services/leads.js')
+            // Imperative build for exactOptionalPropertyTypes safety
+            const input: import('./services/leads.js').SaveLeadInput = { company_name: '' }
+            input.id = leadId
+            if (typeof body['company_name'] === 'string') input.company_name = body['company_name']
+            else input.company_name = leadId // will be overwritten by the existing value
+            if ('contact_email' in body) input.contact_email = typeof body['contact_email'] === 'string' ? body['contact_email'] : null
+            if ('contact_name' in body) input.contact_name = typeof body['contact_name'] === 'string' ? body['contact_name'] : null
+            if ('outreach_subject' in body) input.outreach_subject = typeof body['outreach_subject'] === 'string' ? body['outreach_subject'] : ''
+            if ('outreach_draft' in body) input.outreach_draft = typeof body['outreach_draft'] === 'string' ? body['outreach_draft'] : ''
+            if ('notes' in body) input.notes = typeof body['notes'] === 'string' ? body['notes'] : ''
+            if ('contact_id' in body) input.contact_id = typeof body['contact_id'] === 'string' ? body['contact_id'] : null
+
+            const lead = await saveLead(input)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify(lead))
+          } catch (err) {
+            log.error({ err, leadId }, 'Leads: PUT /api/leads/:id error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
+      // POST /api/leads/:id/approve
+      if (parts.length === 2 && parts[1] === 'approve' && req.method === 'POST') {
+        void (async () => {
+          try {
+            if (!isAuthorizedDashboardRequest(req)) {
+              res.writeHead(403, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Forbidden' }))
+              return
+            }
+            const { updateLeadStatus } = await import('./services/leads.js')
+            const lead = await updateLeadStatus(leadId, 'approved')
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify(lead))
+          } catch (err) {
+            log.error({ err, leadId }, 'Leads: POST /api/leads/:id/approve error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
+      // POST /api/leads/:id/reject
+      if (parts.length === 2 && parts[1] === 'reject' && req.method === 'POST') {
+        void (async () => {
+          try {
+            if (!isAuthorizedDashboardRequest(req)) {
+              res.writeHead(403, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Forbidden' }))
+              return
+            }
+            const { updateLeadStatus } = await import('./services/leads.js')
+            const lead = await updateLeadStatus(leadId, 'rejected')
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify(lead))
+          } catch (err) {
+            log.error({ err, leadId }, 'Leads: POST /api/leads/:id/reject error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
+      // POST /api/leads/:id/send — execute outreach
+      if (parts.length === 2 && parts[1] === 'send' && req.method === 'POST') {
+        void (async () => {
+          try {
+            if (!isAuthorizedDashboardRequest(req)) {
+              res.writeHead(403, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Forbidden' }))
+              return
+            }
+            const { executeOutreach } = await import('./services/outreach-executor.js')
+            const result = await executeOutreach(leadId)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify(result))
+          } catch (err) {
+            log.error({ err, leadId }, 'Leads: POST /api/leads/:id/send error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Internal server error' }))
+          }
+        })()
+        return
+      }
+    }
+
     // ── GET /api/personal/knowledge — list knowledge items ─────────────────
     if (url.pathname === '/api/personal/knowledge' && req.method === 'GET') {
       void (async () => {

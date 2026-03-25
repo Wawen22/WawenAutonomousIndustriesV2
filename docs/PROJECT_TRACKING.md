@@ -73,6 +73,7 @@ This now implies a platform decision:
 - Inspect personal and shared capabilities from the same dashboard control plane used by Company mode
 - Track contacts, log interactions, and follow up via the Personal CRM (`Contacts` view + CEO NL shortcuts)
 - Save meeting notes and auto-generate AI summaries + action items via `Meeting Notes` tab in Assistant HQ
+- Harvest potential SMB leads via Google PageSpeed audit + LLM qualification, review and approve outreach in `Leads` dashboard, send via Gmail MCP with automatic CRM logging
 
 ---
 
@@ -80,7 +81,7 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
-| T133 | Lead Generation Engine — Proposal Inbox | 📋 Spec Ready | Claude | 1 | Spec approved. Next: implement via writing-plans handoff |
+| T133 | Lead Generation Engine — Proposal Inbox | ✅ Done | Claude | 1 | DB migration, 5 backend services, 8 routes, CEO NL commands, LeadsView dashboard |
 | T128 | Agentic Loop + Team Software Dev Refactor | ✅ Done | Claude | 1 | Stable — QA auto-fix loop active |
 | T129 | Project Checklists + QA stability | ✅ Done | Claude | 1 | `project_checklists` table, NODE_ENV fix, QA auto-fix loop, PROGRESS.md ticking |
 | T130 | Dashboard Project Checklist View | ✅ Done | Claude | 1 | `ProjectChecklist` component, Realtime hook, Checklist tab in Projects modal |

@@ -76,6 +76,9 @@ import {
   saveMeetingNote,
   summarizeMeetingNotes,
 } from '../services/meeting-notes.js'
+import { getLeads as crmGetLeads } from '../services/leads.js'
+import { harvestLeads } from '../services/lead-harvester.js'
+import { executeOutreach } from '../services/outreach-executor.js'
 import type { Client, DeliveryConfig, Payment, Project, ProjectType, SystemEvent, Task } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -273,6 +276,9 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - crm_follow_up_due  → no params  (mostra i contatti con status follow_up che aspettano risposta)
 - meeting_save       → params: title, notes, attendees? (nomi separati da virgola), date? (YYYY-MM-DD)  (salva note riunione e genera automaticamente summary + action items con AI)
 - meeting_list       → no params  (mostra le ultime 10 riunioni con titolo, data e action item count)
+- leads_harvest      → params: query (es. "ristoranti"), location (es. "Milano"), limit? (default 10)  — avvia una harvest di lead
+- leads_show         → no params  — mostra il riepilogo del proposal inbox (count per status, top 5 scored)
+- leads_send_approved → no params  — invia l'outreach email a tutti i lead con status 'approved'
 
 Valid project types: ${PROJECT_TYPES.join(', ')}
 
@@ -319,6 +325,9 @@ ${clientContext}
 37. Use crm_follow_up_due when Neb asks who needs follow-up (e.g. "follow-up da fare", "chi devo seguire", "chi aspetta risposta", "follow up pending", "pending follow-ups").
 38. Use meeting_save when Neb wants to save meeting notes (e.g. "salva note riunione X", "prendi nota del meeting X", "meeting con X: ...", "note riunione"). Neb provides raw notes; WAI auto-generates summary and action items. attendees: comma-separated names if mentioned. date: ISO date if specified; omit if not mentioned.
 39. Use meeting_list when Neb wants to see recent meetings (e.g. "mostra riunioni", "ultime meeting notes", "che meeting ho avuto", "lista meeting").
+40. Use leads_harvest when Neb wants to find potential clients or do prospecting (e.g. "trova lead a Milano", "cerca aziende senza sito a Roma", "prospecting ristoranti Torino", "trova clienti nel settore X").
+41. Use leads_show when Neb asks about the lead pipeline or proposal inbox (e.g. "mostra i lead", "quanti lead ho?", "cosa c'è nell'inbox dei lead?").
+42. Use leads_send_approved when Neb wants to send outreach to already-approved leads (e.g. "manda le email ai lead approvati", "invia l'outreach", "procedi con i lead approvati").
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -2600,6 +2609,62 @@ async function executeAction(
         return `${i + 1}. 📅 *${n.title}*${attendeesStr} (${n.meeting_date})${actionStr}`
       })
       return [`📅 Ultime riunioni (${notes.length}):`, ...list].join('\n')
+    }
+
+    case 'leads_harvest': {
+      const query = getString(params, 'query') || 'aziende'
+      const location = getString(params, 'location') || 'Italy'
+      const limitRaw = params['limit']
+      const limit = typeof limitRaw === 'number' ? Math.min(limitRaw, 20) : 10
+      // Non-blocking harvest
+      void (async () => {
+        try {
+          await harvestLeads({ query, location, limit, sector: query })
+        } catch (err) {
+          log.error({ err }, 'CEO Intake: leads_harvest background error')
+        }
+      })()
+      return `🔍 Harvest avviata: cerco ${limit} ${query} a ${location}. I lead appariranno nel dashboard Leads entro 2-3 minuti.`
+    }
+
+    case 'leads_show': {
+      const leads = await crmGetLeads()
+      if (leads.length === 0) return '📋 Nessun lead nel sistema ancora. Avvia una harvest per trovare potenziali clienti.'
+      const statusCounts: Record<string, number> = {}
+      for (const l of leads) {
+        statusCounts[l.status] = (statusCounts[l.status] ?? 0) + 1
+      }
+      const statusSummary = Object.entries(statusCounts)
+        .map(([s, n]) => `${n} ${s}`)
+        .join(' | ')
+      const top5 = leads
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .map((l, i) => {
+          const finding = l.findings[0]?.description?.slice(0, 60) ?? 'n/a'
+          return `${i + 1}. *${l.company_name}* (score: ${l.score}) — ${finding}`
+        })
+      return [`📋 Proposal Inbox: ${statusSummary}`, '', 'Top 5 per score:', ...top5].join('\n')
+    }
+
+    case 'leads_send_approved': {
+      const approved = await crmGetLeads({ status: 'approved' })
+      const withEmail = approved.filter((l) => !!l.contact_email)
+      if (withEmail.length === 0) return '📋 Nessun lead approvato con email disponibile.'
+      const sent: string[] = []
+      const failed: string[] = []
+      for (const lead of withEmail) {
+        try {
+          await executeOutreach(lead.id)
+          sent.push(lead.company_name)
+        } catch (err) {
+          log.error({ err, leadId: lead.id }, 'CEO Intake: leads_send_approved executeOutreach failed')
+          failed.push(lead.company_name)
+        }
+      }
+      const result = [`✅ Outreach inviato a ${sent.length} contatti: ${sent.join(', ')}`]
+      if (failed.length > 0) result.push(`⚠️ Fallito per: ${failed.join(', ')}`)
+      return result.join('\n')
     }
 
     // reply is not a real command — the LLM sometimes wraps informational

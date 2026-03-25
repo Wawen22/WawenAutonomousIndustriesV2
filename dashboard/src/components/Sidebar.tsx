@@ -9,7 +9,7 @@ import { Icon, type IconName } from './ui/Icon.js'
 import { useKnowledgeBaseManifest } from '../hooks/useKnowledgeBaseManifest.js'
 import type { KnowledgeBaseManifest } from '../types/index.js'
 
-export type CompanyViewId = 'overview' | 'tasks' | 'activity' | 'costs' | 'runs' | 'clients' | 'projects' | 'revenue' | 'founder' | 'team' | 'office' | 'memory' | 'capabilities' | 'models' | 'settings' | 'docs'
+export type CompanyViewId = 'overview' | 'tasks' | 'activity' | 'costs' | 'runs' | 'clients' | 'projects' | 'revenue' | 'founder' | 'team' | 'office' | 'memory' | 'capabilities' | 'models' | 'settings' | 'docs' | 'leads'
 export type PersonalViewId = 'assistant' | 'crm' | 'capabilities' | 'models' | 'documents' | 'activity' | 'settings' | 'docs'
 export type ViewId = CompanyViewId | PersonalViewId
 export type DashboardMode = 'company' | 'personal'
@@ -40,6 +40,7 @@ const COMPANY_NAV_SECTIONS: NavSection[] = [
       { id: 'clients',   label: 'Clients',          icon: 'clients'   },
       { id: 'projects',  label: 'Projects',         icon: 'projects'  },
       { id: 'tasks',     label: 'Task Board',       icon: 'tasks'     },
+      { id: 'leads',     label: 'Leads',            icon: 'leads'     },
     ]
   },
   {

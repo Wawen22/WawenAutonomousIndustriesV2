@@ -643,3 +643,51 @@ export interface MeetingNote {
   created_at: string
   updated_at: string
 }
+
+// --- Lead Generation Engine (T133) ---
+
+export type LeadStatus = 'new' | 'qualified' | 'approved' | 'sent' | 'replied' | 'won' | 'lost' | 'rejected'
+export type LeadSource = 'website_audit' | 'google_maps' | 'manual' | 'freelance'
+
+export interface LeadFinding {
+  type: 'performance' | 'security' | 'seo' | 'ux' | 'missing_website' | 'other'
+  severity: 'low' | 'medium' | 'high'
+  description: string
+}
+
+export interface Lead {
+  id: string
+  source: LeadSource
+  status: LeadStatus
+  company_name: string
+  contact_name: string | null
+  contact_email: string | null
+  website: string | null
+  phone: string | null
+  location: string | null
+  sector: string | null
+  score: number
+  findings: LeadFinding[]
+  outreach_subject: string
+  outreach_draft: string
+  source_url: string | null
+  contact_id: string | null
+  notes: string
+  sent_at: string | null
+  replied_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface HarvestRun {
+  id: string
+  harvester: string
+  query: string | null
+  location: string | null
+  started_at: string
+  completed_at: string | null
+  leads_found: number
+  status: 'running' | 'done' | 'failed'
+  error: string | null
+  created_at: string
+}
