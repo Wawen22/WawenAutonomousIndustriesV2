@@ -71,6 +71,7 @@ This now implies a platform decision:
 - Generate a `Daily Founder Brief`
 - Run a daily brief automation with persistent on/off control
 - Inspect personal and shared capabilities from the same dashboard control plane used by Company mode
+- Track contacts, log interactions, and follow up via the Personal CRM (`Contacts` view + CEO NL shortcuts)
 
 ---
 
@@ -167,7 +168,7 @@ Ispirato da `awesome-openclaw-usecases-main/`. Use case di produttività persona
 | ID | Title | Priority | Status | Note |
 |----|-------|----------|--------|------|
 | T123 | Second Brain — personal knowledge ingestion + search | 2 | ✅ Done | `knowledge_items` table (pgvector 1536-dim), LiteLLM embedding + local hash fallback, dedup 0.88. API routes GET/POST/DELETE. CEO Intake shortcuts (brain_save/url/search). Daily brief section. Dashboard SecondBrainPanel + tab in Personal HQ. |
-| T124 | Personal CRM — contact tracking + follow-up automation | 2 | ⬜ Todo | Gmail MCP + contatti + reminder |
+| T124 | Personal CRM — contact tracking + follow-up automation | 2 | ✅ Done | `contacts` + `contact_interactions` tables, `crm.ts` service, 8 API routes, 4 CEO NL commands, `PersonalCRMView` split-panel dashboard |
 | T125 | Meeting Notes automation — Calendar + trascrizione + summary | 3 | ⬜ Todo | Google Calendar MCP + action items |
 
 ### Fase 4 — Document skills reali
@@ -193,6 +194,24 @@ Ispirato da `skills-main/` (Anthropic). Generazione documenti DOCX/PDF reali inv
 ---
 
 ## Recent Changes
+
+### 2026-03-25 — T124: Personal CRM
+
+**New:**
+- `supabase/migrations/20260326010000_contacts.sql`: `contacts` table (id, name, email nullable unique, company, status CHECK active/follow_up/dormant, last_contact_at, notes, tags, metadata) + `contact_interactions` table (id, contact_id FK→contacts CASCADE, type, summary, source, occurred_at). Full RLS policies. `set_updated_at()` trigger.
+- `backend/src/services/crm.ts`: `getContacts(filter?)`, `getContact(id)`, `upsertContact(input)`, `deleteContact(id)`, `findContactByNameOrEmail(query)`, `getInteractions(contactId)`, `addInteraction(contactId, input)`, `deleteInteraction(id)`. `addInteraction` auto-updates `last_contact_at`.
+- `backend/src/index.ts`: 8 new CRM routes — `GET/POST /api/crm/contacts`, `GET/PUT/DELETE /api/crm/contacts/:id`, `GET/POST /api/crm/contacts/:id/interactions`, `DELETE /api/crm/interactions/:id`.
+- `backend/src/agents/ceo_intake.ts`: 4 NL commands — `crm_add_contact`, `crm_log_interaction`, `crm_get_contacts`, `crm_follow_up_due`. Auto-creates contact if not found on log.
+- `dashboard/src/components/PersonalCRMView.tsx`: split-panel CRM — w-80 contact list with search + status filter pills, flex-1 detail panel with inline editing (name/email/company blur-to-save), status toggle buttons (optimistic), notes textarea (blur-to-save with "Saved ✓"), tag chips, add-interaction form, interaction timeline with hover-delete. Add contact modal.
+- `dashboard/src/components/ui/Icon.tsx`: `contacts` icon added.
+- `dashboard/src/components/Sidebar.tsx`: `'crm'` added to `PersonalViewId`, Contacts nav item in Personal sidebar.
+- `dashboard/src/App.tsx`: `PersonalCRMView` wired in `ViewContent` switch + `VIEW_META`.
+
+**How to test:**
+1. Personal mode → Contacts view → see empty state or contacts list
+2. Click "+ Add Contact" → fill name/email/company → contact appears in list
+3. Select contact → edit name inline (blur saves) → change status → add interaction
+4. CEO NL: `"show my contacts"` / `"add contact John Doe john@acme.com"` / `"log call with John Doe: discussed pricing"` / `"who needs follow up?"`
 
 ### 2026-03-25 — T131: Dashboard Project Governance UX
 

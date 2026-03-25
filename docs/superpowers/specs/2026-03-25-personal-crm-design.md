@@ -1,7 +1,7 @@
 # T124 Personal CRM — Design Spec
 
 **Date:** 2026-03-25
-**Status:** Draft
+**Status:** Implemented
 **Scope:** Contact tracking + follow-up management for Neb as founder
 **Milestone:** M9 / Fase 3 Personal mode expansion
 
