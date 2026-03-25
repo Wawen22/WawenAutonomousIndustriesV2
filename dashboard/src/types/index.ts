@@ -606,3 +606,35 @@ export interface ProjectChecklistItem {
   created_at: string
   updated_at: string
 }
+
+// --- CRM (T124 Personal CRM) ---
+
+export type ContactStatus = 'active' | 'follow_up' | 'dormant'
+
+export type InteractionType = 'email_in' | 'email_out' | 'meeting' | 'note' | 'call'
+
+export type InteractionSource = 'gmail' | 'manual' | 'calendar'
+
+export interface Contact {
+  id: string
+  name: string
+  email?: string | null
+  company?: string | null
+  status: ContactStatus
+  last_contact_at?: string | null
+  notes: string
+  tags: string[]
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface ContactInteraction {
+  id: string
+  contact_id: string
+  type: InteractionType
+  summary: string
+  source: InteractionSource
+  occurred_at: string
+  created_at: string
+}
