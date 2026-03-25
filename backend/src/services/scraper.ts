@@ -14,6 +14,39 @@ export interface ScrapeResult {
 }
 
 /**
+ * Navigates to a URL via Playwright and returns all href values from <a> tags.
+ * Bypasses Readability — useful for search result pages where content extraction fails.
+ */
+export async function fetchLinks(url: string): Promise<string[]> {
+  let browser
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    })
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    })
+    const page = await context.newPage()
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    await page.waitForTimeout(2000)
+
+    const hrefs = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('a[href]')).map(
+        (el) => (el as HTMLAnchorElement).href,
+      ),
+    )
+    return hrefs
+  } catch (err) {
+    log.warn({ url, err }, 'fetchLinks failed')
+    return []
+  } finally {
+    if (browser) await browser.close().catch(() => {})
+  }
+}
+
+/**
  * Navigates to a URL via Playwright, extracts main content using Readability,
  * and converts it to Markdown using Turndown.
  */

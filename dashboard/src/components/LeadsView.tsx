@@ -3,7 +3,7 @@
 // Split-panel Proposal Inbox: lead list + detail + outreach.
 // ============================================================
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import type { Lead, LeadStatus, HarvestRun, LeadFinding } from '../types/index.js'
 
@@ -418,10 +418,13 @@ export function LeadsView() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<'all' | LeadStatus>('all')
   const [showHarvestModal, setShowHarvestModal] = useState(false)
-  const [isHarvesting, setIsHarvesting] = useState(false)
+  const [activeRun, setActiveRun] = useState<HarvestRun | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const wasHarvestingRef = useRef(false)
 
-  const fetchLeads = useCallback(async () => {
+  const isHarvesting = activeRun?.status === 'running'
+
+  async function refreshLeads() {
     try {
       const data = await apiGet<Lead[]>('/api/leads')
       setLeads(data)
@@ -431,40 +434,36 @@ export function LeadsView() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }
 
-  const checkHarvestStatus = useCallback(async () => {
+  async function checkHarvestStatus() {
     try {
       const runs = await apiGet<HarvestRun[]>('/api/leads/harvest-runs')
-      const latest = runs[0]
-      const harvesting = latest?.status === 'running'
-      setIsHarvesting(harvesting)
-      if (!harvesting) {
-        // Final refresh + stop polling
-        void fetchLeads()
-        if (pollRef.current) {
-          clearInterval(pollRef.current)
-          pollRef.current = null
+      const latest = runs[0] ?? null
+      setActiveRun(latest?.status === 'running' ? latest : null)
+
+      if (latest?.status !== 'running') {
+        // Harvest just completed or never started
+        if (wasHarvestingRef.current) {
+          // Was harvesting before — refresh leads to show new results
+          wasHarvestingRef.current = false
+          void refreshLeads()
         }
+      } else {
+        wasHarvestingRef.current = true
       }
     } catch {
       // ignore
     }
-  }, [fetchLeads])
-
-  useEffect(() => {
-    void fetchLeads()
-    // Initial harvest-run check
-    void checkHarvestStatus()
-  }, [fetchLeads, checkHarvestStatus])
-
-  function startPolling() {
-    if (pollRef.current) return
-    setIsHarvesting(true)
-    pollRef.current = setInterval(() => { void checkHarvestStatus() }, 5_000)
   }
 
+  // On mount: initial load + start polling every 5s
+  // Polling continues always so the dashboard auto-detects harvests from Telegram
   useEffect(() => {
+    void refreshLeads()
+    void checkHarvestStatus()
+
+    pollRef.current = setInterval(() => { void checkHarvestStatus() }, 5_000)
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
@@ -521,16 +520,29 @@ export function LeadsView() {
           ))}
         </div>
 
-        {/* Harvest button + status */}
-        <div className="border-b border-white/5 px-4 py-2 flex items-center gap-2">
-          <button
-            onClick={() => setShowHarvestModal(true)}
-            className="flex-1 rounded-lg border border-dashed border-white/15 py-1.5 text-xs text-slate-400 hover:border-violet-400/40 hover:text-violet-300 transition-colors"
-          >
-            + Run Harvest
-          </button>
-          {isHarvesting && (
-            <span className="text-xs text-amber-400 animate-pulse">harvesting…</span>
+        {/* Harvest button + active indicator */}
+        <div className="border-b border-white/5 px-4 py-2 space-y-1.5">
+          {isHarvesting && activeRun ? (
+            <div className="rounded-lg bg-amber-400/10 border border-amber-400/20 px-3 py-2">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
+                <span className="text-xs font-medium text-amber-300">
+                  Harvesting {activeRun.query ?? '…'} — {activeRun.location ?? ''}
+                </span>
+              </div>
+              {/* Animated progress bar */}
+              <div className="h-1 w-full rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full rounded-full bg-amber-400/70 animate-progress-indeterminate" />
+              </div>
+              <p className="mt-1 text-xs text-slate-500">Leads will appear here automatically</p>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowHarvestModal(true)}
+              className="w-full rounded-lg border border-dashed border-white/15 py-1.5 text-xs text-slate-400 hover:border-violet-400/40 hover:text-violet-300 transition-colors"
+            >
+              + Run Harvest
+            </button>
           )}
         </div>
 
@@ -616,8 +628,8 @@ export function LeadsView() {
         <HarvestModal
           onClose={() => setShowHarvestModal(false)}
           onStarted={() => {
-            startPolling()
-            void fetchLeads()
+            wasHarvestingRef.current = true
+            void checkHarvestStatus()
           }}
         />
       )}

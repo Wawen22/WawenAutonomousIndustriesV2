@@ -5,7 +5,7 @@
 // ============================================================
 
 import { log } from './logger.js'
-import { scrapeUrl } from './scraper.js'
+import { fetchLinks } from './scraper.js'
 import { auditWebsite } from './website-auditor.js'
 import { qualifyLead } from './lead-qualifier.js'
 import {
@@ -96,32 +96,6 @@ function isBusinessUrl(url: string): boolean {
   }
 }
 
-function extractGoogleRedirectUrls(markdown: string): string[] {
-  // Google embeds real URLs inside redirect links: /url?q=URL or /url?q=ENCODED_URL
-  // Turndown may leave the href decoded or encoded — handle both.
-  const extracted: string[] = []
-
-  // Pattern 1: unencoded — /url?q=https://...
-  const plainRe = /\/url\?q=(https?:\/\/[^&\s"')]+)/g
-  let m: RegExpExecArray | null
-  while ((m = plainRe.exec(markdown)) !== null) {
-    const url = m[1]?.split('&')[0] ?? ''  // drop trailing &sa=... params
-    if (url && isBusinessUrl(url)) extracted.push(url)
-  }
-
-  // Pattern 2: URL-encoded — /url?q=https%3A%2F%2F...
-  const encodedRe = /\/url\?q=(https?%3A%2F%2F[^&\s"']+)/g
-  while ((m = encodedRe.exec(markdown)) !== null) {
-    try {
-      const decoded = decodeURIComponent(m[1]?.split('%26')[0] ?? '')
-      if (decoded.startsWith('http') && isBusinessUrl(decoded)) extracted.push(decoded)
-    } catch {
-      // skip malformed
-    }
-  }
-
-  return extracted
-}
 
 async function discoverViaScrape(
   query: string,
@@ -130,25 +104,40 @@ async function discoverViaScrape(
 ): Promise<BusinessCandidate[]> {
   try {
     const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(`${query} ${location} sito web`)}&num=${limit * 2}&hl=it`
-    const scraped = await scrapeUrl(searchUrl)
-    if (!scraped.ok || !scraped.markdown) return []
 
-    log.info({ searchUrl, markdownLen: scraped.markdown.length }, 'LeadHarvester: scrape result')
+    // Use fetchLinks to get all raw hrefs from the rendered page (bypasses Readability)
+    const allLinks = await fetchLinks(searchUrl)
+    log.info({ count: allLinks.length }, 'LeadHarvester: raw links from search page')
 
-    // 1. Try to extract URLs from Google redirect links (primary path)
-    let businessUrls = extractGoogleRedirectUrls(scraped.markdown)
+    const businessUrls: string[] = []
 
-    // 2. Fallback: extract plain https:// URLs that are not noise domains
-    if (businessUrls.length === 0) {
-      const urlMatches = scraped.markdown.match(/https?:\/\/[^\s\)\"\'<>]+/g) ?? []
-      businessUrls = urlMatches.filter(isBusinessUrl)
+    for (const href of allLinks) {
+      // Handle Google redirect URLs: https://www.google.com/url?q=ACTUAL_URL&...
+      if (href.includes('google.com/url?q=') || href.includes('/url?q=')) {
+        try {
+          const parsed = new URL(href)
+          const q = parsed.searchParams.get('q')
+          if (q && isBusinessUrl(q)) businessUrls.push(q)
+        } catch {
+          // try extracting manually
+          const m = href.match(/[?&]q=(https?:\/\/[^&]+)/)
+          if (m?.[1]) {
+            const candidate = decodeURIComponent(m[1])
+            if (isBusinessUrl(candidate)) businessUrls.push(candidate)
+          }
+        }
+        continue
+      }
+
+      // Direct links
+      if (isBusinessUrl(href)) businessUrls.push(href)
     }
 
     // Deduplicate by domain
     const seen = new Set<string>()
     const unique = businessUrls.filter((u) => {
       try {
-        const domain = new URL(u).hostname.replace(/^www\./, '')
+        const domain = new URL(u).hostname.replace(/^www\./, '').toLowerCase()
         if (seen.has(domain)) return false
         seen.add(domain)
         return true
