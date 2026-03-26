@@ -78,7 +78,7 @@ This now implies a platform decision:
 - Automatic 3-day follow-up for non-responding leads (daily scheduler, max 1 follow-up per lead, Telegram digest)
 - Batch approve top N leads via Telegram (`approva i top 10 lead`) or dashboard button
 - Mark leads as replied via Telegram (`X ha risposto`) or dashboard button with action feedback
-- Public landing page at `GET /` (served from backend): hero, services, Wawen22 case study, contact form → inbound lead pipeline + Telegram notify
+- Public landing page at `GET /` (served from backend): hero with live agent status panel + mouse glow, ticker marquee with delivery examples + prices, problem vs WAI comparison, who it's for, how it works (4 steps), services with examples, $222 case study with counter animation, FAQ, contact form → inbound lead pipeline + Telegram notify. Premium 2030-era design: Syne + DM Mono + Manrope, scanline overlay, vignette, WAI glitch effect, JS-driven live agent panel, scroll reveal, page loader.
 
 ---
 
@@ -215,11 +215,13 @@ Lead generation autonoma + payment collection. WAI trova clienti in autonomia, N
 
 ## Recent Changes
 
-### 2026-03-26 — T135: WAI Landing Page + T136: Lead Gen Follow-up Loop
+### 2026-03-26 — T135: WAI Landing Page redesign (v2) + T136: Lead Gen Follow-up Loop
 
-**T135 — WAI Landing Page:**
-- `landing/index.html` + `landing/styles.css` + `landing/main.js`: public single-page site (dark theme, lime accent, Inter font)
-- 5 sections: hero "Work runs autonomously", services (4 cards), Wawen22 case study ($222), contact form
+**T135 — WAI Landing Page (full redesign):**
+- `landing/index.html` + `landing/styles.css` + `landing/main.js`: complete rewrite, premium 2030-era design
+- 9 sections: hero (split with live agent panel), ticker marquee, compare (traditional vs WAI), who it's for, how it works (4 steps), services (4 cards + examples), case study ($222 counter animation), FAQ (4 objections), contact (promise bullets + "Starting from $222")
+- Visual system: Syne 800 / DM Mono / Manrope — true black, #e8ff00 acid accent
+- Animations: scanline overlay, vignette, WAI glitch effect (cyan+magenta every 9s), page loader, scroll reveal, $222 IntersectionObserver counter, hero mouse glow, agent panel live (log scroll + progress increment every ~4s)
 - `GET /` served statically from backend via `LANDING_DIR` lookup map (no path traversal surface)
 - `POST /api/contact`: public route, saves `source='inbound'` lead (score 50), Telegram notify, Gmail auto-reply (non-fatal), body size guard + email validation
 
