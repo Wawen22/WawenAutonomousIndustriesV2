@@ -621,10 +621,10 @@ export function LeadsView() {
                   <span className={clsx('rounded-full px-2 py-0.5 text-xs', STATUS_BADGE[lead.status])}>
                     {lead.status}
                   </span>
-                  {lead.follow_up_count > 0 && (
-                    <span className="text-xs text-slate-500">↩ {lead.follow_up_count} follow-up</span>
-                  )}
                 </div>
+              )}
+              {lead.follow_up_count > 0 && (
+                <span className="mt-1 block text-xs text-slate-500">↩ {lead.follow_up_count} follow-up</span>
               )}
             </button>
           ))}
