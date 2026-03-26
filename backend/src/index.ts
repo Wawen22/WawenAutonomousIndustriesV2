@@ -2420,8 +2420,8 @@ async function main(): Promise<void> {
       void (async () => {
         try {
           if (!isAuthorizedDashboardRequest(req)) {
-            res.writeHead(401, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'Unauthorized' }))
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Forbidden' }))
             return
           }
           const limitParam = parseInt(url.searchParams.get('limit') ?? '10', 10)
@@ -2605,8 +2605,8 @@ async function main(): Promise<void> {
         void (async () => {
           try {
             if (!isAuthorizedDashboardRequest(req)) {
-              res.writeHead(401, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ error: 'Unauthorized' }))
+              res.writeHead(403, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Forbidden' }))
               return
             }
             const { updateLeadStatus } = await import('./services/leads.js')

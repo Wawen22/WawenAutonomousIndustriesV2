@@ -23,6 +23,7 @@ export async function getLeadsNeedingFollowUp(daysAfterSend = DEFAULT_FOLLOWUP_D
     .eq('follow_up_count', 0)
     .not('contact_email', 'is', null)
     .lte('sent_at', cutoff)
+    .limit(50)  // cap batch size
     .order('score', { ascending: false })
 
   if (error) {

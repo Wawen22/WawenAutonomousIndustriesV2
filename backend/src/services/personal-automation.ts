@@ -738,9 +738,6 @@ export async function runFounderAutomationCycle(
   const followupHour = parseInt(process.env['FOLLOWUP_HOUR'] ?? '10', 10)
   const followupTimezone = state.dailyFounderBrief.timezone
   const followupDateParts = getDateTimeParts(now, followupTimezone)
-  // lastFollowupRunDate is a module-level variable declared at the top of personal-automation.ts:
-  // let lastFollowupRunDate: string | undefined = undefined
-
   if (
     followupDateParts.hour === followupHour &&
     followupDateParts.minute === 0 &&

@@ -396,13 +396,19 @@ function DetailPanel({ lead, onUpdate, onRemove }: DetailPanelProps) {
           <div className="pt-1">
             <button
               onClick={() => {
+                setActionState('working')
                 apiPost<Lead>(`/api/leads/${lead.id}/replied`)
                   .then((updated) => {
                     onUpdate(updated)
+                    setActionState('idle')
                   })
-                  .catch(() => {})
+                  .catch((err: unknown) => {
+                    setActionState('error')
+                    setActionMsg(err instanceof Error ? err.message : 'Failed to mark replied')
+                  })
               }}
-              className="px-3 py-1.5 text-xs font-medium rounded bg-teal-500/15 text-teal-400 ring-1 ring-teal-500/30 hover:bg-teal-500/25 transition-colors"
+              disabled={actionState === 'working'}
+              className="px-3 py-1.5 text-xs font-medium rounded bg-teal-500/15 text-teal-400 ring-1 ring-teal-500/30 hover:bg-teal-500/25 transition-colors disabled:opacity-50"
             >
               ✓ Mark Replied
             </button>

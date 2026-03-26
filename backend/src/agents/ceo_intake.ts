@@ -76,7 +76,7 @@ import {
   saveMeetingNote,
   summarizeMeetingNotes,
 } from '../services/meeting-notes.js'
-import { getLeads as crmGetLeads } from '../services/leads.js'
+import { getLeads as crmGetLeads, updateLeadStatus } from '../services/leads.js'
 import { harvestLeads } from '../services/lead-harvester.js'
 import { executeOutreach } from '../services/outreach-executor.js'
 import {
@@ -2694,7 +2694,6 @@ async function executeAction(
       const toApprove = qualified
         .sort((a, b) => b.score - a.score)
         .slice(0, limit)
-      const { updateLeadStatus } = await import('../services/leads.js')
       for (const lead of toApprove) {
         await updateLeadStatus(lead.id, 'approved')
       }
@@ -2711,7 +2710,6 @@ async function executeAction(
         (l) => l.company_name.toLowerCase().includes(company.toLowerCase()),
       )
       if (!match) return `⚠️ Nessun lead "sent" trovato per "${company}". Controlla il nome.`
-      const { updateLeadStatus } = await import('../services/leads.js')
       await updateLeadStatus(match.id, 'replied', { replied_at: new Date().toISOString() })
       return `✅ ${match.company_name} segnato come replied. Status → replied.`
     }
