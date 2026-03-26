@@ -675,6 +675,8 @@ export interface Lead {
   notes: string
   sent_at: string | null
   replied_at: string | null
+  followed_up_at: string | null
+  follow_up_count: number
   created_at: string
   updated_at: string
 }
