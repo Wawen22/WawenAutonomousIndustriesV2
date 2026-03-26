@@ -2682,6 +2682,31 @@ async function main(): Promise<void> {
       return
     }
 
+    // ── Landing page static serving (T135) ───────────────────────────────────
+    // Serves landing/ files for GET requests not matched by any API route.
+    if (req.method === 'GET') {
+      const LANDING_FILES: Record<string, { file: string; ct: string }> = {
+        '/':            { file: 'index.html', ct: 'text/html; charset=utf-8' },
+        '/index.html':  { file: 'index.html', ct: 'text/html; charset=utf-8' },
+        '/styles.css':  { file: 'styles.css', ct: 'text/css; charset=utf-8' },
+        '/main.js':     { file: 'main.js',    ct: 'application/javascript; charset=utf-8' },
+      }
+      const entry = LANDING_FILES[url.pathname]
+      if (entry) {
+        void (async () => {
+          try {
+            const content = await readFile(join(LANDING_DIR, entry.file), 'utf-8')
+            res.writeHead(200, { 'Content-Type': entry.ct })
+            res.end(content)
+          } catch {
+            res.writeHead(404)
+            res.end()
+          }
+        })()
+        return
+      }
+    }
+
     res.writeHead(404)
     res.end()
   })
