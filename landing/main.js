@@ -1,9 +1,11 @@
 const form = document.getElementById('contact-form')
 const statusEl = document.getElementById('form-status')
+if (!form || !statusEl) throw new Error('contact-form or form-status element missing')
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault()
   const btn = form.querySelector('button[type="submit"]')
+  if (!btn) return
   btn.disabled = true
   btn.textContent = 'Sending…'
   statusEl.textContent = ''

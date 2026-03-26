@@ -2276,16 +2276,27 @@ async function main(): Promise<void> {
     if (url.pathname === '/api/contact' && req.method === 'POST') {
       void (async () => {
         try {
+          const contentLength = parseInt(req.headers['content-length'] ?? '0', 10)
+          if (contentLength > 16_384) {
+            res.writeHead(413, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Payload too large' }))
+            return
+          }
           const body = await readJsonBody(req)
           const payload = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
           const name = (typeof payload['name'] === 'string' ? payload['name'] : '').trim()
           const company = (typeof payload['company'] === 'string' ? payload['company'] : '').trim()
           const email = (typeof payload['email'] === 'string' ? payload['email'] : '').trim()
-          const message = (typeof payload['message'] === 'string' ? payload['message'] : '').trim()
+          const message = (typeof payload['message'] === 'string' ? payload['message'] : '').trim().slice(0, 2000)
 
           if (!name || !email) {
             res.writeHead(400, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'name and email are required' }))
+            return
+          }
+          if (!email.includes('@') || !email.includes('.')) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'invalid email address' }))
             return
           }
 
