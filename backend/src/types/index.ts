@@ -677,6 +677,7 @@ export interface Lead {
   replied_at: string | null
   followed_up_at: string | null
   follow_up_count: number
+  thread_id: string | null
   created_at: string
   updated_at: string
 }

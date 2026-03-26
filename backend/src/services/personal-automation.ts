@@ -22,6 +22,8 @@ const DEFAULT_AUTOMATION_INTERVAL_MS = parsePositiveInt(
 
 // Tracks the last date follow-up cycle ran (in-memory, resets on restart — intentional)
 let lastFollowupRunDate: string | undefined = undefined
+// Tracks the last date reply-check cycle ran
+let lastReplyCheckRunDate: string | undefined = undefined
 
 export type PersonalAutomationRunStatus =
   | 'idle'
@@ -702,6 +704,62 @@ export async function runWeeklyLeadHarvestNow(
   }
 }
 
+// ---------------------------------------------------------------------------
+// T137 — Gmail Reply Check Cycle
+// Polls Gmail threads for sent leads; marks leads as 'replied' automatically.
+// ---------------------------------------------------------------------------
+
+export async function runReplyCheckCycle(
+  ownerSlug: string = DEFAULT_OWNER_SLUG,
+): Promise<number> {
+  const { getLeads, updateLeadStatus } = await import('./leads.js')
+  const { callGoogleWorkspaceMcpTool } = await import('./google-workspace-mcp.js')
+
+  // Only check leads that were sent and have a thread_id
+  const sentLeads = await getLeads({ status: 'sent' })
+  const trackedLeads = sentLeads.filter((l) => l.thread_id)
+
+  if (trackedLeads.length === 0) return 0
+
+  let repliedCount = 0
+
+  for (const lead of trackedLeads) {
+    try {
+      const result = await callGoogleWorkspaceMcpTool(
+        'gmail_read_thread',
+        { thread_id: lead.thread_id! },
+        ownerSlug,
+      )
+
+      // Check for replies from external senders (not from the WAI outreach address)
+      const sc = result.structuredContent
+      const messages: unknown[] =
+        sc && typeof sc === 'object' && 'messages' in sc && Array.isArray((sc as Record<string, unknown>)['messages'])
+          ? ((sc as Record<string, unknown[]>)['messages'] ?? [])
+          : []
+
+      const outreachEmail = lead.contact_email?.toLowerCase()
+      const hasReply = messages.length > 1 && messages.some((msg) => {
+        if (!msg || typeof msg !== 'object') return false
+        const from = ((msg as Record<string, unknown>)['from'] ?? '') as string
+        // Reply present if any message is from the lead's contact email
+        return outreachEmail ? from.toLowerCase().includes(outreachEmail) : false
+      })
+
+      if (hasReply) {
+        await updateLeadStatus(lead.id, 'replied', { replied_at: new Date().toISOString() })
+        log.info({ leadId: lead.id, company: lead.company_name }, 'ReplyCheckCycle: lead marked as replied')
+        repliedCount++
+      }
+    } catch (err) {
+      // Non-fatal — continue with next lead
+      log.warn({ err, leadId: lead.id }, 'ReplyCheckCycle: thread check failed (non-fatal)')
+    }
+  }
+
+  return repliedCount
+}
+
 export async function runFounderAutomationCycle(
   ownerSlug: string = DEFAULT_OWNER_SLUG,
 ): Promise<void> {
@@ -732,6 +790,30 @@ export async function runFounderAutomationCycle(
         log.error({ err, ownerSlug }, 'Weekly lead harvest scheduled run failed')
       })
     }
+  }
+
+  // Daily Gmail reply check (runs once per day at 11:00 local time)
+  const replyCheckHour = parseInt(process.env['REPLY_CHECK_HOUR'] ?? '11', 10)
+  const replyCheckTimezone = state.dailyFounderBrief.timezone
+  const replyCheckDateParts = getDateTimeParts(now, replyCheckTimezone)
+  if (
+    replyCheckDateParts.hour === replyCheckHour &&
+    replyCheckDateParts.minute === 0 &&
+    lastReplyCheckRunDate !== replyCheckDateParts.dateKey
+  ) {
+    lastReplyCheckRunDate = replyCheckDateParts.dateKey
+    void (async () => {
+      try {
+        const replied = await runReplyCheckCycle()
+        if (replied > 0) {
+          await sendFounderNotification(
+            `📨 Reply tracking: ${replied} lead${replied !== 1 ? 's' : ''} marcato${replied !== 1 ? 'i' : ''} come "replied" automaticamente`,
+          ).catch(() => {})
+        }
+      } catch (err) {
+        log.error({ err, ownerSlug }, 'runFounderAutomationCycle: reply check failed')
+      }
+    })()
   }
 
   // Daily lead follow-up cycle (runs once per day at 10:00 local time)

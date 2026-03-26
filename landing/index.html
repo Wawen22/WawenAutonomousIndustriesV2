@@ -5,6 +5,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WAI — Work runs autonomously.</title>
   <meta name="description" content="AI-powered delivery for software, marketing, and consulting — with zero agency overhead. Brief a project and WAI builds, ships, and hands it off." />
+
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://wai.wawen.io/" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="WAI — Wawen Autonomous Industries" />
+  <meta property="og:title" content="WAI — Work runs autonomously." />
+  <meta property="og:description" content="AI-powered delivery for software, marketing, and consulting — with zero agency overhead. Brief a project and WAI builds, ships, and hands it off." />
+  <meta property="og:url" content="https://wai.wawen.io/" />
+  <meta property="og:image" content="https://wai.wawen.io/og-image.svg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:locale" content="en_US" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="WAI — Work runs autonomously." />
+  <meta name="twitter:description" content="AI-powered delivery for software, marketing, and consulting — with zero agency overhead. Brief a project and WAI builds, ships, and hands it off." />
+  <meta name="twitter:image" content="https://wai.wawen.io/og-image.svg" />
+
+  <!-- Structured Data: Organization -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Wawen Autonomous Industries",
+    "alternateName": "WAI",
+    "url": "https://wai.wawen.io/",
+    "description": "AI-powered autonomous delivery for software, marketing, and consulting projects.",
+    "logo": "https://wai.wawen.io/og-image.svg",
+    "sameAs": []
+  }
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=Manrope:wght@300;400;500;600&display=swap" rel="stylesheet" />
@@ -402,5 +437,22 @@
   </footer>
 
   <script src="/main.js"></script>
+
+  <!-- T139: Self-hosted analytics — no cookies, GDPR-safe -->
+  <script>
+    (function () {
+      try {
+        fetch('/api/analytics/pageview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: window.location.pathname,
+            referrer: document.referrer || null,
+          }),
+          keepalive: true,
+        }).catch(function () {})
+      } catch (e) {}
+    })()
+  </script>
 </body>
 </html>

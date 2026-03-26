@@ -78,7 +78,9 @@ This now implies a platform decision:
 - Automatic 3-day follow-up for non-responding leads (daily scheduler, max 1 follow-up per lead, Telegram digest)
 - Batch approve top N leads via Telegram (`approva i top 10 lead`) or dashboard button
 - Mark leads as replied via Telegram (`X ha risposto`) or dashboard button with action feedback
-- Public landing page at `GET /` (served from backend): hero with live agent status panel + mouse glow, ticker marquee with delivery examples + prices, problem vs WAI comparison, who it's for, how it works (4 steps), services with examples, $222 case study with counter animation, FAQ, contact form → inbound lead pipeline + Telegram notify. Premium 2030-era design: Syne + DM Mono + Manrope, scanline overlay, vignette, WAI glitch effect, JS-driven live agent panel, scroll reveal, page loader.
+- Automatic Gmail reply tracking: `thread_id` saved on outreach send, daily cycle at 11:00 polls Gmail threads and auto-marks leads as `replied` + Telegram notify
+- Public landing page at `GET /` (served from backend): hero with live agent status panel + mouse glow, ticker marquee with delivery examples + prices, problem vs WAI comparison, who it's for, how it works (4 steps), services with examples, $222 case study with counter animation, FAQ, contact form → inbound lead pipeline + Telegram notify. Premium 2030-era design: Syne + DM Mono + Manrope, scanline overlay, vignette, WAI glitch effect, JS-driven live agent panel, scroll reveal, page loader. Full SEO: Open Graph, Twitter Card, canonical URL, JSON-LD Organization. OG image at `/og-image.svg`.
+- Self-hosted cookie-free analytics: `POST /api/analytics/pageview` → `page_views` Supabase table. No cookies, GDPR-safe. Script auto-fires on landing page load.
 
 ---
 
@@ -86,6 +88,9 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
+| T139 | Analytics self-hosted | ✅ Done | Claude | 2 | page_views table, POST /api/analytics/pageview, landing script, GDPR-safe |
+| T138 | SEO + Open Graph | ✅ Done | Claude | 2 | OG tags, Twitter card, canonical, JSON-LD Organization, og-image.svg (1200×630) |
+| T137 | Gmail Reply Tracking automatico | ✅ Done | Claude | 1 | thread_id on leads, saved on send, daily 11:00 cycle polls Gmail threads, auto-replied + Telegram |
 | T136 | Lead Gen Follow-up Loop | ✅ Done | Claude | 1 | 3-day follow-up auto (daily scheduler), batch approval (CEO NL + dashboard), reply tracking (CEO NL + dashboard), follow_up_count badge |
 | T135 | WAI Landing Page | ✅ Done | Claude | 1 | Public site at GET / served from backend — hero, services, case study, contact form → inbound leads + Telegram notify |
 | T134 | Weekly Lead Harvest Automation + DDG Fallback | ✅ Done | Claude | 1 | DDG HTML fallback, weeklyLeadHarvest automation, Telegram digest, CEO NL config, dashboard panel |

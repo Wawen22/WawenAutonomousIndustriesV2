@@ -17,17 +17,25 @@ export async function executeOutreach(leadId: string): Promise<{ sent: boolean; 
 
   let sent = false
   let draftOnly = false
+  let capturedThreadId: string | null = null
 
   // 1. Attempt send via Gmail MCP
   try {
-    await callGoogleWorkspaceMcpTool('gmail_send_email', {
+    const sendResult = await callGoogleWorkspaceMcpTool('gmail_send_email', {
       to: lead.contact_email,
       subject: lead.outreach_subject,
       body: lead.outreach_draft,
     })
     sent = true
     draftOnly = false
-    log.info({ leadId, email: lead.contact_email }, 'OutreachExecutor: email sent')
+
+    // Capture thread_id from Gmail MCP structured response
+    const sc = sendResult.structuredContent
+    if (sc && typeof sc === 'object' && 'threadId' in sc && typeof (sc as Record<string, unknown>)['threadId'] === 'string') {
+      capturedThreadId = (sc as Record<string, string>)['threadId'] ?? null
+    }
+
+    log.info({ leadId, email: lead.contact_email, threadId: capturedThreadId }, 'OutreachExecutor: email sent')
   } catch (sendErr) {
     log.warn({ sendErr }, 'OutreachExecutor: gmail_send_email failed, falling back to draft')
 
@@ -52,9 +60,12 @@ export async function executeOutreach(leadId: string): Promise<{ sent: boolean; 
     }
   }
 
-  // 2. Update lead status to sent
+  // 2. Update lead status to sent (+ thread_id for reply tracking)
   const sentAt = new Date().toISOString()
   await updateLeadStatus(leadId, 'sent', { sent_at: sentAt })
+  if (capturedThreadId) {
+    await saveLead({ id: leadId, company_name: lead.company_name, thread_id: capturedThreadId })
+  }
 
   // 3. CRM integration — upsert contact + log interaction
   try {

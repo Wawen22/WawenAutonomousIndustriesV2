@@ -265,6 +265,12 @@ function DetailPanel({ lead, onUpdate, onRemove }: DetailPanelProps) {
         <div className="flex flex-wrap items-start gap-3">
           <div className="flex-1">
             <h2 className="text-xl font-bold text-white">{lead.company_name}</h2>
+            {lead.contact_name && lead.contact_name !== lead.company_name && (
+              <p className="mt-0.5 text-sm text-slate-400">{lead.contact_name}</p>
+            )}
+            {lead.contact_email && (
+              <p className="mt-0.5 text-xs text-violet-400">{lead.contact_email}</p>
+            )}
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
               {lead.sector && <span>{lead.sector}</span>}
               {lead.location && <span>📍 {lead.location}</span>}
@@ -610,7 +616,12 @@ export function LeadsView() {
               )}
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="flex-1 truncate text-sm font-medium text-white">{lead.company_name}</p>
+                <div className="flex-1 min-w-0">
+                  <p className="truncate text-sm font-medium text-white">{lead.company_name}</p>
+                  {lead.contact_name && lead.contact_name !== lead.company_name && (
+                    <p className="truncate text-xs text-slate-400">{lead.contact_name}</p>
+                  )}
+                </div>
                 <span className={clsx('flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-bold', scoreBadgeClass(lead.score))}>
                   {lead.score}
                 </span>

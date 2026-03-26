@@ -2313,6 +2313,53 @@ async function main(): Promise<void> {
             notes: message,
           })
 
+          // Generate AI outreach subject + body in background (gemini-2.5-flash)
+          void (async () => {
+            try {
+              const { runAgent } = await import('./services/llm.js')
+              const prompt = [
+                `You are WAI (Wawen Autonomous Industries), an AI-powered delivery agency for software, marketing, and consulting.`,
+                `A new inbound lead has contacted us via our website contact form. Generate a professional, warm, and concise reply email.`,
+                ``,
+                `Lead details:`,
+                `- Name: ${name}`,
+                company ? `- Company: ${company}` : null,
+                `- Email: ${email}`,
+                message ? `- Their message: "${message}"` : `- No message provided.`,
+                ``,
+                `Instructions:`,
+                `1. Write a subject line (max 60 chars, no "Re:", no generic greetings).`,
+                `2. Write the email body: 3–5 sentences. Acknowledge their specific request if provided. Introduce WAI briefly. Propose a 20-min call to discuss. Sign as "The WAI Team".`,
+                `3. Respond ONLY in this exact format (no extra text):`,
+                `SUBJECT: <subject here>`,
+                `BODY:`,
+                `<body here>`,
+              ].filter(Boolean).join('\n')
+
+              const result = await runAgent(
+                [{ role: 'user', content: prompt }],
+                { agentId: 'ceo', modelOverride: 'gemini-2.5-flash', timeoutMs: 30_000 },
+              )
+
+              const text = result.content.trim()
+              const subjectMatch = text.match(/^SUBJECT:\s*(.+)/m)
+              const bodyMatch = text.match(/^BODY:\n([\s\S]+)/m)
+
+              if (subjectMatch && bodyMatch) {
+                const { saveLead: updateLead } = await import('./services/leads.js')
+                await updateLead({
+                  id: lead.id,
+                  company_name: lead.company_name,
+                  outreach_subject: subjectMatch[1]!.trim(),
+                  outreach_draft: bodyMatch[1]!.trim(),
+                })
+                log.info({ leadId: lead.id }, 'Contact: AI outreach draft generated')
+              }
+            } catch (err) {
+              log.warn({ err, leadId: lead.id }, 'Contact: AI outreach generation failed (non-fatal)')
+            }
+          })()
+
           // Notify founder on Telegram (non-fatal)
           await sendFounderNotification(
             `🔔 New inbound lead: ${name}${company ? ` from ${company}` : ''} — ${email}${message ? `\n"${message.slice(0, 200)}"` : ''}`,
@@ -2331,6 +2378,32 @@ async function main(): Promise<void> {
           log.error({ err }, 'Contact: POST /api/contact error')
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // ── Analytics (T139) ────────────────────────────────────────────────────
+
+    // POST /api/analytics/pageview — cookie-free, GDPR-safe landing page view tracking
+    if (url.pathname === '/api/analytics/pageview' && req.method === 'POST') {
+      void (async () => {
+        try {
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+          const path = (typeof payload['path'] === 'string' ? payload['path'] : '/').trim().slice(0, 512)
+          const referrer = typeof payload['referrer'] === 'string' ? payload['referrer'].trim().slice(0, 1024) : null
+          const userAgent = (req.headers['user-agent'] ?? '').slice(0, 512)
+
+          const { getSupabaseClient } = await import('./services/supabase.js')
+          await getSupabaseClient().from('page_views').insert({ path, referrer, user_agent: userAgent })
+
+          res.writeHead(204)
+          res.end()
+        } catch (err) {
+          log.warn({ err }, 'Analytics: pageview insert failed (non-fatal)')
+          res.writeHead(204)
+          res.end()
         }
       })()
       return
@@ -2754,10 +2827,11 @@ async function main(): Promise<void> {
     // Serves landing/ files for GET requests not matched by any API route.
     if (req.method === 'GET') {
       const LANDING_FILES: Record<string, { file: string; ct: string }> = {
-        '/':            { file: 'index.html', ct: 'text/html; charset=utf-8' },
-        '/index.html':  { file: 'index.html', ct: 'text/html; charset=utf-8' },
-        '/styles.css':  { file: 'styles.css', ct: 'text/css; charset=utf-8' },
-        '/main.js':     { file: 'main.js',    ct: 'application/javascript; charset=utf-8' },
+        '/':              { file: 'index.html',  ct: 'text/html; charset=utf-8' },
+        '/index.html':    { file: 'index.html',  ct: 'text/html; charset=utf-8' },
+        '/styles.css':    { file: 'styles.css',  ct: 'text/css; charset=utf-8' },
+        '/main.js':       { file: 'main.js',     ct: 'application/javascript; charset=utf-8' },
+        '/og-image.svg':  { file: 'og-image.svg', ct: 'image/svg+xml; charset=utf-8' },
       }
       const entry = LANDING_FILES[url.pathname]
       if (entry) {

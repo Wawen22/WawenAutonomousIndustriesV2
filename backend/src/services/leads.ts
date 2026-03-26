@@ -81,6 +81,7 @@ export interface SaveLeadInput {
   notes?: string
   sent_at?: string | null
   replied_at?: string | null
+  thread_id?: string | null
 }
 
 export async function saveLead(input: SaveLeadInput): Promise<Lead> {
@@ -107,6 +108,7 @@ export async function saveLead(input: SaveLeadInput): Promise<Lead> {
     if (input.notes !== undefined) row['notes'] = input.notes
     if (input.sent_at !== undefined) row['sent_at'] = input.sent_at
     if (input.replied_at !== undefined) row['replied_at'] = input.replied_at
+    if (input.thread_id !== undefined) row['thread_id'] = input.thread_id
 
     const { data, error } = await supabase
       .from('leads')
@@ -143,6 +145,7 @@ export async function saveLead(input: SaveLeadInput): Promise<Lead> {
   if (input.contact_id != null) row['contact_id'] = input.contact_id
   if (input.sent_at != null) row['sent_at'] = input.sent_at
   if (input.replied_at != null) row['replied_at'] = input.replied_at
+  if (input.thread_id != null) row['thread_id'] = input.thread_id
 
   const { data, error } = await supabase
     .from('leads')
