@@ -391,6 +391,23 @@ function DetailPanel({ lead, onUpdate, onRemove }: DetailPanelProps) {
         {hasSent && lead.sent_at && (
           <p className="text-sm text-slate-400">Sent {fmt(lead.sent_at)}</p>
         )}
+
+        {lead.status === 'sent' && (
+          <div className="pt-1">
+            <button
+              onClick={() => {
+                apiPost<Lead>(`/api/leads/${lead.id}/replied`)
+                  .then((updated) => {
+                    onUpdate(updated)
+                  })
+                  .catch(() => {})
+              }}
+              className="px-3 py-1.5 text-xs font-medium rounded bg-teal-500/15 text-teal-400 ring-1 ring-teal-500/30 hover:bg-teal-500/25 transition-colors"
+            >
+              ✓ Mark Replied
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Notes */}
@@ -544,6 +561,18 @@ export function LeadsView() {
               + Run Harvest
             </button>
           )}
+          <button
+            onClick={() => {
+              apiPost<{ approved: number }>('/api/leads/approve-top?limit=10')
+                .then((r) => {
+                  if (r.approved > 0) void refreshLeads()
+                })
+                .catch(() => {})
+            }}
+            className="px-3 py-1.5 text-xs font-medium rounded bg-violet-500/15 text-violet-400 ring-1 ring-violet-500/30 hover:bg-violet-500/25 transition-colors w-full"
+          >
+            Approve Top 10
+          </button>
         </div>
 
         {/* Lead list */}
@@ -592,6 +621,9 @@ export function LeadsView() {
                   <span className={clsx('rounded-full px-2 py-0.5 text-xs', STATUS_BADGE[lead.status])}>
                     {lead.status}
                   </span>
+                  {lead.follow_up_count > 0 && (
+                    <span className="text-xs text-slate-500">↩ {lead.follow_up_count} follow-up</span>
+                  )}
                 </div>
               )}
             </button>
