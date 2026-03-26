@@ -5,7 +5,8 @@
 import { createServer, IncomingMessage, ServerResponse } from 'node:http'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join, resolve as resolvePath } from 'node:path'
+import { dirname, join, resolve as resolvePath } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { log, recordEvent } from './services/logger.js'
 import { recordCapabilityEvent } from './services/logger.js'
 import {
@@ -114,6 +115,10 @@ import type {
   CapabilityAssignmentState,
   CapabilityAssignmentTargetType,
 } from './types/index.js'
+
+// Landing page static directory (repo root /landing/)
+const __landingDirname = dirname(fileURLToPath(import.meta.url))
+const LANDING_DIR = join(__landingDirname, '..', '..', 'landing')
 
 function isCapabilityAssignmentTargetType(value: unknown): value is CapabilityAssignmentTargetType {
   return value === 'runtime' || value === 'team' || value === 'agent'
