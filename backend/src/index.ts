@@ -2415,6 +2415,39 @@ async function main(): Promise<void> {
       return
     }
 
+    // POST /api/leads/approve-top?limit=10 — batch approve top N qualified leads
+    if (url.pathname === '/api/leads/approve-top' && req.method === 'POST') {
+      void (async () => {
+        try {
+          if (!isAuthorizedDashboardRequest(req)) {
+            res.writeHead(401, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Unauthorized' }))
+            return
+          }
+          const limitParam = parseInt(url.searchParams.get('limit') ?? '10', 10)
+          const limit = isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 50) : 10
+
+          const { getLeads, updateLeadStatus } = await import('./services/leads.js')
+          const qualified = await getLeads({ status: 'qualified' })
+          const toApprove = qualified
+            .sort((a, b) => b.score - a.score)
+            .slice(0, limit)
+
+          for (const lead of toApprove) {
+            await updateLeadStatus(lead.id, 'approved')
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ approved: toApprove.length, leads: toApprove.map((l) => ({ id: l.id, company_name: l.company_name, score: l.score })) }))
+        } catch (err) {
+          log.error({ err }, 'Leads: POST /api/leads/approve-top error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
     // GET /api/leads/harvest-runs — harvest run history
     if (url.pathname === '/api/leads/harvest-runs' && req.method === 'GET') {
       void (async () => {
@@ -2560,6 +2593,30 @@ async function main(): Promise<void> {
             res.end(JSON.stringify(result))
           } catch (err) {
             log.error({ err, leadId }, 'Leads: POST /api/leads/:id/send error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
+      // POST /api/leads/:id/replied — mark lead as replied
+      if (parts.length === 2 && parts[1] === 'replied' && req.method === 'POST') {
+        void (async () => {
+          try {
+            if (!isAuthorizedDashboardRequest(req)) {
+              res.writeHead(401, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Unauthorized' }))
+              return
+            }
+            const { updateLeadStatus } = await import('./services/leads.js')
+            const lead = await updateLeadStatus(leadId, 'replied', {
+              replied_at: new Date().toISOString(),
+            })
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify(lead))
+          } catch (err) {
+            log.error({ err, leadId }, 'Leads: POST /api/leads/:id/replied error')
             res.writeHead(500, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Internal server error' }))
           }
