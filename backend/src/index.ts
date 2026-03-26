@@ -2270,6 +2270,61 @@ async function main(): Promise<void> {
       }
     }
 
+    // ── Contact form route (T135 Landing Page) ───────────────────────────────
+
+    // POST /api/contact — inbound lead from landing page (public, no auth required)
+    if (url.pathname === '/api/contact' && req.method === 'POST') {
+      void (async () => {
+        try {
+          const body = await readJsonBody(req)
+          const payload = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+          const name = (typeof payload['name'] === 'string' ? payload['name'] : '').trim()
+          const company = (typeof payload['company'] === 'string' ? payload['company'] : '').trim()
+          const email = (typeof payload['email'] === 'string' ? payload['email'] : '').trim()
+          const message = (typeof payload['message'] === 'string' ? payload['message'] : '').trim()
+
+          if (!name || !email) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'name and email are required' }))
+            return
+          }
+
+          const { saveLead } = await import('./services/leads.js')
+          const lead = await saveLead({
+            company_name: company || name,
+            contact_name: name,
+            contact_email: email,
+            source: 'inbound',
+            status: 'qualified',
+            score: 50,
+            outreach_subject: '',
+            outreach_draft: '',
+            notes: message,
+          })
+
+          // Notify founder on Telegram (non-fatal)
+          await sendFounderNotification(
+            `🔔 New inbound lead: ${name}${company ? ` from ${company}` : ''} — ${email}${message ? `\n"${message.slice(0, 200)}"` : ''}`,
+          ).catch(() => {})
+
+          // Auto-reply via Gmail MCP (non-fatal — may not be connected)
+          callGoogleWorkspaceMcpTool('gmail_send_email', {
+            to: email,
+            subject: 'Thanks for reaching out to WAI',
+            body: `Hi ${name},\n\nThanks for reaching out. We've received your message and will get back to you within 24 hours.\n\nBest,\nWAI Team`,
+          }).catch(() => {})
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, leadId: lead.id }))
+        } catch (err) {
+          log.error({ err }, 'Contact: POST /api/contact error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
     // ── Leads routes (T133 Lead Generation Engine) ──────────────────────────
 
     // GET /api/leads — list leads (qs: status, source, minScore, limit)
