@@ -1,94 +1,404 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WAI – Wawen Autonomous Industries</title>
-  <meta name="description" content="AI-powered delivery for software, marketing, and consulting — with zero agency overhead.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WAI — Work runs autonomously.</title>
+  <meta name="description" content="AI-powered delivery for software, marketing, and consulting — with zero agency overhead. Brief a project and WAI builds, ships, and hands it off." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=Manrope:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
 
-  <!-- Nav -->
-  <nav>
-    <span class="wordmark">WAI</span>
-    <a href="#contact" class="nav-cta">Get in touch</a>
+  <!-- PAGE LOADER -->
+  <div class="page-loader" id="page-loader"></div>
+
+  <!-- NAV -->
+  <nav class="nav">
+    <a href="/" class="nav-brand">
+      <span class="nav-wordmark" data-text="WAI">WAI</span>
+      <span class="nav-sub">Wawen Autonomous Industries</span>
+    </a>
+    <a href="#contact" class="nav-cta">[ Get in touch ]</a>
   </nav>
 
-  <!-- Hero -->
-  <section class="hero">
-    <h1>Work runs<br><span class="accent">autonomously.</span></h1>
-    <p class="subline">AI-powered delivery for software, marketing, and consulting — with zero agency overhead.</p>
-    <a href="#contact" class="cta-button">Get in touch →</a>
+  <!-- HERO -->
+  <section class="hero" id="hero">
+    <div class="hero-glow"></div>
+
+    <div class="hero-main">
+      <div class="hero-left">
+        <div class="hero-status">
+          <span class="status-dot"></span>
+          <span class="status-text">SYS:ONLINE — AUTONOMOUS DELIVERY ACTIVE</span>
+        </div>
+        <h1 class="hero-headline">
+          <span class="h-line">Work runs</span>
+          <span class="h-line">autonomously<span class="accent">.</span></span>
+        </h1>
+        <p class="hero-sub">Brief a project. WAI's agents build it, ship it, and hand it off — while you stay in control of every decision.</p>
+        <div class="hero-actions">
+          <a href="#contact" class="btn-primary">Start a project</a>
+          <a href="#how-it-works" class="btn-ghost">How it works ↓</a>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <div class="agent-panel">
+          <div class="ap-header">
+            <div class="ap-lights">
+              <span class="apl active"></span>
+              <span class="apl"></span>
+              <span class="apl"></span>
+            </div>
+            <span class="ap-title">WAI — LIVE SYSTEM</span>
+          </div>
+          <div class="ap-body">
+            <div class="ap-task-row">
+              <span class="ap-task-id">TASK T-0042</span>
+              <span class="ap-badge">● IN PROGRESS</span>
+            </div>
+            <div class="ap-task-name">Build landing page for Wawen22</div>
+            <div class="ap-progress">
+              <div class="progress-track">
+                <div class="progress-fill" id="ap-fill"></div>
+              </div>
+              <span class="progress-pct" id="ap-pct">82%</span>
+            </div>
+            <div class="ap-meta-row">
+              <span>Agent: design-agent</span>
+              <span id="ap-time">12:04:33</span>
+            </div>
+          </div>
+          <div class="ap-log" id="ap-log">
+            <div class="ap-log-line">
+              <span class="log-time">12:04:12</span>
+              <span class="log-msg">Generating component styles</span>
+            </div>
+            <div class="ap-log-line">
+              <span class="log-time">12:04:28</span>
+              <span class="log-msg">Writing contact form handler</span>
+            </div>
+            <div class="ap-log-line live">
+              <span class="log-time">12:04:33</span>
+              <span class="log-msg">Optimizing mobile layout<span class="cursor">_</span></span>
+            </div>
+          </div>
+          <div class="ap-footer">
+            <span>3 agents active</span>
+            <span>↑ 1,247 lines written</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero-stats">
+      <div class="stat">
+        <span class="stat-value">24/7</span>
+        <span class="stat-label">Autonomous delivery</span>
+      </div>
+      <div class="stat-div"></div>
+      <div class="stat">
+        <span class="stat-value">$0</span>
+        <span class="stat-label">Agency overhead</span>
+      </div>
+      <div class="stat-div"></div>
+      <div class="stat">
+        <span class="stat-value">Same day</span>
+        <span class="stat-label">First delivery proven</span>
+      </div>
+      <div class="stat-div"></div>
+      <div class="stat">
+        <span class="stat-value" data-counter="100" data-suffix="%">0%</span>
+        <span class="stat-label">Founder-governed</span>
+      </div>
+    </div>
   </section>
 
-  <!-- What we do -->
-  <div class="pills-band">
-    <div class="pills">
-      <span class="pill">⚡ 24/7 autonomous delivery</span>
-      <span class="pill">🎯 Founder-governed, not black-box</span>
-      <span class="pill">🚫 No account managers. No markup.</span>
+  <!-- TICKER -->
+  <div class="ticker">
+    <div class="ticker-track">
+      <span class="ti">Landing page<span class="ti-m"> · Same day · $222</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">SaaS MVP<span class="ti-m"> · 5 days · $1,200</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">Lead gen system<span class="ti-m"> · 3 days · $480</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">Market analysis brief<span class="ti-m"> · 48h · $380</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">AI automation workflow<span class="ti-m"> · 4 days · $850</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">Content pipeline<span class="ti-m"> · 24h · $290</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">CRM integration<span class="ti-m"> · 2 days · $620</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">Competitive analysis<span class="ti-m"> · 48h · $340</span></span>
+      <span class="ti-sep">—</span>
+      <!-- duplicate for seamless loop -->
+      <span class="ti">Landing page<span class="ti-m"> · Same day · $222</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">SaaS MVP<span class="ti-m"> · 5 days · $1,200</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">Lead gen system<span class="ti-m"> · 3 days · $480</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">Market analysis brief<span class="ti-m"> · 48h · $380</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">AI automation workflow<span class="ti-m"> · 4 days · $850</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">Content pipeline<span class="ti-m"> · 24h · $290</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">CRM integration<span class="ti-m"> · 2 days · $620</span></span>
+      <span class="ti-sep">—</span>
+      <span class="ti">Competitive analysis<span class="ti-m"> · 48h · $340</span></span>
+      <span class="ti-sep">—</span>
     </div>
   </div>
 
-  <!-- Services -->
-  <section class="services" id="services">
-    <h2>What we deliver</h2>
-    <div class="cards">
-      <div class="card">
-        <div class="card-icon">💻</div>
+  <!-- COMPARE -->
+  <section class="compare reveal-section">
+    <div class="section-label">[ 001 — THE PROBLEM WITH AGENCIES ]</div>
+    <div class="compare-grid">
+      <div class="compare-col old">
+        <div class="compare-col-header">Traditional agency</div>
+        <ul class="compare-list">
+          <li><span class="cx">✕</span> $5,000–$50,000 per project</li>
+          <li><span class="cx">✕</span> 3–8 weeks to first delivery</li>
+          <li><span class="cx">✕</span> 2–3 account managers in the loop</li>
+          <li><span class="cx">✕</span> Weekly check-ins, opaque process</li>
+          <li><span class="cx">✕</span> Markup on every resource</li>
+          <li><span class="cx">✕</span> You wait. They deliver. You hope.</li>
+        </ul>
+      </div>
+      <div class="compare-col new">
+        <div class="compare-col-header">WAI</div>
+        <ul class="compare-list">
+          <li><span class="ck">✓</span> Transparent, scope-based pricing</li>
+          <li><span class="ck">✓</span> Hours to days, not weeks</li>
+          <li><span class="ck">✓</span> Zero intermediaries</li>
+          <li><span class="ck">✓</span> Real-time logs and full visibility</li>
+          <li><span class="ck">✓</span> You pay for output, not headcount</li>
+          <li><span class="ck">✓</span> You review and approve everything</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHO IT'S FOR -->
+  <section class="for-who reveal-section">
+    <div class="section-label">[ 002 — BUILT FOR ]</div>
+    <div class="for-grid">
+      <div class="for-item">
+        <div class="for-num">01</div>
+        <div class="for-body">
+          <h3>Founders & solopreneurs</h3>
+          <p>Need to ship fast without hiring a team. Brief a project, review the output, keep moving.</p>
+        </div>
+      </div>
+      <div class="for-item">
+        <div class="for-num">02</div>
+        <div class="for-body">
+          <h3>Product teams</h3>
+          <p>Moving faster than any agency can handle. Use WAI for overflow work — no onboarding delays.</p>
+        </div>
+      </div>
+      <div class="for-item">
+        <div class="for-num">03</div>
+        <div class="for-body">
+          <h3>Operators & consultants</h3>
+          <p>You have the client relationships. Let WAI handle delivery while you focus on what's strategic.</p>
+        </div>
+      </div>
+      <div class="for-item">
+        <div class="for-num">04</div>
+        <div class="for-body">
+          <h3>Startups pre-hire</h3>
+          <p>Full-stack output without full-stack salaries. Operate at startup speed, deliver at agency quality.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="how-it-works reveal-section" id="how-it-works">
+    <div class="section-header">
+      <div class="section-label">[ 003 — HOW IT WORKS ]</div>
+      <h2 class="section-title">From brief to delivery in four steps</h2>
+    </div>
+    <div class="steps-row">
+      <div class="step">
+        <div class="step-num">01</div>
+        <h3>Brief</h3>
+        <p>Describe what you need in plain language. No spec, no technical detail required — context and goal are enough to begin.</p>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <h3>Route</h3>
+        <p>WAI analyzes the brief and activates the right agents — design, development, copy, strategy — automatically.</p>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <h3>Execute</h3>
+        <p>Agents work autonomously, 24/7. You get real-time progress updates and can intervene or redirect at any point.</p>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="step">
+        <div class="step-num">04</div>
+        <h3>Deliver</h3>
+        <p>You review and approve the output. Nothing ships without your sign-off. Full governance, zero black box.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SERVICES -->
+  <section class="services reveal-section" id="services">
+    <div class="section-header">
+      <div class="section-label">[ 004 — SERVICES ]</div>
+      <h2 class="section-title">What we deliver</h2>
+    </div>
+    <div class="services-grid">
+      <div class="service-card">
+        <div class="service-num">01</div>
         <h3>Software Development</h3>
-        <p>Web apps, APIs, and automation tools built and shipped by AI agents.</p>
+        <p>Web apps, APIs, and automation tools — built and deployed by AI agents from brief to production.</p>
+        <div class="service-examples">Landing pages · SaaS MVPs · Internal tools · Integrations · Bots</div>
       </div>
-      <div class="card">
-        <div class="card-icon">📣</div>
+      <div class="service-card">
+        <div class="service-num">02</div>
         <h3>Digital Marketing</h3>
-        <p>Landing pages, content, and social campaigns — from strategy to execution.</p>
+        <p>Landing pages, content pipelines, and social campaigns — from strategy to execution, fully managed.</p>
+        <div class="service-examples">Lead gen · SEO content · Email sequences · Ad copy · Brand positioning</div>
       </div>
-      <div class="card">
-        <div class="card-icon">📊</div>
+      <div class="service-card">
+        <div class="service-num">03</div>
         <h3>Business Consulting</h3>
-        <p>Market analysis, process audits, and strategic briefs at machine speed.</p>
+        <p>Market analysis, process audits, and strategic briefs — at machine speed, reviewed by the founder.</p>
+        <div class="service-examples">Competitive analysis · Market sizing · Go-to-market · Process mapping</div>
       </div>
-      <div class="card">
-        <div class="card-icon">🤖</div>
+      <div class="service-card">
+        <div class="service-num">04</div>
         <h3>AI Automation</h3>
-        <p>Custom AI workflows that eliminate repetitive work from your operations.</p>
+        <p>Custom AI workflows that eliminate repetitive operations from your business — permanently.</p>
+        <div class="service-examples">Data pipelines · Report automation · CRM workflows · AI integrations</div>
       </div>
     </div>
   </section>
 
-  <!-- Case Study -->
-  <div class="case-study">
-    <div class="case-inner">
-      <span class="case-tag">Case Study</span>
-      <h2>We built and delivered a landing page autonomously.<br>Billed: <span class="accent">$222</span>. Same-day delivery.</h2>
-      <p>Wawen22 needed a landing page. WAI's agents handled the brief, design, development, and delivery — end to end, without a single human writing a line of code.</p>
+  <!-- CASE STUDY -->
+  <section class="case-study reveal-section">
+    <div class="section-label">[ 005 — PROOF OF WORK ]</div>
+    <div class="case-content">
+      <div class="case-metric">
+        <span class="case-dollar" data-counter="222" data-prefix="$">$0</span>
+        <span class="case-meta">Billed · Same-day delivery · Full stack</span>
+      </div>
+      <div class="case-text">
+        <h2>Wawen22 needed a landing page. WAI built and delivered it — start to finish — in one day.</h2>
+        <p>Brief to deployment in a single session. WAI agents handled research, design, front-end development, copy, and final handoff. No human wrote a line of code. Billed on output, not time spent.</p>
+        <div class="case-bullets">
+          <div class="case-bullet"><span class="ck">✓</span> Brief received at 10:00</div>
+          <div class="case-bullet"><span class="ck">✓</span> First build ready at 14:30</div>
+          <div class="case-bullet"><span class="ck">✓</span> Approved and delivered at 17:00</div>
+          <div class="case-bullet"><span class="ck">✓</span> Total billed: $222</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="faq reveal-section">
+    <div class="section-header">
+      <div class="section-label">[ 006 — COMMON QUESTIONS ]</div>
+      <h2 class="section-title">What you need to know</h2>
+    </div>
+    <div class="faq-grid">
+      <div class="faq-item">
+        <h3>Who ensures quality?</h3>
+        <p>You do. Every deliverable requires your explicit approval before it ships. Agents generate — you govern. Nothing goes live without your sign-off. Revisions included at any stage.</p>
+      </div>
+      <div class="faq-item">
+        <h3>What if I need changes?</h3>
+        <p>Brief a change and agents iterate until the output meets your standard. You're not billed for re-runs caused by unclear requirements on our side.</p>
+      </div>
+      <div class="faq-item">
+        <h3>How do I communicate with WAI?</h3>
+        <p>Via a written brief, dashboard, or direct message. No calls required, no PM software to learn. You describe what you want — the system handles the rest and reports back.</p>
+      </div>
+      <div class="faq-item">
+        <h3>What kinds of projects are a good fit?</h3>
+        <p>Software builds, marketing assets, research, consulting briefs, and automation workflows. If it can be described clearly, it can be delivered autonomously. Complex, multi-week projects included.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTACT -->
+  <section class="contact reveal-section" id="contact">
+    <div class="contact-inner">
+      <div class="contact-header">
+        <div class="section-label">[ 007 — START A PROJECT ]</div>
+        <h2 class="section-title">Tell us what you need.</h2>
+        <p class="contact-sub">We respond within 24 hours. No sales calls, no pitch decks — just work.</p>
+        <div class="contact-promise">
+          <div class="promise-item"><span class="ck">✓</span> Response within 24h</div>
+          <div class="promise-item"><span class="ck">✓</span> No commitment to brief</div>
+          <div class="promise-item"><span class="ck">✓</span> Scope-based transparent pricing</div>
+          <div class="promise-item"><span class="ck">✓</span> Starting from $222</div>
+        </div>
+      </div>
+      <form id="contact-form" class="contact-form">
+        <div class="form-row">
+          <div class="form-field">
+            <label for="f-name">Name <span class="req">*</span></label>
+            <input type="text" id="f-name" name="name" placeholder="Your name" required />
+          </div>
+          <div class="form-field">
+            <label for="f-company">Company</label>
+            <input type="text" id="f-company" name="company" placeholder="Company (optional)" />
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="f-email">Email <span class="req">*</span></label>
+          <input type="email" id="f-email" name="email" placeholder="you@company.com" required />
+        </div>
+        <div class="form-field">
+          <label for="f-message">What do you need?</label>
+          <textarea id="f-message" name="message" placeholder="Describe your project or goal. The more detail, the faster we can get started." rows="5"></textarea>
+        </div>
+        <button type="submit" class="btn-primary btn-submit">Start my project →</button>
+        <p class="form-status" id="form-status"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- POWERED BY -->
+  <div class="powered-band">
+    <div class="pb-inner">
+      <span class="pb-label">RUNNING ON</span>
+      <div class="pb-items">
+        <span>Node.js 22</span><span class="pb-sep">·</span>
+        <span>TypeScript</span><span class="pb-sep">·</span>
+        <span>React 18</span><span class="pb-sep">·</span>
+        <span>Supabase</span><span class="pb-sep">·</span>
+        <span>Anthropic Claude</span><span class="pb-sep">·</span>
+        <span>LiteLLM</span><span class="pb-sep">·</span>
+        <span>Gmail API</span><span class="pb-sep">·</span>
+        <span>Telegram</span>
+      </div>
     </div>
   </div>
 
-  <!-- Contact -->
-  <section class="contact" id="contact">
-    <h2>Ready to work with us?</h2>
-    <p class="contact-sub">Tell us what you need. We'll get back to you within 24 hours.</p>
-    <form id="contact-form">
-      <div class="form-row">
-        <input type="text" name="name" placeholder="Your name" required>
-        <input type="text" name="company" placeholder="Company (optional)">
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="nav-wordmark" data-text="WAI">WAI</span>
+        <span class="footer-sub">Wawen Autonomous Industries</span>
       </div>
-      <input type="email" name="email" placeholder="Email address" required>
-      <textarea name="message" placeholder="What do you need?" rows="4"></textarea>
-      <button type="submit" class="cta-button">Send →</button>
-      <p class="form-status" id="form-status"></p>
-    </form>
-  </section>
-
-  <!-- Footer -->
-  <footer>
-    <span class="wordmark">WAI</span>
-    <span class="footer-sub">Wawen Autonomous Industries</span>
+      <span class="footer-note">© 2026 WAI — Work runs autonomously.</span>
+    </div>
   </footer>
 
   <script src="/main.js"></script>

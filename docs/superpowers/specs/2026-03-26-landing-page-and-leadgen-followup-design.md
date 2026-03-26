@@ -95,7 +95,7 @@ backend/src/index.ts   — add /api/contact route + static middleware
 
 Close the three gaps in the current funnel:
 
-1. Automatic follow-up 5 days after initial outreach (no reply)
+1. Automatic follow-up 3 days after initial outreach (no reply)
 2. Batch approval (approve top N leads at once instead of one by one)
 3. Reply tracking (mark leads as replied from Telegram or dashboard)
 
@@ -115,7 +115,7 @@ New migration file: `supabase/migrations/20260327000000_leads_followup.sql`
 
 ```typescript
 getLeadsNeedingFollowUp(daysAfterSend?: number): Promise<Lead[]>
-// Returns: status='sent', sent_at < now() - daysAfterSend, follow_up_count = 0
+// Returns: status='sent', sent_at < now() - daysAfterSend (default 3), follow_up_count = 0
 
 executeFollowUp(leadId: string): Promise<{ sent: boolean; draftOnly: boolean }>
 // 1. Fetch lead, validate status='sent' + has email + follow_up_count=0
@@ -128,6 +128,8 @@ executeFollowUp(leadId: string): Promise<{ sent: boolean; draftOnly: boolean }>
 runFollowUpCycle(daysAfterSend?: number): Promise<{ processed: number; sent: number; failed: number }>
 // Orchestrator: getLeadsNeedingFollowUp → executeFollowUp each → return summary
 ```
+
+**Follow-up delay:** 3 days after `sent_at` (configurable via env `FOLLOWUP_DAYS`, default 3).
 
 **Follow-up email template** (generated inline, not LLM — fast + cheap):
 > Subject: Re: {original_subject}
