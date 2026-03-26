@@ -20,6 +20,9 @@ const DEFAULT_AUTOMATION_INTERVAL_MS = parsePositiveInt(
   60_000,
 )
 
+// Tracks the last date follow-up cycle ran (in-memory, resets on restart — intentional)
+let lastFollowupRunDate: string | undefined = undefined
+
 export type PersonalAutomationRunStatus =
   | 'idle'
   | 'running'
@@ -729,6 +732,34 @@ export async function runFounderAutomationCycle(
         log.error({ err, ownerSlug }, 'Weekly lead harvest scheduled run failed')
       })
     }
+  }
+
+  // Daily lead follow-up cycle (runs once per day at 10:00 local time)
+  const followupHour = parseInt(process.env['FOLLOWUP_HOUR'] ?? '10', 10)
+  const followupTimezone = state.dailyFounderBrief.timezone
+  const followupDateParts = getDateTimeParts(now, followupTimezone)
+  // lastFollowupRunDate is a module-level variable declared at the top of personal-automation.ts:
+  // let lastFollowupRunDate: string | undefined = undefined
+
+  if (
+    followupDateParts.hour === followupHour &&
+    followupDateParts.minute === 0 &&
+    lastFollowupRunDate !== followupDateParts.dateKey
+  ) {
+    lastFollowupRunDate = followupDateParts.dateKey
+    void (async () => {
+      try {
+        const { runFollowUpCycle } = await import('./lead-followup.js')
+        const result = await runFollowUpCycle()
+        if (result.sent > 0 || result.draftOnly > 0) {
+          await sendFounderNotification(
+            `📬 Follow-up cycle: ${result.sent} sent, ${result.draftOnly} draft, ${result.failed} failed (${result.processed} leads checked)`,
+          ).catch(() => {})
+        }
+      } catch (err) {
+        log.error({ err, ownerSlug }, 'runFounderAutomationCycle: follow-up cycle failed')
+      }
+    })()
   }
 }
 
