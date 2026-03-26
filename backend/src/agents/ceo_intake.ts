@@ -286,6 +286,8 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - leads_harvest      → params: query (es. "ristoranti"), location (es. "Milano"), limit? (default 10)  — avvia una harvest di lead
 - leads_show         → no params  — mostra il riepilogo del proposal inbox (count per status, top 5 scored)
 - leads_send_approved → no params  — invia l'outreach email a tutti i lead con status 'approved'
+- leads_approve_top → params: limit? (integer, default 10)  — approva i top N lead qualificati per score
+- leads_mark_replied → params: company (string)  — segna un lead come replied (ha risposto all'email)
 - harvest_automation_status → no params  — mostra lo stato dell'automazione harvest settimanale
 - harvest_automation_config → params: enabled? (bool), scheduleDay? (es. "monday"), scheduleLocalTime? (es. "09:00"), sectors? (array [{query, location, limit?}])  — configura l'automazione harvest settimanale
 - harvest_automation_run → no params  — avvia manualmente l'harvest settimanale ora (usa i settori configurati)
@@ -338,9 +340,11 @@ ${clientContext}
 40. Use leads_harvest when Neb wants to find potential clients or do prospecting (e.g. "trova lead a Milano", "cerca aziende senza sito a Roma", "prospecting ristoranti Torino", "trova clienti nel settore X").
 41. Use leads_show when Neb asks about the lead pipeline or proposal inbox (e.g. "mostra i lead", "quanti lead ho?", "cosa c'è nell'inbox dei lead?").
 42. Use leads_send_approved when Neb wants to send outreach to already-approved leads (e.g. "manda le email ai lead approvati", "invia l'outreach", "procedi con i lead approvati").
-43. Use harvest_automation_status when Neb asks about the weekly harvest automation status (e.g. "stato harvest automatica", "quando gira il harvest?", "è attiva l'automazione lead?").
-44. Use harvest_automation_config when Neb wants to configure or enable/disable the weekly harvest (e.g. "attiva harvest settimanale", "imposta harvest ogni lunedì per ristoranti a Milano", "aggiungi settore dentisti a Roma", "disattiva harvest automatica"). Extract sectors as array of {query, location, limit?}.
-45. Use harvest_automation_run when Neb wants to trigger the weekly harvest immediately (e.g. "avvia harvest manuale", "run harvest automation ora", "fai girare l'harvest adesso").
+43. Use leads_approve_top when Neb wants to approve multiple leads at once (e.g. "approva i top 10 lead", "batch approve lead", "approva i migliori qualificati", "approva top 5").  Extract limit from the message if specified, default 10.
+44. Use leads_mark_replied when Neb reports that a lead has replied (e.g. "X ha risposto", "mark replied X", "risposta da X", "ho ricevuto risposta da X"). Extract the company name from the message.
+45. Use harvest_automation_status when Neb asks about the weekly harvest automation status (e.g. "stato harvest automatica", "quando gira il harvest?", "è attiva l'automazione lead?").
+46. Use harvest_automation_config when Neb wants to configure or enable/disable the weekly harvest (e.g. "attiva harvest settimanale", "imposta harvest ogni lunedì per ristoranti a Milano", "aggiungi settore dentisti a Roma", "disattiva harvest automatica"). Extract sectors as array of {query, location, limit?}.
+47. Use harvest_automation_run when Neb wants to trigger the weekly harvest immediately (e.g. "avvia harvest manuale", "run harvest automation ora", "fai girare l'harvest adesso").
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -2678,6 +2682,38 @@ async function executeAction(
       const result = [`✅ Outreach inviato a ${sent.length} contatti: ${sent.join(', ')}`]
       if (failed.length > 0) result.push(`⚠️ Fallito per: ${failed.join(', ')}`)
       return result.join('\n')
+    }
+
+    case 'leads_approve_top': {
+      const rawLimit = params['limit']
+      const limit = typeof rawLimit === 'number' && rawLimit > 0
+        ? Math.min(rawLimit, 50)
+        : 10
+      const qualified = await crmGetLeads({ status: 'qualified' })
+      if (qualified.length === 0) return '📋 Nessun lead qualificato disponibile.'
+      const toApprove = qualified
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+      const { updateLeadStatus } = await import('../services/leads.js')
+      for (const lead of toApprove) {
+        await updateLeadStatus(lead.id, 'approved')
+      }
+      const names = toApprove.map((l) => `• ${l.company_name} (score: ${l.score})`).join('\n')
+      return `✅ Approvati ${toApprove.length} lead:\n${names}`
+    }
+
+    case 'leads_mark_replied': {
+      const company = getString(params, 'company')
+      if (!company) return '⚠️ Specifica il nome dell\'azienda. Es: "X ha risposto".'
+      // Search among sent leads (follow-up leaves status as 'sent', only follow_up_count changes)
+      const allSent = await crmGetLeads({ status: 'sent' })
+      const match = allSent.find(
+        (l) => l.company_name.toLowerCase().includes(company.toLowerCase()),
+      )
+      if (!match) return `⚠️ Nessun lead "sent" trovato per "${company}". Controlla il nome.`
+      const { updateLeadStatus } = await import('../services/leads.js')
+      await updateLeadStatus(match.id, 'replied', { replied_at: new Date().toISOString() })
+      return `✅ ${match.company_name} segnato come replied. Status → replied.`
     }
 
     case 'harvest_automation_status': {
