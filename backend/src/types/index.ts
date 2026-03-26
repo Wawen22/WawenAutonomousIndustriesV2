@@ -647,7 +647,7 @@ export interface MeetingNote {
 // --- Lead Generation Engine (T133) ---
 
 export type LeadStatus = 'new' | 'qualified' | 'approved' | 'sent' | 'replied' | 'won' | 'lost' | 'rejected'
-export type LeadSource = 'website_audit' | 'google_maps' | 'manual' | 'freelance'
+export type LeadSource = 'website_audit' | 'google_maps' | 'manual' | 'freelance' | 'inbound'
 
 export interface LeadFinding {
   type: 'performance' | 'security' | 'seo' | 'ux' | 'missing_website' | 'other'
