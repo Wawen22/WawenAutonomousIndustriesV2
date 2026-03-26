@@ -75,6 +75,10 @@ This now implies a platform decision:
 - Save meeting notes and auto-generate AI summaries + action items via `Meeting Notes` tab in Assistant HQ
 - Harvest potential SMB leads via Google/DuckDuckGo + PageSpeed audit + LLM qualification, review and approve outreach in `Leads` dashboard, send via Gmail MCP with automatic CRM logging
 - Run weekly lead harvest automatically on a configurable schedule (sectors + cities), receive Telegram digest when complete, configure via NL from Telegram or the Automations panel
+- Automatic 3-day follow-up for non-responding leads (daily scheduler, max 1 follow-up per lead, Telegram digest)
+- Batch approve top N leads via Telegram (`approva i top 10 lead`) or dashboard button
+- Mark leads as replied via Telegram (`X ha risposto`) or dashboard button with action feedback
+- Public landing page at `GET /` (served from backend): hero, services, Wawen22 case study, contact form → inbound lead pipeline + Telegram notify
 
 ---
 
@@ -82,6 +86,8 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
+| T136 | Lead Gen Follow-up Loop | ✅ Done | Claude | 1 | 3-day follow-up auto (daily scheduler), batch approval (CEO NL + dashboard), reply tracking (CEO NL + dashboard), follow_up_count badge |
+| T135 | WAI Landing Page | ✅ Done | Claude | 1 | Public site at GET / served from backend — hero, services, case study, contact form → inbound leads + Telegram notify |
 | T134 | Weekly Lead Harvest Automation + DDG Fallback | ✅ Done | Claude | 1 | DDG HTML fallback, weeklyLeadHarvest automation, Telegram digest, CEO NL config, dashboard panel |
 | T133 | Lead Generation Engine — Proposal Inbox | ✅ Done | Claude | 1 | DB migration, 5 backend services, 8 routes, CEO NL commands, LeadsView dashboard |
 | T128 | Agentic Loop + Team Software Dev Refactor | ✅ Done | Claude | 1 | Stable — QA auto-fix loop active |
@@ -208,6 +214,32 @@ Lead generation autonoma + payment collection. WAI trova clienti in autonomia, N
 ---
 
 ## Recent Changes
+
+### 2026-03-26 — T135: WAI Landing Page + T136: Lead Gen Follow-up Loop
+
+**T135 — WAI Landing Page:**
+- `landing/index.html` + `landing/styles.css` + `landing/main.js`: public single-page site (dark theme, lime accent, Inter font)
+- 5 sections: hero "Work runs autonomously", services (4 cards), Wawen22 case study ($222), contact form
+- `GET /` served statically from backend via `LANDING_DIR` lookup map (no path traversal surface)
+- `POST /api/contact`: public route, saves `source='inbound'` lead (score 50), Telegram notify, Gmail auto-reply (non-fatal), body size guard + email validation
+
+**T136 — Lead Gen Follow-up Loop:**
+- `supabase/migrations/20260327000000_leads_followup.sql`: adds `followed_up_at timestamptz` + `follow_up_count integer DEFAULT 0` (apply manually in SQL Editor)
+- `backend/src/services/lead-followup.ts`: `getLeadsNeedingFollowUp` (3-day default, max 50), `executeFollowUp` (Gmail MCP + draft fallback, CRM log), `runFollowUpCycle` (orchestrator)
+- `personal-automation.ts`: daily follow-up cycle at `FOLLOWUP_HOUR` (default 10:00), Telegram digest when leads processed
+- CEO NL: `leads_approve_top` (batch approve top N by score) + `leads_mark_replied` (mark sent lead as replied)
+- API: `POST /api/leads/approve-top` + `POST /api/leads/:id/replied`
+- Dashboard: "Approve Top 10" button, "✓ Mark Replied" button (with action state feedback), `follow_up_count` badge on lead list items
+
+**How to test:**
+1. Apply `supabase/migrations/20260327000000_leads_followup.sql` in Supabase SQL Editor
+2. Also run: `ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_source_check; ALTER TABLE leads ADD CONSTRAINT leads_source_check CHECK (source IN ('website_audit', 'google_maps', 'manual', 'freelance', 'inbound'));`
+3. `GET http://localhost:3001/` → landing page loads
+4. Fill contact form → Telegram notification + lead in Leads dashboard with `source=inbound`
+5. Leads dashboard → "Approve Top 10" button → top qualified leads approved
+6. Telegram: `"approva i top 5 lead"` → batch approval with names
+7. Telegram: `"[Company] ha risposto"` → lead marked replied
+8. After 3 days without reply on a sent lead, `runFollowUpCycle()` fires automatically at 10:00
 
 ### 2026-03-25 — T133: Lead Generation Engine (Spec)
 
