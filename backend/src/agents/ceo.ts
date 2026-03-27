@@ -32,6 +32,7 @@ import { runDbOptimizerAgent } from './db_optimizer.js'
 import { runLegalComplianceAgent } from './legal_compliance.js'
 import { runProposalStrategistAgent } from './proposal_strategist.js'
 import { runBehavioralCoachAgent } from './behavioral_coach.js'
+import { runContentWriterAgent } from './content_writer.js'
 import type { Task, TaskType, TaskPriority } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
@@ -50,6 +51,7 @@ Available agents:
 - analyst         – Analyst: market research, data gathering, competitive analysis, reports — USE THIS for standalone analysis tasks without a consulting proposal
 - marketing_strategist – Marketing Strategist: campaigns, funnels, positioning, content plans — USE THIS for project-scoped marketing, content, copywriting, launch or growth work
 - content_creator – Content Creator: blog posts, social copy, scripts, newsletters — USE THIS for standalone copy/content production tasks
+- content_writer      – Content Writer Agent: autonomous content generation with web research — blog posts (800-1200 words), social media variants, newsletters — USE THIS when a task explicitly asks to write/generate a content piece for a client project with research backing
 - social_manager  – Social Media Manager: scheduling, engagement, metrics — USE THIS for standalone distribution, social planning, or channel calendar tasks
 - ops             – Ops Agent: system monitoring, uptime, incidents
 - finance         – Finance Agent: cost tracking, budget alerts, reports
@@ -396,6 +398,10 @@ Analyze and delegate to the most appropriate agent.`
     } else if (delegation.delegateTo === 'behavioral_coach') {
       void runBehavioralCoachAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'Behavioral Coach Agent failed')
+      })
+    } else if (delegation.delegateTo === 'content_writer') {
+      void runContentWriterAgent(subtask, notify).catch((err: unknown) => {
+        log.error({ err, subtaskId: subtask.id }, 'Content Writer Agent failed')
       })
     }
   } catch (err) {
