@@ -2431,6 +2431,120 @@ async function main(): Promise<void> {
       return
     }
 
+    // ── Analytics summary + funnel (T143) ───────────────────────────────────
+
+    // GET /api/analytics/summary?days=7|30
+    if (url.pathname === '/api/analytics/summary' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const rawDays = url.searchParams.get('days')
+          const days = Math.max(1, Math.min(90, parseInt(rawDays ?? '7', 10) || 7))
+          const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+
+          const { getSupabaseClient } = await import('./services/supabase.js')
+          const { data, error } = await getSupabaseClient()
+            .from('page_views')
+            .select('path, referrer, created_at')
+            .gte('created_at', since)
+
+          if (error) {
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: error.message }))
+            return
+          }
+
+          const rows = data ?? []
+          const totalViews = rows.length
+          const avgPerDay = Math.round((totalViews / days) * 10) / 10
+
+          // Count by path
+          const pathCounts = new Map<string, number>()
+          for (const row of rows) {
+            const p = (row.path as string | null) || '/'
+            pathCounts.set(p, (pathCounts.get(p) ?? 0) + 1)
+          }
+          const topPages = [...pathCounts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([path, count]) => ({ path, count }))
+
+          // Count by referrer (normalize to hostname)
+          const refCounts = new Map<string, number>()
+          for (const row of rows) {
+            const raw = ((row.referrer as string | null) ?? '').trim()
+            let normalized = raw || '(direct)'
+            if (normalized.startsWith('http')) {
+              try { normalized = new URL(normalized).hostname } catch { /* keep as-is */ }
+            }
+            refCounts.set(normalized, (refCounts.get(normalized) ?? 0) + 1)
+          }
+          const topReferrers = [...refCounts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([referrer, count]) => ({ referrer, count }))
+
+          const uniquePaths = pathCounts.size
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            period_days: days,
+            total_views: totalViews,
+            unique_paths: uniquePaths,
+            avg_per_day: avgPerDay,
+            top_pages: topPages,
+            top_referrers: topReferrers,
+          }))
+        } catch (err) {
+          log.error({ err }, 'Analytics summary error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
+    // GET /api/analytics/funnel
+    if (url.pathname === '/api/analytics/funnel' && req.method === 'GET') {
+      void (async () => {
+        try {
+          const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+
+          const { getSupabaseClient } = await import('./services/supabase.js')
+          const [viewsResult, leadsResult] = await Promise.all([
+            getSupabaseClient()
+              .from('page_views')
+              .select('id', { count: 'exact', head: true })
+              .gte('created_at', since30),
+            getSupabaseClient()
+              .from('leads')
+              .select('status, source'),
+          ])
+
+          const pageViews = viewsResult.count ?? 0
+          const leads = (leadsResult.data ?? []) as Array<{ status: string; source: string }>
+
+          const contactsInbound = leads.filter((l) => l.source === 'inbound').length
+          const leadsQualified = leads.filter((l) =>
+            ['qualified', 'approved', 'sent', 'replied', 'won'].includes(l.status)
+          ).length
+          const outreachSent = leads.filter((l) => l.status === 'sent').length
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            page_views: pageViews,
+            contacts_inbound: contactsInbound,
+            leads_qualified: leadsQualified,
+            outreach_sent: outreachSent,
+          }))
+        } catch (err) {
+          log.error({ err }, 'Analytics funnel error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
+      })()
+      return
+    }
+
     // ── Stripe webhook (T141) ────────────────────────────────────────────────
 
     // POST /api/webhooks/stripe — auto-mark project paid on invoice.payment_succeeded
