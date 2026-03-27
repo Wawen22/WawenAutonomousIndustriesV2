@@ -82,6 +82,8 @@ This now implies a platform decision:
 - Automatic Gmail reply tracking: `thread_id` saved on outreach send, daily cycle at 11:00 polls Gmail threads and auto-marks leads as `replied` + Telegram notify
 - Public landing page at `GET /` (served from backend): hero with live agent status panel + mouse glow, ticker marquee with delivery examples + prices, problem vs WAI comparison, who it's for, how it works (4 steps), services with examples, $222 case study with counter animation, FAQ, contact form → inbound lead pipeline + Telegram notify. Premium 2030-era design: Syne + DM Mono + Manrope, scanline overlay, vignette, WAI glitch effect, JS-driven live agent panel, scroll reveal, page loader. Full SEO: Open Graph, Twitter Card, canonical URL, JSON-LD Organization. OG image at `/og-image.svg`.
 - Self-hosted cookie-free analytics: `POST /api/analytics/pageview` → `page_views` Supabase table. No cookies, GDPR-safe. Script auto-fires on landing page load.
+- Analytics dashboard: `Analytics` view in Company mode sidebar — visit counts (7d/30d toggle), top pages, referrer breakdown (bar lists, no external chart libraries), 4-stage lead conversion funnel (page views → contacts inbound → leads qualified → outreach sent).
+- Generate content autonomously: `content_generate blog|social|newsletter <topic>` CEO NL command → `content_writer` agent web-researches topic (Serper), drafts with type-specific LLM prompt, saves `.md` to project workspace, sends Telegram preview with inline keyboard `[✅ Approva] [❌ Rigetta]` for founder approval gate.
 
 ---
 
@@ -89,6 +91,8 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
+| T143 | Analytics Dashboard | ✅ Done | Claude | 1 | AnalyticsView in Company mode: traffic summary (7/30d), top pages, referrer breakdown, 4-stage lead funnel |
+| T142 | Content Factory | ✅ Done | Claude | 1 | content_writer agent: web research → LLM draft → Telegram preview + inline keyboard approval → .md to workspace |
 | T141 | Stripe payment automation | ✅ Done | Claude | 1 | Stripe Invoice on invoice_project, hosted payment URL in email CTA, webhook auto-mark paid + Telegram notify |
 | T139 | Analytics self-hosted | ✅ Done | Claude | 2 | page_views table, POST /api/analytics/pageview, landing script, GDPR-safe |
 | T138 | SEO + Open Graph | ✅ Done | Claude | 2 | OG tags, Twitter card, canonical, JSON-LD Organization, og-image.svg (1200×630) |
@@ -221,6 +225,27 @@ Lead generation autonoma + payment collection. WAI trova clienti in autonomia, N
 ---
 
 ## Recent Changes
+
+### 2026-03-27 — T142: Content Factory + T143: Analytics Dashboard
+
+**T142 — Content Factory:**
+- `backend/src/agents/content_writer.ts`: new agent — 2 parallel Serper web searches for research (non-fatal if no key), type-specific LLM prompts (blog 800-1200w H2/H3, social 4 JSON variants ≤280 chars, newsletter 400-600w with sections), saves `.md` to `workspace/<client>/<project>/deliverables/` or `workspace/personal/neb/content/`, then sends Telegram preview with Grammy inline keyboard approval gate. Task stays `in_progress` until founder taps approve/reject.
+- `backend/src/services/telegram.ts`: `sendContentApprovalRequest()` exported function; `callback_query:data` handler for `content_approve:<task_id>` (→ `done` + `task_completed` event) and `content_reject:<task_id>` (→ `blocked`). Dynamic import in content_writer avoids circular dependency.
+- `backend/src/agents/ceo_intake.ts`: `content_generate` action + rule 48; creates task with `type:'content'`, `assignee_agent_id:'content_writer'`, all params in metadata.
+- `backend/src/agents/ceo.ts`: routes tasks with `delegateTo:'content_writer'` to `runContentWriterAgent`.
+- `backend/src/config/agents.ts`: `content_writer` registered in `marketing` team.
+
+**T143 — Analytics Dashboard:**
+- `backend/src/index.ts`: `GET /api/analytics/summary?days=7|30` — page_views aggregated by path and referrer (top 10 each), returns `{ period_days, total_views, unique_paths, avg_per_day, top_pages, top_referrers }`. `GET /api/analytics/funnel` — combines page_views count + leads by source/status, returns 4-stage funnel.
+- `dashboard/src/components/AnalyticsView.tsx`: new component — period toggle, 4 stat cards, top pages + referrer bar lists (inline CSS width%, no chart libraries), conversion funnel row. Loading/error/empty states handled.
+- `dashboard/src/components/Sidebar.tsx`: `'analytics'` added to `CompanyViewId`, item in CLIENTS & WORK section.
+- `dashboard/src/App.tsx`: `analytics` in VIEW_META, case in ViewContent switch.
+
+**How to test:**
+1. Telegram: `content_generate blog "Come usare l'AI nel marketing" --client wawen22 --project landing` → preview message with [✅ Approva] [❌ Rigetta] appears; tap to confirm
+2. Dashboard → Company mode → Analytics → visit counts load, 7d/30d toggle updates numbers, funnel section shows lead counts
+
+---
 
 ### 2026-03-27 — T141: Stripe Payment Automation
 
