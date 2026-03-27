@@ -192,6 +192,14 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
+async function readRawBody(req: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks)
+}
+
 // ── AI outreach draft generation (inbound leads) ─────────────────────────────
 async function generateInboundDraft(
   leadId: string,
@@ -2418,6 +2426,74 @@ async function main(): Promise<void> {
           log.warn({ err }, 'Analytics: pageview insert failed (non-fatal)')
           res.writeHead(204)
           res.end()
+        }
+      })()
+      return
+    }
+
+    // ── Stripe webhook (T141) ────────────────────────────────────────────────
+
+    // POST /api/webhooks/stripe — auto-mark project paid on invoice.payment_succeeded
+    if (url.pathname === '/api/webhooks/stripe' && req.method === 'POST') {
+      void (async () => {
+        try {
+          const rawBody = await readRawBody(req)
+          const signature = req.headers['stripe-signature']
+
+          if (!signature || typeof signature !== 'string') {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing stripe-signature header' }))
+            return
+          }
+
+          const { constructStripeWebhookEvent, extractWaiMetadataFromStripeInvoice } = await import('./services/stripe.js')
+          let event: import('stripe').default.Event
+          try {
+            event = constructStripeWebhookEvent(rawBody, signature)
+          } catch (err) {
+            log.warn({ err }, 'Stripe webhook: signature verification failed')
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Webhook signature invalid' }))
+            return
+          }
+
+          if (event.type === 'invoice.payment_succeeded') {
+            const invoice = event.data.object as import('stripe').default.Invoice
+            const { clientSlug, projectSlug, invoiceNumber } = extractWaiMetadataFromStripeInvoice(invoice)
+
+            if (clientSlug && projectSlug) {
+              const amountUsd = (invoice.amount_paid ?? 0) / 100
+              try {
+                const result = await executeMarkProjectPaid(clientSlug, projectSlug, amountUsd, 'auto')
+                await recordEvent('stripe_payment_received', {
+                  payload: {
+                    stripe_invoice_id: invoice.id,
+                    client_slug: clientSlug,
+                    project_slug: projectSlug,
+                    invoice_number: invoiceNumber,
+                    amount_usd: amountUsd,
+                    project_id: result.project.id,
+                    total_paid_usd: result.totalPaidUsd,
+                  },
+                })
+                log.info({ clientSlug, projectSlug, amountUsd }, 'Stripe: project auto-marked paid')
+                await sendFounderNotification(
+                  `💳 *Pagamento ricevuto via Stripe*\n\nClient: ${result.client.name}\nProject: ${result.project.name}\nAmount: $${amountUsd.toFixed(2)}\nInvoice: ${invoiceNumber ?? 'n/a'}\n\n✅ Project auto-marked as paid.`,
+                )
+              } catch (err) {
+                log.error({ err, clientSlug, projectSlug }, 'Stripe webhook: auto-mark paid failed')
+              }
+            } else {
+              log.warn({ stripeInvoiceId: invoice.id }, 'Stripe webhook: invoice missing wai metadata, skipping auto-mark')
+            }
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ received: true }))
+        } catch (err) {
+          log.error({ err }, 'Stripe webhook: unexpected error')
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Internal server error' }))
         }
       })()
       return

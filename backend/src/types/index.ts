@@ -216,6 +216,8 @@ export type EventType =
   | 'agent_loop_step'
   | 'task_unblocked_by_devops'
   | 'qa_gate_activated'
+  | 'stripe_invoice_created'
+  | 'stripe_payment_received'
 
 export interface SystemEvent {
   id: string

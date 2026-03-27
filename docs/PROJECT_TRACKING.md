@@ -60,6 +60,7 @@ This now implies a platform decision:
 - Track blocked tasks, pending review, invoicing, and payments
 - Inspect shared capabilities for company runtime, including assignments by runtime/team/agent
 - Adjust selected capability policy fields and assignment state from the shared `Capabilities` dashboard view
+- Automatic Stripe payment link in every invoice email: `invoice_project` creates a Stripe Invoice, finalizes it, and embeds the hosted payment URL in the email CTA. Webhook `POST /api/webhooks/stripe` auto-marks project as paid on `invoice.payment_succeeded` + Telegram notify.
 
 ### Personal Assistant
 
@@ -88,6 +89,7 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
+| T141 | Stripe payment automation | ✅ Done | Claude | 1 | Stripe Invoice on invoice_project, hosted payment URL in email CTA, webhook auto-mark paid + Telegram notify |
 | T139 | Analytics self-hosted | ✅ Done | Claude | 2 | page_views table, POST /api/analytics/pageview, landing script, GDPR-safe |
 | T138 | SEO + Open Graph | ✅ Done | Claude | 2 | OG tags, Twitter card, canonical, JSON-LD Organization, og-image.svg (1200×630) |
 | T137 | Gmail Reply Tracking automatico | ✅ Done | Claude | 1 | thread_id on leads, saved on send, daily 11:00 cycle polls Gmail threads, auto-replied + Telegram |
@@ -219,6 +221,27 @@ Lead generation autonoma + payment collection. WAI trova clienti in autonomia, N
 ---
 
 ## Recent Changes
+
+### 2026-03-27 — T141: Stripe Payment Automation
+
+**New:**
+- `backend/src/services/stripe.ts`: `createStripeInvoice(client, project, amountUsd, invoiceNumber)` — crea o recupera customer Stripe per email, crea invoice item + invoice, finalizza e restituisce `hostedInvoiceUrl`. `constructStripeWebhookEvent(rawBody, signature)` per verifica HMAC del webhook. `extractWaiMetadataFromStripeInvoice(invoice)` per leggere project/client metadata dall'invoice Stripe.
+- `backend/src/services/founder_revenue_actions.ts`: `executeInvoiceProject` ora crea Stripe Invoice dopo il log (non-fatal). `buildInvoiceHtml` aggiunge bottone "Pay Now" in viola se `stripePaymentUrl` presente. `sendInvoiceEmail` include il link nel testo plain. `formatInvoiceProjectMessage` mostra il link su Telegram. `InvoiceProjectResult` espone `stripePaymentUrl` e `stripeInvoiceId`. `executeMarkProjectPaid` accetta `source: 'auto'` per il webhook.
+- `backend/src/index.ts`: `readRawBody(req)` helper per leggere body grezzo (richiesto da Stripe per verifica firma). `POST /api/webhooks/stripe` — verifica firma, gestisce `invoice.payment_succeeded`, chiama `executeMarkProjectPaid('auto')`, logga evento `stripe_payment_received`, notifica Telegram.
+- `backend/src/types/index.ts`: `EventType` esteso con `stripe_invoice_created` e `stripe_payment_received`.
+- `.env`: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`. `STRIPE_WEBHOOK_SECRET` da aggiungere dopo setup webhook in Stripe dashboard.
+
+**How to test:**
+1. `invoice_project <client> <project> <amount>` da Telegram → risposta include "Stripe: ✅ [Paga ora](...)"
+2. Apri il link → Stripe hosted invoice con il bottone "Pay Now"
+3. Per attivare il webhook automatico: Stripe Dashboard → Developers → Webhooks → Add endpoint → `https://<tuo-url>/api/webhooks/stripe` → evento `invoice.payment_succeeded` → copia il webhook secret in `.env` come `STRIPE_WEBHOOK_SECRET=whsec_...`
+4. In locale puoi testare con Stripe CLI: `stripe listen --forward-to localhost:3101/api/webhooks/stripe`
+
+**⚠️ Prerequisito pendente — Resend domain verification:**
+- `.env` ha `RESEND_FROM_EMAIL=noreply@wai.wawen.io` ma il dominio non è ancora verificato su Resend
+- Finché non è verificato, le email di fattura falliscono silenziosamente (Stripe invoice viene comunque creata)
+- **Todo:** Resend dashboard → Domains → `wai.wawen.io` → aggiungi i record DNS (TXT + MX) nel registrar → clicca Verify
+- Nessuna modifica al codice necessaria: una volta verificato il dominio tutto parte automaticamente
 
 ### 2026-03-26 — T135: WAI Landing Page redesign (v2) + T136: Lead Gen Follow-up Loop
 

@@ -8,6 +8,7 @@ import {
   updateProjectStatus,
 } from './supabase.js'
 import { sendEmail } from './email.js'
+import { createStripeInvoice, isStripeEnabled } from './stripe.js'
 import type { Client, Payment, Project } from '../types/index.js'
 
 export interface InvoiceProjectResult {
@@ -16,7 +17,10 @@ export interface InvoiceProjectResult {
   contractValueUsd: number
   previousStatus: string
   emailSent: boolean
+  emailSkipped: boolean
   invoiceNumber: string
+  stripePaymentUrl: string | undefined
+  stripeInvoiceId: string | undefined
 }
 
 export interface MarkProjectPaidResult {
@@ -44,11 +48,24 @@ function buildInvoiceHtml(params: {
   projectName: string
   amountUsd: number
   issuedAt: string
+  stripePaymentUrl: string | undefined
 }): string {
-  const { invoiceNumber, clientName, projectName, amountUsd, issuedAt } = params
+  const { invoiceNumber, clientName, projectName, amountUsd, issuedAt, stripePaymentUrl } = params
   const formattedDate = new Date(issuedAt).toLocaleDateString('en-GB', {
     year: 'numeric', month: 'long', day: 'numeric',
   })
+
+  const paymentCtaBlock = stripePaymentUrl
+    ? `
+    <div style="text-align:center; margin-bottom: 32px;">
+      <a href="${stripePaymentUrl}"
+         style="display:inline-block; background:#6366f1; color:#fff; font-weight:700; font-size:16px;
+                padding:14px 36px; border-radius:8px; text-decoration:none; letter-spacing:-0.2px;">
+        Pay Now
+      </a>
+      <p style="margin:12px 0 0; font-size:12px; color:#9ca3af;">Secure payment via Stripe</p>
+    </div>`
+    : ''
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -108,6 +125,8 @@ function buildInvoiceHtml(params: {
       </tbody>
     </table>
 
+    ${paymentCtaBlock}
+
     <div class="footer">
       Thank you for working with WAI &middot; Wawen Autonomous Industries<br/>
       Questions? Reply to this email.
@@ -123,25 +142,24 @@ async function sendInvoiceEmail(
   amountUsd: number,
   invoiceNumber: string,
   issuedAt: string,
+  stripePaymentUrl: string | undefined,
 ): Promise<boolean> {
-  if (!client.email) {
-    log.warn({ clientId: client.id, clientSlug: client.slug }, 'Invoice email skipped: client has no email address')
-    return false
-  }
-
   const html = buildInvoiceHtml({
     invoiceNumber,
     clientName: client.name,
     projectName: project.name,
     amountUsd,
     issuedAt,
+    stripePaymentUrl,
   })
 
+  const payNowLine = stripePaymentUrl ? `\nPay now: ${stripePaymentUrl}\n` : ''
+
   await sendEmail({
-    to: client.email,
+    to: client.email!,
     subject: `Invoice ${invoiceNumber} – ${project.name}`,
     html,
-    text: `Invoice ${invoiceNumber}\n\nBill To: ${client.name}\nProject: ${project.name}\nAmount Due: ${formatUsd(amountUsd)}\n\nThank you for working with WAI.`,
+    text: `Invoice ${invoiceNumber}\n\nBill To: ${client.name}\nProject: ${project.name}\nAmount Due: ${formatUsd(amountUsd)}${payNowLine}\nThank you for working with WAI.`,
   })
 
   return true
@@ -207,22 +225,54 @@ export async function executeInvoiceProject(
   const issuedAt = new Date().toISOString()
   const invoicedProject: Project = { ...project, status: 'invoiced', contract_value_usd: finalAmount }
 
-  let emailSent = false
-  try {
-    emailSent = await sendInvoiceEmail(client, invoicedProject, finalAmount, invoiceNumber, issuedAt)
-    if (emailSent) {
-      await recordEvent('invoice_email_sent', {
+  // Stripe invoice (non-fatal)
+  let stripePaymentUrl: string | undefined
+  let stripeInvoiceId: string | undefined
+  if (isStripeEnabled()) {
+    try {
+      const stripeResult = await createStripeInvoice(client, invoicedProject, finalAmount, invoiceNumber)
+      stripePaymentUrl = stripeResult.hostedInvoiceUrl
+      stripeInvoiceId = stripeResult.stripeInvoiceId
+      await recordEvent('stripe_invoice_created', {
         payload: {
           project_id: project.id,
           client_id: client.id,
-          invoice_number: invoiceNumber,
-          to: client.email,
+          stripe_invoice_id: stripeInvoiceId,
+          stripe_customer_id: stripeResult.stripeCustomerId,
           amount_usd: finalAmount,
+          invoice_number: invoiceNumber,
+          payment_url: stripePaymentUrl,
         },
       })
+      log.info({ stripeInvoiceId, stripePaymentUrl }, 'Stripe invoice created')
+    } catch (err) {
+      log.error({ err, projectId: project.id }, 'Stripe invoice creation failed (non-fatal)')
     }
-  } catch (err) {
-    log.error({ err, projectId: project.id }, 'Invoice email failed (non-fatal)')
+  }
+
+  let emailSent = false
+  let emailSkipped = false
+  if (!client.email) {
+    emailSkipped = true
+    log.warn({ clientId: client.id, clientSlug }, 'Invoice email skipped: client has no email address')
+  } else {
+    try {
+      emailSent = await sendInvoiceEmail(client, invoicedProject, finalAmount, invoiceNumber, issuedAt, stripePaymentUrl)
+      if (emailSent) {
+        await recordEvent('invoice_email_sent', {
+          payload: {
+            project_id: project.id,
+            client_id: client.id,
+            invoice_number: invoiceNumber,
+            to: client.email,
+            amount_usd: finalAmount,
+            stripe_payment_url: stripePaymentUrl,
+          },
+        })
+      }
+    } catch (err) {
+      log.error({ err, projectId: project.id }, 'Invoice email failed (non-fatal)')
+    }
   }
 
   return {
@@ -231,7 +281,10 @@ export async function executeInvoiceProject(
     contractValueUsd: finalAmount,
     previousStatus: project.status,
     emailSent,
+    emailSkipped,
     invoiceNumber,
+    stripePaymentUrl,
+    stripeInvoiceId,
   }
 }
 
@@ -239,7 +292,7 @@ export async function executeMarkProjectPaid(
   clientSlug: string,
   projectSlug: string,
   amountUsd: number,
-  source: 'telegram' | 'natural_language' | 'dashboard'
+  source: 'telegram' | 'natural_language' | 'dashboard' | 'auto'
 ): Promise<MarkProjectPaidResult> {
   const { client, project } = await resolveClientProject(clientSlug, projectSlug)
 
@@ -294,7 +347,13 @@ export async function executeMarkProjectPaid(
 export function formatInvoiceProjectMessage(result: InvoiceProjectResult): string {
   const emailLine = result.emailSent
     ? `Invoice email: ✅ inviata al cliente`
-    : `Invoice email: ⚠️ non inviata (nessun indirizzo email cliente)`
+    : result.emailSkipped
+      ? `Invoice email: ⚠️ non inviata (nessun indirizzo email cliente)`
+      : `Invoice email: ❌ errore invio (controlla Resend / dominio mittente)`
+
+  const stripeLine = result.stripePaymentUrl
+    ? `Stripe: ✅ [Paga ora](${result.stripePaymentUrl})`
+    : `Stripe: ⚠️ non disponibile`
 
   return [
     `💰 *Project Invoiced*`,
@@ -305,6 +364,7 @@ export function formatInvoiceProjectMessage(result: InvoiceProjectResult): strin
     `Status: invoiced`,
     `Contract value: ${formatUsd(result.contractValueUsd)}`,
     emailLine,
+    stripeLine,
   ].join('\n')
 }
 
