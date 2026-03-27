@@ -40,6 +40,7 @@ import {
   getRecentEvents,
   updateProjectRepo,
   updateProjectWorkspacePath,
+  updateTaskStatus,
 } from './supabase.js'
 import {
   createClientWorkspace,
@@ -1302,6 +1303,63 @@ function registerHandlers(bot: Bot): void {
       void ctx.reply('❌ Errore interno. Riprova.')
     })
   })
+
+  // ── Content approval inline keyboard (T142) ──────────────────────────────
+  bot.on('callback_query:data', async (ctx) => {
+    if (!requireFounder(ctx)) {
+      await ctx.answerCallbackQuery({ text: '⛔ Unauthorized' })
+      return
+    }
+
+    const data = ctx.callbackQuery.data ?? ''
+
+    if (data.startsWith('content_approve:') || data.startsWith('content_reject:')) {
+      const colonIdx = data.indexOf(':')
+      const action = data.slice(0, colonIdx)
+      const taskId = data.slice(colonIdx + 1)
+
+      if (!taskId) {
+        await ctx.answerCallbackQuery({ text: '⚠️ Task ID mancante' })
+        return
+      }
+
+      try {
+        if (action === 'content_approve') {
+          await updateTaskStatus(taskId, 'done')
+          await recordEvent('task_completed', {
+            agentId: 'content_writer',
+            taskId,
+            payload: { approved_by: 'founder', source: 'telegram_callback' },
+          })
+          await ctx.answerCallbackQuery({ text: '✅ Contenuto approvato!' })
+          await ctx.reply(
+            `✅ *Contenuto approvato*\n\nTask \`${taskId.slice(0, 8)}\` completato.`,
+            { parse_mode: 'Markdown' }
+          )
+        } else {
+          await updateTaskStatus(taskId, 'blocked')
+          await recordEvent('agent_error', {
+            agentId: 'content_writer',
+            taskId,
+            payload: { rejected_by: 'founder', source: 'telegram_callback' },
+            severity: 'warning',
+          })
+          await ctx.answerCallbackQuery({ text: '❌ Contenuto rigettato' })
+          await ctx.reply(
+            `❌ *Contenuto rigettato*\n\nTask \`${taskId.slice(0, 8)}\` marcato come bloccato.`,
+            { parse_mode: 'Markdown' }
+          )
+        }
+      } catch (err) {
+        log.error({ err, taskId }, 'Content approval callback error')
+        await ctx.answerCallbackQuery({ text: '⚠️ Errore interno' })
+      }
+      return
+    }
+
+    // Unknown callback — dismiss silently
+    await ctx.answerCallbackQuery()
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -1332,7 +1390,7 @@ export async function sendContentApprovalRequest(
   taskId: string,
   title: string,
   contentType: string,
-  previewText: string,
+  preview: string,
   outputPath: string
 ): Promise<void> {
   const chatId = process.env['TELEGRAM_FOUNDER_CHAT_ID']
@@ -1341,30 +1399,31 @@ export async function sendContentApprovalRequest(
     return
   }
 
-  const message = [
-    `✍️ *Content Pronto — Approvazione Richiesta*`,
-    ``,
-    `📝 *${title}*`,
-    `🏷️ Tipo: \`${contentType}\``,
-    ``,
-    `*Preview:*`,
-    `\`\`\``,
-    previewText.replace(/`/g, "'"),
-    `\`\`\``,
-    ``,
-    `💾 File: \`${outputPath}\``,
-    ``,
-    `Approva con /approve ${taskId} o rifiuta con /reject ${taskId}`,
-  ].join('\n')
-
   try {
     const bot = getTelegramBot()
-    try {
-      await bot.api.sendMessage(chatId, message, { parse_mode: 'Markdown' })
-    } catch {
-      // Markdown parse failed — retry as plain text
-      await bot.api.sendMessage(chatId, message)
-    }
+    const safePreview = preview.replace(/`/g, "'")
+    const message = [
+      `✍️ *Contenuto pronto — approvazione richiesta*`,
+      ``,
+      `📝 *${title}*`,
+      `📂 Tipo: \`${contentType}\``,
+      `💾 \`${outputPath}\``,
+      ``,
+      `*Preview:*`,
+      `\`\`\``,
+      safePreview,
+      `\`\`\``,
+    ].join('\n')
+
+    await bot.api.sendMessage(chatId, message, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '✅ Approva', callback_data: `content_approve:${taskId}` },
+          { text: '❌ Rigetta', callback_data: `content_reject:${taskId}` },
+        ]],
+      },
+    })
   } catch (err) {
     log.error({ err, taskId }, 'Failed to send content approval request')
   }
