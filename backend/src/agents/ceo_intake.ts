@@ -291,6 +291,7 @@ Neb (the founder) sends you free-text messages on Telegram. Your job: understand
 - harvest_automation_status → no params  — mostra lo stato dell'automazione harvest settimanale
 - harvest_automation_config → params: enabled? (bool), scheduleDay? (es. "monday"), scheduleLocalTime? (es. "09:00"), sectors? (array [{query, location, limit?}])  — configura l'automazione harvest settimanale
 - harvest_automation_run → no params  — avvia manualmente l'harvest settimanale ora (usa i settori configurati)
+- content_generate → params: type (blog|social|newsletter), topic, tone?, client_slug?, project_slug?
 
 Valid project types: ${PROJECT_TYPES.join(', ')}
 
@@ -345,6 +346,7 @@ ${clientContext}
 45. Use harvest_automation_status when Neb asks about the weekly harvest automation status (e.g. "stato harvest automatica", "quando gira il harvest?", "è attiva l'automazione lead?").
 46. Use harvest_automation_config when Neb wants to configure or enable/disable the weekly harvest (e.g. "attiva harvest settimanale", "imposta harvest ogni lunedì per ristoranti a Milano", "aggiungi settore dentisti a Roma", "disattiva harvest automatica"). Extract sectors as array of {query, location, limit?}.
 47. Use harvest_automation_run when Neb wants to trigger the weekly harvest immediately (e.g. "avvia harvest manuale", "run harvest automation ora", "fai girare l'harvest adesso").
+48. Use content_generate when Neb wants WAI to write a content piece for a client or for himself. Required: type (blog|social|newsletter), topic. Optional: tone (default "professional"), client_slug, project_slug. Output is a .md file saved to the project workspace (or personal workspace if no client/project) — a Telegram preview with approval buttons will follow automatically. Do NOT use create_task for content generation requests.
 
 ## RESPONSE FORMAT — ONLY valid JSON, no markdown, no text outside JSON
 {
@@ -2760,6 +2762,70 @@ async function executeAction(
         log.error({ err }, 'CEO Intake: harvest_automation_run failed')
       })
       return `🔍 Harvest manuale avviata per ${h.sectors.length} settore${h.sectors.length !== 1 ? 'i' : ''}: ${h.sectors.map((s) => `${s.query} @ ${s.location}`).join(', ')}. Riceverai una notifica Telegram al termine.`
+    }
+
+    case 'content_generate': {
+      const contentType = getString(params, 'type') ?? 'blog'
+      const topic = getString(params, 'topic')
+      if (!topic) return '⚠️ content_generate: topic mancante.'
+
+      const tone = getString(params, 'tone') ?? 'professional'
+      const clientSlug = getString(params, 'client_slug')
+      const projectSlug = getString(params, 'project_slug')
+
+      // Resolve project_id (best-effort, non-fatal)
+      let projectId: string | undefined
+      if (clientSlug && projectSlug) {
+        try {
+          const client = await getClientBySlug(clientSlug)
+          if (client) {
+            const project = await getProjectBySlug(client.id, projectSlug)
+            if (project) projectId = project.id
+          }
+        } catch {
+          // non-fatal
+        }
+      }
+
+      const task = await createTask({
+        title: `Genera ${contentType}: ${topic}`,
+        description: `Genera un contenuto di tipo "${contentType}" sul topic "${topic}". Tone: ${tone}.${clientSlug ? ` Cliente: ${clientSlug}.` : ''}${projectSlug ? ` Progetto: ${projectSlug}.` : ''}`,
+        type: 'content',
+        priority: 2,
+        ...(projectId ? { project_id: projectId } : {}),
+        delegator_agent_id: 'ceo_intake',
+        assignee_agent_id: 'content_writer',
+        requires_human_review: false,
+        metadata: {
+          content_type: contentType,
+          topic,
+          tone,
+          ...(clientSlug ? { client_slug: clientSlug } : {}),
+          ...(projectSlug ? { project_slug: projectSlug } : {}),
+          ...(projectId ? { project_id: projectId } : {}),
+        },
+      })
+
+      // Fire content_writer asynchronously (dynamic import avoids circular dep at load time)
+      void (async () => {
+        try {
+          const { runContentWriterAgent } = await import('./content_writer.js')
+          await runContentWriterAgent(task, notify)
+        } catch (err) {
+          log.error({ err, taskId: task.id }, 'CEO Intake: content_generate background error')
+        }
+      })()
+
+      return [
+        `✍️ *Content Writer avviato*`,
+        ``,
+        `📂 Tipo: ${contentType}`,
+        `📝 Topic: ${topic}`,
+        `🎨 Tone: ${tone}`,
+        `🆔 Task: \`${task.id.slice(0, 8)}\``,
+        ``,
+        `L'anteprima arriverà su Telegram con il bottone di approvazione.`,
+      ].join('\n')
     }
 
     // reply is not a real command — the LLM sometimes wraps informational
