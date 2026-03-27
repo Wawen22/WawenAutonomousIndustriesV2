@@ -429,6 +429,19 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
       canSendTelegram: true,
     }),
   },
+
+  content_writer: {
+    id: 'content_writer',
+    name: 'Content Writer Agent',
+    role: 'Autonomous content generation with web research — blog posts, social media posts, newsletters',
+    team: 'marketing',
+    model_id: assignedModel('content_writer'),
+    config: makeConfig({
+      tools: ['web_search', 'file_write'],
+      maxCostPerTaskUsd: 3,
+      thinkingLevel: 'medium',
+    }),
+  },
 }
 
 export function getAgent(id: string): Omit<Agent, 'status' | 'created_at' | 'updated_at'> {
