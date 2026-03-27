@@ -192,6 +192,64 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
+// ── AI outreach draft generation (inbound leads) ─────────────────────────────
+async function generateInboundDraft(
+  leadId: string,
+  companyName: string,
+  contactName: string,
+  company: string,
+  message: string,
+): Promise<void> {
+  try {
+    const { runAgent } = await import('./services/llm.js')
+    const lines: string[] = [
+      'You are WAI (Wawen Autonomous Industries), an AI-powered delivery agency for software, marketing, and consulting.',
+      'A new inbound lead has contacted us via our website. Write a professional, warm, and concise reply email.',
+      '',
+      'Lead details:',
+      `- Name: ${contactName}`,
+    ]
+    if (company) lines.push(`- Company: ${company}`)
+    lines.push(`- Email context: inbound from contact form`)
+    if (message) lines.push(`- Their message: "${message}"`)
+    else lines.push('- No message provided.')
+    lines.push(
+      '',
+      'Instructions:',
+      '1. Subject line: max 60 chars, specific, no "Re:", no generic phrases.',
+      '2. Body: 3-5 sentences. Acknowledge their specific request. Briefly describe how WAI can help. Propose a 20-min discovery call. Sign as "The WAI Team".',
+      '3. Reply ONLY in this exact format, nothing else:',
+      'SUBJECT: <subject>',
+      'BODY:',
+      '<body>',
+    )
+
+    const result = await runAgent(
+      [{ role: 'user', content: lines.join('\n') }],
+      { agentId: 'ceo', modelOverride: 'nemotron-120b', timeoutMs: 60_000, captureMemory: false },
+    )
+
+    const text = result.content.trim()
+    const subjectMatch = text.match(/^SUBJECT:\s*(.+)/m)
+    const bodyMatch = text.match(/BODY:\s*\n([\s\S]+)/m)
+
+    if (subjectMatch?.[1] && bodyMatch?.[1]) {
+      const { saveLead } = await import('./services/leads.js')
+      await saveLead({
+        id: leadId,
+        company_name: companyName,
+        outreach_subject: subjectMatch[1].trim(),
+        outreach_draft: bodyMatch[1].trim(),
+      })
+      log.info({ leadId }, 'generateInboundDraft: draft saved')
+    } else {
+      log.warn({ leadId, text: text.slice(0, 300) }, 'generateInboundDraft: could not parse LLM output')
+    }
+  } catch (err) {
+    log.error({ err, leadId }, 'generateInboundDraft: failed (non-fatal)')
+  }
+}
+
 async function main(): Promise<void> {
   const PORT = parseInt(process.env['PORT'] ?? '3001', 10)
 
@@ -2313,52 +2371,8 @@ async function main(): Promise<void> {
             notes: message,
           })
 
-          // Generate AI outreach subject + body in background (gemini-2.5-flash)
-          void (async () => {
-            try {
-              const { runAgent } = await import('./services/llm.js')
-              const prompt = [
-                `You are WAI (Wawen Autonomous Industries), an AI-powered delivery agency for software, marketing, and consulting.`,
-                `A new inbound lead has contacted us via our website contact form. Generate a professional, warm, and concise reply email.`,
-                ``,
-                `Lead details:`,
-                `- Name: ${name}`,
-                company ? `- Company: ${company}` : null,
-                `- Email: ${email}`,
-                message ? `- Their message: "${message}"` : `- No message provided.`,
-                ``,
-                `Instructions:`,
-                `1. Write a subject line (max 60 chars, no "Re:", no generic greetings).`,
-                `2. Write the email body: 3–5 sentences. Acknowledge their specific request if provided. Introduce WAI briefly. Propose a 20-min call to discuss. Sign as "The WAI Team".`,
-                `3. Respond ONLY in this exact format (no extra text):`,
-                `SUBJECT: <subject here>`,
-                `BODY:`,
-                `<body here>`,
-              ].filter(Boolean).join('\n')
-
-              const result = await runAgent(
-                [{ role: 'user', content: prompt }],
-                { agentId: 'ceo', modelOverride: 'gemini-2.5-flash', timeoutMs: 30_000 },
-              )
-
-              const text = result.content.trim()
-              const subjectMatch = text.match(/^SUBJECT:\s*(.+)/m)
-              const bodyMatch = text.match(/^BODY:\n([\s\S]+)/m)
-
-              if (subjectMatch && bodyMatch) {
-                const { saveLead: updateLead } = await import('./services/leads.js')
-                await updateLead({
-                  id: lead.id,
-                  company_name: lead.company_name,
-                  outreach_subject: subjectMatch[1]!.trim(),
-                  outreach_draft: bodyMatch[1]!.trim(),
-                })
-                log.info({ leadId: lead.id }, 'Contact: AI outreach draft generated')
-              }
-            } catch (err) {
-              log.warn({ err, leadId: lead.id }, 'Contact: AI outreach generation failed (non-fatal)')
-            }
-          })()
+          // Generate AI outreach subject + body in background (nemotron-120b)
+          void generateInboundDraft(lead.id, lead.company_name, name, company, message)
 
           // Notify founder on Telegram (non-fatal)
           await sendFounderNotification(
@@ -2544,6 +2558,24 @@ async function main(): Promise<void> {
       const parts = rest.split('/')
       const leadId = parts[0] ?? ''
 
+      // DELETE /api/leads/:id — permanently delete a lead
+      if (parts.length === 1 && req.method === 'DELETE') {
+        void (async () => {
+          try {
+            const { getSupabaseClient } = await import('./services/supabase.js')
+            const { error } = await getSupabaseClient().from('leads').delete().eq('id', leadId)
+            if (error) throw new Error(error.message)
+            res.writeHead(204)
+            res.end()
+          } catch (err) {
+            log.error({ err, leadId }, 'Leads: DELETE /api/leads/:id error')
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
       // GET /api/leads/:id
       if (parts.length === 1 && req.method === 'GET') {
         void (async () => {
@@ -2692,6 +2724,38 @@ async function main(): Promise<void> {
             log.error({ err, leadId }, 'Leads: POST /api/leads/:id/replied error')
             res.writeHead(500, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Internal server error' }))
+          }
+        })()
+        return
+      }
+
+      // POST /api/leads/:id/generate-draft — AI-generate outreach subject + body (nemotron-120b)
+      if (parts.length === 2 && parts[1] === 'generate-draft' && req.method === 'POST') {
+        void (async () => {
+          try {
+            const { getLead } = await import('./services/leads.js')
+            const lead = await getLead(leadId)
+            if (!lead) {
+              res.writeHead(404, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Not found' }))
+              return
+            }
+            // Respond immediately, generate in background
+            res.writeHead(202, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true, message: 'Draft generation started' }))
+            await generateInboundDraft(
+              lead.id,
+              lead.company_name,
+              lead.contact_name ?? lead.company_name,
+              '', // company already in company_name
+              lead.notes ?? '',
+            )
+          } catch (err) {
+            if (!res.writableEnded) {
+              log.error({ err, leadId }, 'Leads: POST /api/leads/:id/generate-draft error')
+              res.writeHead(500, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: 'Internal server error' }))
+            }
           }
         })()
         return

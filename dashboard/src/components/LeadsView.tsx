@@ -79,6 +79,11 @@ async function apiPut<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>
 }
 
+async function apiDelete(path: string): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}${path}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
+}
+
 // ── Harvest Modal ─────────────────────────────────────────────────────────────
 
 interface HarvestModalProps {
@@ -190,6 +195,7 @@ function DetailPanel({ lead, onUpdate, onRemove }: DetailPanelProps) {
   const [email, setEmail] = useState(lead.contact_email ?? '')
   const [actionState, setActionState] = useState<'idle' | 'working' | 'done' | 'error'>('idle')
   const [actionMsg, setActionMsg] = useState('')
+  const [generating, setGenerating] = useState(false)
 
   // Keep local state in sync when lead changes
   useEffect(() => {
@@ -233,6 +239,45 @@ function DetailPanel({ lead, onUpdate, onRemove }: DetailPanelProps) {
     } catch (err) {
       setActionState('error')
       setActionMsg(err instanceof Error ? err.message : 'Failed')
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Delete lead "${lead.company_name}" permanently?`)) return
+    setActionState('working')
+    try {
+      await apiDelete(`/api/leads/${lead.id}`)
+      onRemove(lead.id)
+      setActionState('idle')
+    } catch (err) {
+      setActionState('error')
+      setActionMsg(err instanceof Error ? err.message : 'Delete failed')
+    }
+  }
+
+  async function handleGenerateDraft() {
+    setGenerating(true)
+    try {
+      await apiPost(`/api/leads/${lead.id}/generate-draft`)
+      // Poll until subject is populated (max 30s)
+      const start = Date.now()
+      const poll = async (): Promise<void> => {
+        if (Date.now() - start > 30_000) { setGenerating(false); return }
+        const updated = await apiGet<Lead>(`/api/leads/${lead.id}`)
+        if (updated.outreach_subject) {
+          onUpdate(updated)
+          setSubject(updated.outreach_subject)
+          setDraft(updated.outreach_draft)
+          setGenerating(false)
+        } else {
+          setTimeout(() => { void poll() }, 2_000)
+        }
+      }
+      setTimeout(() => { void poll() }, 3_000)
+    } catch (err) {
+      setGenerating(false)
+      setActionState('error')
+      setActionMsg(err instanceof Error ? err.message : 'Generation failed')
     }
   }
 
@@ -314,7 +359,16 @@ function DetailPanel({ lead, onUpdate, onRemove }: DetailPanelProps) {
 
       {/* Outreach draft */}
       <div className="border-b border-white/5 p-6 space-y-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Outreach Draft</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Outreach Draft</h3>
+          <button
+            onClick={() => { void handleGenerateDraft() }}
+            disabled={generating}
+            className="rounded px-2 py-1 text-xs text-violet-400 hover:bg-violet-400/10 disabled:opacity-50 transition-colors"
+          >
+            {generating ? '⏳ Generating…' : '✨ Generate'}
+          </button>
+        </div>
 
         <div>
           <label className="mb-1 block text-xs text-slate-500">Subject</label>
@@ -355,37 +409,42 @@ function DetailPanel({ lead, onUpdate, onRemove }: DetailPanelProps) {
         )}
 
         {/* Action buttons */}
-        {!hasSent && (
-          <div className="flex flex-wrap gap-2 pt-1">
-            {canApprove && (
-              <button
-                onClick={() => { void handleApprove() }}
-                disabled={actionState === 'working'}
-                className="rounded-lg bg-violet-600/80 px-4 py-1.5 text-sm font-medium text-white hover:bg-violet-600 disabled:opacity-50"
-              >
-                ✓ Approve
-              </button>
-            )}
-            {canSend && (
-              <button
-                onClick={() => { void handleSend() }}
-                disabled={actionState === 'working' || !email.includes('@')}
-                className="rounded-lg bg-emerald-600/80 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
-              >
-                ▶ Send Outreach
-              </button>
-            )}
-            {!hasSent && (
-              <button
-                onClick={() => { void handleReject() }}
-                disabled={actionState === 'working'}
-                className="rounded-lg border border-red-400/20 px-4 py-1.5 text-sm text-red-400 hover:bg-red-400/10 disabled:opacity-50"
-              >
-                ✗ Reject
-              </button>
-            )}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2 pt-1">
+          {canApprove && (
+            <button
+              onClick={() => { void handleApprove() }}
+              disabled={actionState === 'working'}
+              className="rounded-lg bg-violet-600/80 px-4 py-1.5 text-sm font-medium text-white hover:bg-violet-600 disabled:opacity-50"
+            >
+              ✓ Approve
+            </button>
+          )}
+          {canSend && (
+            <button
+              onClick={() => { void handleSend() }}
+              disabled={actionState === 'working' || !email.includes('@')}
+              className="rounded-lg bg-emerald-600/80 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+            >
+              ▶ Send Outreach
+            </button>
+          )}
+          {!hasSent && (
+            <button
+              onClick={() => { void handleReject() }}
+              disabled={actionState === 'working'}
+              className="rounded-lg border border-red-400/20 px-4 py-1.5 text-sm text-red-400 hover:bg-red-400/10 disabled:opacity-50"
+            >
+              ✗ Reject
+            </button>
+          )}
+          <button
+            onClick={() => { void handleDelete() }}
+            disabled={actionState === 'working'}
+            className="ml-auto rounded-lg border border-red-500/30 px-3 py-1.5 text-sm text-red-500 hover:bg-red-500/10 disabled:opacity-50"
+          >
+            🗑 Delete
+          </button>
+        </div>
 
         {actionState === 'done' && (
           <p className="text-sm text-emerald-400">{actionMsg}</p>
@@ -499,7 +558,7 @@ export function LeadsView() {
   }, [])
 
   const filtered = statusFilter === 'all'
-    ? leads
+    ? leads.filter((l) => l.status !== 'rejected')
     : leads.filter((l) => l.status === statusFilter)
 
   const selected = leads.find((l) => l.id === selectedId) ?? null
