@@ -1328,6 +1328,48 @@ export async function sendTelegramNotification(message: string): Promise<void> {
   }
 }
 
+export async function sendContentApprovalRequest(
+  taskId: string,
+  title: string,
+  contentType: string,
+  previewText: string,
+  outputPath: string
+): Promise<void> {
+  const chatId = process.env['TELEGRAM_FOUNDER_CHAT_ID']
+  if (!chatId) {
+    log.warn('TELEGRAM_FOUNDER_CHAT_ID not set, skipping content approval request')
+    return
+  }
+
+  const message = [
+    `✍️ *Content Pronto — Approvazione Richiesta*`,
+    ``,
+    `📝 *${title}*`,
+    `🏷️ Tipo: \`${contentType}\``,
+    ``,
+    `*Preview:*`,
+    `\`\`\``,
+    previewText.replace(/`/g, "'"),
+    `\`\`\``,
+    ``,
+    `💾 File: \`${outputPath}\``,
+    ``,
+    `Approva con /approve ${taskId} o rifiuta con /reject ${taskId}`,
+  ].join('\n')
+
+  try {
+    const bot = getTelegramBot()
+    try {
+      await bot.api.sendMessage(chatId, message, { parse_mode: 'Markdown' })
+    } catch {
+      // Markdown parse failed — retry as plain text
+      await bot.api.sendMessage(chatId, message)
+    }
+  } catch (err) {
+    log.error({ err, taskId }, 'Failed to send content approval request')
+  }
+}
+
 export async function sendTelegramPhoto(photoPath: string, caption?: string): Promise<void> {
   const chatId = process.env['TELEGRAM_FOUNDER_CHAT_ID']
   if (!chatId) {
