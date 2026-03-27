@@ -17,6 +17,7 @@ import { MemoryView } from './components/MemoryView.js'
 import { PersonalHQView } from './components/PersonalHQView.js'
 import { PersonalCRMView } from './components/PersonalCRMView.js'
 import { LeadsView } from './components/LeadsView.js'
+import { AnalyticsView } from './components/AnalyticsView.js'
 import { PersonalDocumentsView } from './components/PersonalDocumentsView.js'
 import { DocsView } from './components/DocsView.js'
 import { CapabilitiesView } from './components/CapabilitiesView.js'
@@ -86,6 +87,7 @@ const VIEW_META: Record<ViewId, { title: string; description: string }> = {
   models:   { title: 'Models',         description: 'Model registry, agent assignments, and cost governance'        },
   docs:     { title: 'Docs',           description: 'Live knowledge base — canonical docs and archive'      },
   leads:    { title: 'Leads',          description: 'Proposal inbox — qualified leads, audit findings, outreach' },
+  analytics: { title: 'Analytics',     description: 'Site traffic, top pages, referrer breakdown, lead funnel' },
   assistant:{ title: 'Assistant HQ',   description: 'Personal execution layer for Neb'                      },
   crm:      { title: 'Contacts',       description: 'Contact tracking — relationships, follow-ups, interactions' },
   documents:{ title: 'Documents',      description: 'Personal files, notes, and generated reports'          },
@@ -210,6 +212,7 @@ function ViewContent({ view }: { view: ViewId }) {
     case 'assistant': return <PersonalHQView />
     case 'crm':       return <PersonalCRMView />
     case 'leads':     return <LeadsView />
+    case 'analytics': return <AnalyticsView />
     case 'documents': return <PersonalDocumentsView />
   }
 }
