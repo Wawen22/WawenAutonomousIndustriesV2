@@ -433,8 +433,6 @@ export function Overview() {
           agent={selectedAgent}
           lastRuns={lastRuns[selectedAgent.id] ?? []}
           runCount={runCounts[selectedAgent.id] ?? 0}
-          activeTasks={activeTasks}
-          recentEvents={events || []}
           onClose={() => setSelectedAgent(null)}
         />
       )}

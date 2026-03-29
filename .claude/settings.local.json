@@ -17,5 +17,9 @@
         "sbp_ead2999ed254f308fa5e626bf6aee08f1337945f"
       ]
     }
-  }
+  },
+  "enabledMcpjsonServers": [
+    "supabase",
+    "google_workspace"
+  ]
 }

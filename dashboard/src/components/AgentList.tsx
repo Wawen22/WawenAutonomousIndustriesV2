@@ -9,10 +9,8 @@ import { clsx } from 'clsx'
 import { Panel } from './ui/Panel.js'
 import { Badge } from './ui/Badge.js'
 import { 
-  useAgents, 
-  useAgentStats, 
-  useTasks, 
-  useEventsWithContext 
+  useAgents,
+  useAgentStats,
 } from '../hooks/useSupabaseRealtime.js'
 import { AgentDetailSidebar } from './AgentDetailSidebar.js'
 import type { Agent, AgentStatus, AgentTeam } from '../types/index.js'
@@ -145,8 +143,6 @@ function TeamSection({ team, agents, onAgentClick }: { team: AgentTeam; agents: 
 export function AgentList() {
   const { data: agents, loading, error } = useAgents()
   const { runCounts, lastRuns } = useAgentStats()
-  const { data: tasks } = useTasks('in_progress')
-  const { data: events } = useEventsWithContext(50)
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
 
   if (loading) {
@@ -209,8 +205,6 @@ export function AgentList() {
           agent={selectedAgent}
           lastRuns={lastRuns[selectedAgent.id] ?? []}
           runCount={runCounts[selectedAgent.id] ?? 0}
-          activeTasks={tasks || []}
-          recentEvents={events || []}
           onClose={() => setSelectedAgent(null)}
         />
       )}

@@ -7,10 +7,8 @@
 import { useState, useMemo } from 'react'
 import { clsx } from 'clsx'
 import {
-  useAgents, 
-  useAgentStats, 
-  useTasks,
-  useEventsWithContext
+  useAgents,
+  useAgentStats,
 } from '../hooks/useSupabaseRealtime.js'
 import { AgentDetailSidebar } from './AgentDetailSidebar.js'
 import type { Agent, AgentStatus, AgentTeam } from '../types/index.js'
@@ -199,8 +197,6 @@ function AgentCard({
 export function TeamOrgView() {
   const { data: agents, loading, error } = useAgents()
   const { runCounts, lastRuns } = useAgentStats()
-  const { data: tasks } = useTasks('in_progress')
-  const { data: events } = useEventsWithContext(50)
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
 
   // Memoized sorted data
@@ -360,8 +356,6 @@ export function TeamOrgView() {
           agent={selectedAgent}
           lastRuns={lastRuns[selectedAgent.id] ?? []}
           runCount={runCounts[selectedAgent.id] ?? 0}
-          activeTasks={tasks || []}
-          recentEvents={events || []}
           onClose={() => setSelectedAgent(null)}
         />
       )}

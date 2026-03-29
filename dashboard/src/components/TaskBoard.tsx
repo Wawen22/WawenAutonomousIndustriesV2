@@ -11,7 +11,6 @@ import {
   useTasks,
   useAgents,
   useAgentStats,
-  useEventsWithContext
 } from '../hooks/useSupabaseRealtime.js'
 import { getClientColor } from '../lib/clientColors.js'
 import { getAgentColor } from '../lib/agentColors.js'
@@ -238,7 +237,6 @@ export function TaskBoard() {
   const { data: tasks, loading, error } = useTasks()
   const { data: agents } = useAgents()
   const { runCounts, lastRuns } = useAgentStats()
-  const { data: events } = useEventsWithContext(50)
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
@@ -374,8 +372,8 @@ export function TaskBoard() {
       {selectedAgent && (
         <AgentDetailSidebar
           agent={selectedAgent} lastRuns={lastRuns[selectedAgent.id] ?? []}
-          runCount={runCounts[selectedAgent.id] ?? 0} activeTasks={tasks.filter(t => t.status === 'in_progress')}
-          recentEvents={events || []} onClose={() => setSelectedAgent(null)}
+          runCount={runCounts[selectedAgent.id] ?? 0}
+          onClose={() => setSelectedAgent(null)}
         />
       )}
     </div>

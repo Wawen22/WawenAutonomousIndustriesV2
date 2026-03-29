@@ -1210,7 +1210,15 @@ function AgentInfoPanel({
           ))}
           <div className="rounded-lg border border-white/[0.07] p-3 text-center" style={{ background:`${teamColor}0e` }}>
             <p className="text-[10px] font-bold font-mono leading-tight" style={{ color:teamColor }}>
-              {agent.model_id === 'gpt-5.4' ? 'GPT-5.4' : 'Gemini'}
+              {({
+                'gpt-5.4':          'GPT-5.4',
+                'gemini-2.5-flash': 'Gemini',
+                'nemotron-120b':    'Nemotron',
+                'minimax-m2.7':     'MiniMax',
+                'glm-4.5-air':      'GLM',
+                'step-flash':       'Step',
+                'qwen3-coder':      'Qwen3',
+              } as Record<string, string>)[agent.model_id] ?? agent.model_id}
             </p>
             <p className="text-[9px] text-slate-600 uppercase tracking-wide mt-0.5">Model</p>
           </div>

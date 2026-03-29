@@ -7,7 +7,8 @@ import { useEffect, useState } from 'react'
 import { clsx } from 'clsx'
 import { createPortal } from 'react-dom'
 import { ExpandableText } from './ui/ExpandableText.js'
-import type { Agent, AgentStatus, AgentRun, Task, SystemEventWithContext, AgentTeam } from '../types/index.js'
+import { useTasks, useEventsWithContext } from '../hooks/useSupabaseRealtime.js'
+import type { Agent, AgentStatus, AgentRun, AgentTeam } from '../types/index.js'
 
 // ---------------------------------------------------------------------------
 // Constants & Styles
@@ -115,8 +116,6 @@ interface AgentDetailSidebarProps {
   agent: Agent
   lastRuns: AgentRun[]
   runCount: number
-  activeTasks: Task[]
-  recentEvents: SystemEventWithContext[]
   onClose: () => void
 }
 
@@ -124,12 +123,15 @@ export function AgentDetailSidebar({
   agent,
   lastRuns,
   runCount,
-  activeTasks,
-  recentEvents,
   onClose,
 }: AgentDetailSidebarProps) {
   const teamMeta = TEAM_META[agent.team] ?? TEAM_META.ops
   const modelStyle = MODEL_BADGE[agent.model_id] ?? { text: 'text-slate-400', bg: 'bg-slate-400/10' }
+
+  // Fetch tasks and events only when the sidebar is open (lazy — not at view level)
+  const { data: activeTasks } = useTasks('in_progress')
+  const { data: recentEvents } = useEventsWithContext(100)
+
   const myTasks = activeTasks.filter((t) => t.assignee_agent_id === agent.id)
   const myEvents = recentEvents.filter((e) => e.agent_id === agent.id).slice(0, 10)
 

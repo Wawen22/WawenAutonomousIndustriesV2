@@ -3149,7 +3149,8 @@ async function main(): Promise<void> {
   }
 
   // --- Sync agents from config (upsert) then mark all online ---
-  // This ensures new agents added to config/agents.ts are auto-registered in the DB.
+  // This ensures new agents added to config/agents.ts are auto-registered in the DB,
+  // and agents removed from config are deleted from the DB so they don't show stale desks.
   try {
     for (const agent of Object.values(AGENTS)) {
       await upsertAgentRecord({
@@ -3160,6 +3161,20 @@ async function main(): Promise<void> {
         model_id: agent.model_id,
         config: agent.config as unknown as Record<string, unknown>,
       })
+    }
+    // Delete agents that exist in the DB but are no longer in the config
+    const { getSupabaseClient: getSb } = await import('./services/supabase.js')
+    const sb = getSb()
+    const knownIds = getAllAgentIds()
+    const { data: dbAgents } = await sb.from('agents').select('id')
+    if (dbAgents) {
+      const staleIds = (dbAgents as { id: string }[])
+        .map((r) => r.id)
+        .filter((id) => !knownIds.includes(id))
+      if (staleIds.length > 0) {
+        await sb.from('agents').delete().in('id', staleIds)
+        log.info({ staleIds }, 'Deleted stale agent records from DB')
+      }
     }
     log.info({ count: Object.keys(AGENTS).length }, 'Agents synced and marked online')
   } catch (err) {

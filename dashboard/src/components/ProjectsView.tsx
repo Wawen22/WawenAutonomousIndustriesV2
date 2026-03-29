@@ -16,7 +16,6 @@ import {
   useTasks,
   useAgents,
   useAgentStats,
-  useEventsWithContext,
   useProjectChecklist,
   useProjectEvents,
 } from '../hooks/useSupabaseRealtime.js'
@@ -744,7 +743,6 @@ export function ProjectsView() {
   const { data: agents } = useAgents()
   const { data: tasks } = useTasks()
   const { runCounts, lastRuns } = useAgentStats()
-  const { data: events } = useEventsWithContext(50)
 
   const [activeCategory, setActiveCategory] = useState<ProjectCategory>('active')
   const [search, setSearch] = useState('')
@@ -848,8 +846,8 @@ export function ProjectsView() {
       {selectedAgent && (
         <AgentDetailSidebar
           agent={selectedAgent} lastRuns={lastRuns[selectedAgent.id] ?? []}
-          runCount={runCounts[selectedAgent.id] ?? 0} activeTasks={tasks.filter(t => t.status === 'in_progress')}
-          recentEvents={events || []} onClose={() => setSelectedAgent(null)}
+          runCount={runCounts[selectedAgent.id] ?? 0}
+          onClose={() => setSelectedAgent(null)}
         />
       )}
     </div>

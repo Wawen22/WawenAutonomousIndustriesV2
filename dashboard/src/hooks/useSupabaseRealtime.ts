@@ -395,7 +395,7 @@ export function useAgentStats() {
         .from('runs')
         .select('id, agent_id, model_id, input_summary, output_summary, outcome, created_at, cost_usd, duration_ms, tokens_input, tokens_output, tools_used, task_id, error_message')
         .order('created_at', { ascending: false })
-        .limit(500)
+        .limit(100)
       if (error) throw new Error(error.message)
       const runs = (data ?? []) as AgentRun[]
       const counts: Record<string, number> = {}

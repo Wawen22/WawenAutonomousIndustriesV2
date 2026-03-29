@@ -4,13 +4,11 @@
 // Click su scrivania → modale con task, runs, events recenti.
 // ============================================================
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, memo } from 'react'
 import { clsx } from 'clsx'
 import {
   useAgents,
   useAgentStats,
-  useTasks,
-  useEventsWithContext,
 } from '../hooks/useSupabaseRealtime.js'
 import { AgentDetailSidebar } from './AgentDetailSidebar.js'
 import type { Agent, AgentStatus, AgentTeam, AgentRun } from '../types/index.js'
@@ -37,10 +35,17 @@ const STATUS_DOT: Record<AgentStatus, string> = {
   error:   'bg-rose-400 animate-pulse',
 }
 
-const MODEL_BADGE: Record<string, { text: string; bg: string }> = {
-  'gpt-5.4':          { text: 'text-[#00D4FF]',  bg: 'bg-[#00D4FF]/[0.08]'  },
-  'gemini-2.5-flash': { text: 'text-violet-400', bg: 'bg-violet-400/[0.08]' },
+const MODEL_BADGE: Record<string, { label: string; text: string; bg: string; border: string }> = {
+  'gpt-5.4':          { label: 'GPT',  text: 'text-[#00D4FF]',   bg: 'bg-[#00D4FF]/[0.08]',   border: 'border-[#00D4FF]/20'   },
+  'gemini-2.5-flash': { label: 'GEM',  text: 'text-violet-400',  bg: 'bg-violet-400/[0.08]',  border: 'border-violet-400/20'  },
+  'nemotron-120b':    { label: 'NEM',  text: 'text-indigo-400',  bg: 'bg-indigo-400/[0.08]',  border: 'border-indigo-400/20'  },
+  'minimax-m2.7':     { label: 'MNX',  text: 'text-purple-400',  bg: 'bg-purple-400/[0.08]',  border: 'border-purple-400/20'  },
+  'glm-4.5-air':      { label: 'GLM',  text: 'text-emerald-400', bg: 'bg-emerald-400/[0.08]', border: 'border-emerald-400/20' },
+  'step-flash':       { label: 'STP',  text: 'text-amber-400',   bg: 'bg-amber-400/[0.08]',   border: 'border-amber-400/20'   },
+  'qwen3-coder':      { label: 'QWN',  text: 'text-rose-400',    bg: 'bg-rose-400/[0.08]',    border: 'border-rose-400/20'    },
 }
+
+const MODEL_BADGE_FALLBACK = { label: '???', text: 'text-slate-400', bg: 'bg-slate-400/10', border: 'border-slate-400/15' }
 
 const ACTIVE_WINDOW_MS = 60_000
 
@@ -64,12 +69,10 @@ function AgentAvatar({ agent, size = 'md' }: { agent: Agent; size?: 'sm' | 'md' 
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase() ?? '')
     .join('')
-  const style = MODEL_BADGE[agent.model_id] ?? { text: 'text-slate-400', bg: 'bg-slate-400/10' }
+  const style = MODEL_BADGE[agent.model_id] ?? MODEL_BADGE_FALLBACK
   const sz = size === 'sm' ? 'w-7 h-7 text-[9px]' : 'w-9 h-9 text-[10px]'
   return (
-    <div className={clsx('rounded-lg flex items-center justify-center font-bold border', sz, style.bg, style.text,
-      agent.model_id === 'gpt-5.4' ? 'border-[#00D4FF]/20' : 'border-violet-400/20'
-    )}>
+    <div className={clsx('rounded-lg flex items-center justify-center font-bold border', sz, style.bg, style.text, style.border)}>
       {initials}
     </div>
   )
@@ -157,22 +160,19 @@ function Monitor({
 // Agent desk card
 // ---------------------------------------------------------------------------
 
-function AgentDesk({
+const AgentDesk = memo(function AgentDesk({
   agent,
-  lastRun,
+  activity,
   runCount,
-  nowMs,
   onClick,
 }: {
   agent: Agent
-  lastRun: AgentRun | undefined
+  activity: 'working' | 'recent' | 'idle'
   runCount: number
-  nowMs: number
   onClick: (a: Agent) => void
 }) {
-  const activity = agentActivityState(agent, lastRun, nowMs)
   const teamMeta = TEAM_META[agent.team] ?? TEAM_META.ops
-  const modelStyle = MODEL_BADGE[agent.model_id] ?? { text: 'text-slate-400', bg: 'bg-slate-400/10' }
+  const modelStyle = MODEL_BADGE[agent.model_id] ?? MODEL_BADGE_FALLBACK
   const isWorking = activity === 'working'
 
   return (
@@ -201,15 +201,15 @@ function AgentDesk({
         {/* Status + model row */}
         <div className="flex items-center justify-center gap-1.5 mt-1.5 flex-wrap">
           <span className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', STATUS_DOT[agent.status])} />
-          <span className={clsx('text-[8px] font-semibold font-mono px-1 py-0.5 rounded', modelStyle.bg, modelStyle.text)}>
-            {agent.model_id === 'gpt-5.4' ? 'GPT' : 'GEM'}
+          <span className={clsx('text-[8px] font-semibold font-mono px-1 py-0.5 rounded border', modelStyle.bg, modelStyle.text, modelStyle.border)}>
+            {modelStyle.label}
           </span>
           <span className="text-[8px] text-slate-700 font-mono">{runCount}</span>
         </div>
       </div>
     </button>
   )
-}
+})
 
 // ---------------------------------------------------------------------------
 // Neb CEO Corner
@@ -258,16 +258,14 @@ function NebCorner() {
 function TeamSection({
   team,
   agents,
-  lastRuns,
+  activities,
   runCounts,
-  nowMs,
   onAgentClick,
 }: {
   team: AgentTeam
   agents: Agent[]
-  lastRuns: Record<string, AgentRun[]>
+  activities: Record<string, 'working' | 'recent' | 'idle'>
   runCounts: Record<string, number>
-  nowMs: number
   onAgentClick: (a: Agent) => void
 }) {
   const meta = TEAM_META[team]
@@ -293,9 +291,8 @@ function TeamSection({
           <AgentDesk
             key={agent.id}
             agent={agent}
-            lastRun={lastRuns[agent.id]?.[0]}
+            activity={activities[agent.id] ?? 'idle'}
             runCount={runCounts[agent.id] ?? 0}
-            nowMs={nowMs}
             onClick={onAgentClick}
           />
         ))}
@@ -321,19 +318,34 @@ function OfficeQuiet() {
 export function VirtualOfficeView() {
   const { data: agents, loading, error } = useAgents()
   const { runCounts, lastRuns } = useAgentStats()
-  const { data: activeTasks } = useTasks('in_progress')
-  const { data: recentEvents } = useEventsWithContext(100)
 
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
 
-  // Refresh "now" every 10s for typing detection
+  // Refresh "now" every 10s for activity state detection
   useEffect(() => {
     const id = setInterval(() => setNowMs(Date.now()), 10_000)
     return () => clearInterval(id)
   }, [])
 
   const handleClose = useCallback(() => setSelectedAgent(null), [])
+
+  // Pre-compute activity state for every agent — cards only re-render when
+  // their own activity value changes, not on every nowMs tick.
+  const activities = useMemo(() => {
+    const map: Record<string, 'working' | 'recent' | 'idle'> = {}
+    for (const agent of agents) {
+      map[agent.id] = agentActivityState(agent, lastRuns[agent.id]?.[0], nowMs)
+    }
+    return map
+  }, [agents, lastRuns, nowMs])
+
+  const byTeam = useMemo(() =>
+    agents.reduce<Partial<Record<AgentTeam, Agent[]>>>((acc, a) => {
+      acc[a.team] = [...(acc[a.team] ?? []), a]
+      return acc
+    }, {}),
+  [agents])
 
   if (loading) {
     return (
@@ -351,14 +363,10 @@ export function VirtualOfficeView() {
     )
   }
 
-  const byTeam = agents.reduce<Partial<Record<AgentTeam, Agent[]>>>((acc, a) => {
-    acc[a.team] = [...(acc[a.team] ?? []), a]
-    return acc
-  }, {})
-
   const busyCount   = agents.filter((a) => a.status === 'busy').length
   const onlineCount = agents.filter((a) => a.status === 'online').length
   const allIdle = agents.length > 0 && busyCount === 0 && onlineCount === 0
+  const activeTeams = TEAM_ORDER.filter((t) => (byTeam[t]?.length ?? 0) > 0)
 
   return (
     <div className="animate-fade-in space-y-8">
@@ -393,40 +401,24 @@ export function VirtualOfficeView() {
       {/* Easter egg */}
       {allIdle && <OfficeQuiet />}
 
-      {/* Teams + desks */}
-      {!allIdle && TEAM_ORDER.filter((t) => (byTeam[t]?.length ?? 0) > 0).map((team) => (
+      {/* Teams + desks — single render, shown always */}
+      {activeTeams.map((team) => (
         <TeamSection
           key={team}
           team={team}
           agents={byTeam[team]!}
-          lastRuns={lastRuns}
+          activities={activities}
           runCounts={runCounts}
-          nowMs={nowMs}
           onAgentClick={setSelectedAgent}
         />
       ))}
 
-      {/* Show teams even when all idle, but below the easter egg */}
-      {allIdle && TEAM_ORDER.filter((t) => (byTeam[t]?.length ?? 0) > 0).map((team) => (
-        <TeamSection
-          key={team}
-          team={team}
-          agents={byTeam[team]!}
-          lastRuns={lastRuns}
-          runCounts={runCounts}
-          nowMs={nowMs}
-          onAgentClick={setSelectedAgent}
-        />
-      ))}
-
-      {/* Agent Detail Sidebar */}
+      {/* Agent Detail Sidebar — mounts only when open, fetches its own data */}
       {selectedAgent && (
         <AgentDetailSidebar
           agent={selectedAgent}
           lastRuns={lastRuns[selectedAgent.id] ?? []}
           runCount={runCounts[selectedAgent.id] ?? 0}
-          activeTasks={activeTasks}
-          recentEvents={recentEvents}
           onClose={handleClose}
         />
       )}

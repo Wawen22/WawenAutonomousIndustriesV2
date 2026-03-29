@@ -11,7 +11,7 @@ import { Badge } from './ui/Badge.js'
 import { Icon } from './ui/Icon.js'
 import { ExpandableText } from './ui/ExpandableText.js'
 import { AgentDetailSidebar } from './AgentDetailSidebar.js'
-import { useAgentMemories, useAgents, useAgentStats, useTasks, useEventsWithContext } from '../hooks/useSupabaseRealtime.js'
+import { useAgentMemories, useAgents, useAgentStats } from '../hooks/useSupabaseRealtime.js'
 import { getAgentColor } from '../lib/agentColors.js'
 import type { AgentMemory, Agent } from '../types/index.js'
 
@@ -148,8 +148,6 @@ export function MemoryView() {
   const { data: memories, loading: mLoad } = useAgentMemories(500)
   const { data: agents,   loading: aLoad } = useAgents()
   const { runCounts, lastRuns } = useAgentStats()
-  const { data: tasks } = useTasks('in_progress')
-  const { data: events } = useEventsWithContext(50)
 
   const [search, setSearch] = useState('')
   const [agentFilter, setAgentFilter] = useState('all')
@@ -309,8 +307,6 @@ export function MemoryView() {
           agent={selectedAgent}
           lastRuns={lastRuns[selectedAgent.id] ?? []}
           runCount={runCounts[selectedAgent.id] ?? 0}
-          activeTasks={tasks}
-          recentEvents={events || []}
           onClose={() => setSelectedAgent(null)}
         />
       )}
