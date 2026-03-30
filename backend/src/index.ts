@@ -34,7 +34,6 @@ import { getWorkspaceRoot } from './services/workspace.js'
 import { getPersonalContext, updatePersonalProfile } from './services/personal-context.js'
 import { startOpsMonitor } from './agents/ops.js'
 import { startFinanceRuntime, runFinanceCycleNow } from './agents/finance.js'
-import { startHrRuntime } from './agents/hr.js'
 import {
   executePersonalAssistantQuickAction,
   getPersonalAssistantQuickActionPrompt,
@@ -3232,10 +3231,9 @@ async function main(): Promise<void> {
     log.warn('LiteLLM not reachable — model calls will fail until it is up')
   }
 
-  // --- Start Ops / Finance / HR runtimes ---
+  // --- Start Ops / Finance runtimes ---
   startOpsMonitor(sendFounderNotification)
   startFinanceRuntime(sendFounderNotification)
-  startHrRuntime(sendFounderNotification)
   startFounderAutomationRuntime()
 
   // --- Start WhatsApp channel (T101) — non-blocking ---
