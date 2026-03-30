@@ -759,8 +759,7 @@ Constraints:
 - Use "blocked" when severe issues stop delivery.
 - Use "review" when work is promising but still needs fixes or clarification.
 - Use "pass" only when the deliverables support release readiness.
-- Always include at least 4 checklist items.
-- VISION: You have access to the "screenshot" tool. If a local server is running (e.g. localhost:3000), use it to capture screenshots and verify the UI.`
+- Always include at least 4 checklist items.`
 
   const userMessage = [
     `Client: ${clientName}`,
@@ -790,7 +789,6 @@ Constraints:
         agentId: 'qa',
         taskId: task.id,
         taskType: 'support',
-        tools: ['screenshot', 'shell'],
         ...(projectId ? { projectId } : {}),
         ...(clientId ? { clientId } : {}),
       }
