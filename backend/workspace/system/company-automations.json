@@ -2,6 +2,6 @@
   "financeWeeklyReport": {
     "enabled": true,
     "dayOfWeek": 1,
-    "lastSentWeekKey": null
+    "lastSentWeekKey": "2026-W14"
   }
 }
