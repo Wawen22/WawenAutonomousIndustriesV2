@@ -5,27 +5,62 @@
 ```
 CEO Agent (nemotron-120b)
 ├── Team SaaS
-│   ├── PM_SaaS (nemotron-120b)
-│   ├── Dev Lead SaaS (nemotron-120b)
-│   └── Dev SaaS (nemotron-120b)
+│   ├── Dev Lead SaaS (nemotron-120b)      ← planning, sprints, user stories
+│   └── Dev SaaS #1/#2 (nemotron-120b)    ← implementation workers
 ├── Team Software Dev
-│   ├── Architect (nemotron-120b)           ← orchestrates the 3 workers below
-│   ├── DevOps Engineer (nemotron-120b)     ← scaffold phase (always first)
-│   ├── Dev General (nemotron-120b)         ← application implementation
-│   ├── AI Engineer (nemotron-120b)         ← LLM/AI integrations (optional)
-│   └── QA (nemotron-120b)
+│   ├── Architect (minimax-m2.7)           ← orchestrates devops_engineer + dev_general
+│   ├── DevOps Engineer (minimax-m2.7)     ← scaffold phase (always first)
+│   ├── Dev General (minimax-m2.7)         ← all implementation (incl. AI/LLM features)
+│   └── QA (minimax-m2.7)
 ├── Team Consulting
-│   ├── Consulting Lead (GPT-5.4)
-│   └── Analyst (GPT-5.4 / Gemini 2.5 Flash)
+│   ├── Consulting Lead (nemotron-120b)
+│   └── Analyst (nemotron-120b)
 ├── Team Marketing
-│   ├── Marketing Strategist (GPT-5.4)
-│   ├── Content Creator (Gemini 2.5 Flash)
-│   └── Social Manager (Gemini 2.5 Flash)
-└── Team Ops / Finance / HR
-    ├── Ops Agent (Gemini 2.5 Flash)
-    ├── Finance Agent (GPT-5.4)
-    └── HR Agent (Gemini 2.5 Flash)
+│   ├── Marketing Strategist (glm-4.5-air)
+│   └── Content Writer (glm-4.5-air)       ← all content: blog, social, newsletter, scripts
+└── Team Ops / Finance
+    ├── Ops Agent (glm-4.5-air)
+    └── Finance Agent (nemotron-120b)
+
+Specialist Agents (on-demand only):
+├── Executive Summary   (glm-4.5-air)
+├── Feedback Synthesizer (nemotron-120b)
+├── Security Auditor    (nemotron-120b)
+├── API Tester          (nemotron-120b)
+├── DB Optimizer        (nemotron-120b)
+├── Legal Compliance    (nemotron-120b)
+└── Proposal Strategist (nemotron-120b)
 ```
+
+---
+
+## Runtime Status
+
+| Agent | Status | Notes |
+|---|---|---|
+| `ceo` | ✅ active | Delegation loop + NL intake |
+| `dev_lead_saas` | ✅ active | Sprint planning + worker orchestration |
+| `dev_saas_1`, `dev_saas_2` | ✅ active | Worker runtime; reads/edits repos |
+| `architect` | ✅ active | Architecture plan → devops_engineer + dev_general orchestration |
+| `devops_engineer` | ✅ active | Scaffold phase; activates sibling dev tasks when done |
+| `dev_general` | ✅ active | Agentic loop; handles all implementation incl. AI/LLM features |
+| `qa` | ✅ active | QA gate; writes `qa_report.md`, sets project status |
+| `consulting_lead` | ✅ active | Proposal delivery |
+| `analyst` | ✅ active | Analysis delivery |
+| `marketing_strategist` | ✅ active | Marketing plan → content_writer subtasks |
+| `content_writer` | ✅ active | Web research + content generation (blog, social, newsletter, scripts) |
+| `ops` | ✅ active | Health check every 15 min; stuck-task detection |
+| `finance` | ✅ active | Hourly cost check; monthly report |
+| `executive_summary` | ✅ active | On-demand: summarizes docs/reports/meeting notes |
+| `feedback_synthesizer` | ✅ active | On-demand: pattern analysis + priority scores |
+| `security_auditor` | ✅ active | On-demand: OWASP audit + secrets detection |
+| `api_tester` | ✅ active | On-demand: endpoint testing + contract validation |
+| `db_optimizer` | ✅ active | On-demand: schema review + SQL fix suggestions |
+| `legal_compliance` | ✅ active | On-demand: GDPR/privacy/contract review |
+| `proposal_strategist` | ✅ active | On-demand: full commercial proposals |
+
+**Archived agents** (retired, files in `backend/src/agents/_archived/`):
+`pm_saas` → `dev_lead_saas`, `ai_engineer` → `dev_general`, `automation_specialist` → `dev_general`, `content_creator` → `content_writer`, `social_manager` → `content_writer`, `hr` → retired, `behavioral_coach` → retired
 
 ---
 
@@ -34,13 +69,12 @@ CEO Agent (nemotron-120b)
 ### CEO Agent
 - **ID:** `ceo`
 - **Role:** Global vision, orchestration, high-level task assignment, Neb reporting
-- **Model:** GPT-5.4 (Azure Foundry)
+- **Model:** nemotron-120b
 - **Tools:** Supabase read-all, task create/update, event log, Telegram notify
 - **Reports to:** Neb (Founder)
 - **Manages:** All team leads
 - **Trigger:** New tasks from Neb, daily review cron, agent escalations
 - **Permissions:** Read all tables; write to `tasks`, `events`; cannot override model assignments
-- **Reporting:** `/status` and NL `status_report` now include active/blocked tasks, monthly invoiced vs paid revenue, recent errors, and problematic agents
 
 ### Founder (Neb)
 - **ID:** `founder`
@@ -48,74 +82,28 @@ CEO Agent (nemotron-120b)
 - **Interface:** Telegram Bot, WAI Dashboard, direct DB
 - **Permissions:** Full system access
 - **Commands:** `/start`, `/new_client`, `/new_project`, `/link_repo`, `/init_repo`, `/brief`, `/task`, `/projects`, `/clients`, `/assign_model`, `/status`, `/logs`, `/budget`, `/invoice`, `/mark_paid`, `/retry`, `/approve`, `/reject`
-- **Natural language founder ops:** retry/approve/reject task, invoice project, mark payment received, list clients/projects, status report
-- **Dashboard ops:** dedicated `Founder Ops` action center for blocked-task recovery, invoice queue, and outstanding payments
 - **Operational Guide:** `docs/FOUNDER_OPERATIONS_PLAYBOOK.md`
-
----
-
-## Runtime Implementation Status
-
-All agents are fully operational. The backend marks all agents as `online` at startup. All agents have a real runtime implementation — see the table below.
-
-| Agent / Group | Registry Status | Runtime Status | Notes |
-|--------------|-----------------|----------------|-------|
-| `ceo` | configured | ✅ implemented | Delegation loop active |
-| `pm_saas` | configured | ✅ implemented | User story generation active |
-| `dev_lead_saas` | configured | ✅ implemented | Sprint planning + worker orchestration active |
-| `dev_saas_1`, `dev_saas_2` | configured | ✅ implemented | Worker runtime active; can read/edit linked repos, run defensive checks, and writes implementation + `repo-execution-*.md` deliverables |
-| `consulting_lead` | configured | ✅ implemented | Proposal delivery active |
-| `analyst` | configured | ✅ implemented | Analysis delivery active |
-| `architect` | configured | ✅ implemented | Architecture plan + worker orchestration; creates devops_engineer, dev_general, ai_engineer tasks with explicit phase ordering |
-| `devops_engineer` | configured | ✅ implemented | **NEW** Agentic loop; scaffold phase — npm init, install deps, CI/CD, build verification; activates sibling dev tasks when done |
-| `dev_general` | configured | ✅ implemented | **REFACTORED** Agentic loop (iterative LLM→action→result); full application implementation with real shell/file access |
-| `ai_engineer` | configured | ✅ implemented | **NEW** Agentic loop; LLM/AI integrations, prompt engineering, RAG, embeddings, vector search |
-| `automation_specialist` | configured | ✅ implemented | **NEW** Agentic loop; workflow automations, n8n/Zapier/Make patterns, webhooks, data pipelines |
-| `qa` | configured | ✅ implemented | QA gate active; re-checks linked repo state, writes `qa_report.md`, and sets final project status |
-| `marketing_strategist` | configured | ✅ implemented | Marketing plan + worker orchestration active |
-| `content_creator` | configured | ✅ implemented | Content package delivery active |
-| `social_manager` | configured | ✅ implemented | Social calendar delivery active |
-| `ops` | configured | ✅ implemented | Runtime monitora task/agent stuck >30 min, registra `ops_alert` e notifica Neb |
-| `finance` | configured | ✅ implemented | Runtime esegue `checkBudget()`, genera report settimanale su `runs`, registra `finance_report_generated` |
-| `hr` | configured | ✅ implemented | Runtime aggrega `tasks/runs/events`, genera digest settimanale e registra `hr_digest_generated` |
-| `executive_summary` | configured | ✅ implemented | Condensa documenti/output in executive summary concisi con TL;DR, action items, urgency |
-| `feedback_synthesizer` | configured | ✅ implemented | Analizza feedback, identifica pattern con priority score, produce action items |
-| `security_auditor` | configured | ✅ implemented | Audit sicurezza codice/infra, OWASP Top 10, secrets detection, action plan |
-| `api_tester` | configured | ✅ implemented | Test endpoint API: auth, edge case, contract testing, response validation |
-| `db_optimizer` | configured | ✅ implemented | Review schema DB, N+1 queries, indici mancanti, query performance con SQL fix |
-| `legal_compliance` | configured | ✅ implemented | Review GDPR, privacy policy, contratti, ToS — analisi e raccomandazioni (no legal advice) |
-| `proposal_strategist` | configured | ✅ implemented | Proposta commerciale completa: exec summary, scope, tiered pricing, ROI, next steps |
-| `behavioral_coach` | configured | ✅ implemented | Personal mode: habit tracking, accountability check-in, nudge produttività per Neb via Telegram |
 
 ---
 
 ## Team SaaS
 
-Responsible for WAI's own SaaS products: from idea to deployed product.
-
-### PM_SaaS (Product Manager)
-- **ID:** `pm_saas`
-- **Role:** Roadmap, feature prioritization, user stories, acceptance criteria
-- **Model:** GPT-5.4
-- **Tools:** Supabase (tasks r/w), GitHub (issues), Dashboard (read)
-- **Outputs:** Feature specs, prioritized backlog, milestone plans
+Handles WAI's own SaaS products: from idea to deployed product.
 
 ### Dev Lead SaaS
 - **ID:** `dev_lead_saas`
-- **Role:** Technical planning, sprint planning, subtask creation for Dev agents
-- **Model:** GPT-5.4
+- **Role:** Technical planning, sprint planning, roadmap, feature prioritization, user stories, subtask creation for Dev agents
+- **Model:** nemotron-120b
 - **Tools:** Supabase, GitHub, Shell (read-only)
 - **Outputs:** Technical specs, task breakdowns, PR reviews
-- **Orchestration:** Independent implementation subtasks may run in parallel; if the linked repo is empty and needs bootstrap, `dev_saas_1` owns the foundation phase and `dev_saas_2` is queued until that dependency closes
+- **Absorbs:** `pm_saas` (retired — all SaaS PM work now handled here)
 
 ### Dev SaaS
-- **ID:** `dev_saas_1`, `dev_saas_2` (scalable)
+- **ID:** `dev_saas_1`, `dev_saas_2`
 - **Role:** Code implementation, tests, PRs, deploy prep
-- **Model:** GPT-5.4 (complex features) | Gemini 2.5 Flash (boilerplate, docs)
+- **Model:** nemotron-120b
 - **Tools:** GitHub, Shell, Vercel CLI, Supabase, File system
 - **Outputs:** Working code, passing tests, merged PRs
-- **Runtime:** If `repo_local_path` is present, workers inspect the real repo, apply safe file edits, run defensive `install`/`typecheck`/`build`/`test` checks only where scripts exist, and save both implementation deliverables and `repo-execution-*.md` summaries
-- **Failure handling:** If the predecessor worker fails on a queued bootstrap chain, the dependent task is automatically marked `blocked` instead of remaining `todo`
 
 ---
 
@@ -125,222 +113,134 @@ Handles custom software projects for clients or internal tooling.
 
 ### Architect
 - **ID:** `architect`
-- **Role:** System design, tech stack decisions, architecture diagrams, worker orchestration
-- **Model:** nemotron-120b
-- **Tools:** Supabase, GitHub, Browser (research)
-- **Outputs:** `deliverables/architecture_plan.md`, worker tasks with explicit phase ordering
-- **Runtime:** Reads `brief.md` plus linked repo inventory/git status, creates 2–3 worker tasks: `devops_engineer` (always first, no deps), `dev_general` (depends on devops), `ai_engineer` (optional, depends on devops), then stages QA
+- **Role:** System design, tech stack decisions, worker orchestration
+- **Model:** minimax-m2.7
+- **Tools:** Supabase, GitHub, Browser
+- **Outputs:** `deliverables/architecture_plan.md`, worker tasks
+- **Runtime:** Creates 2 worker tasks: `devops_engineer` (first, no deps) + `dev_general` (depends on devops). `dev_general` handles all implementation including AI/LLM features.
 
 ### DevOps Engineer
 - **ID:** `devops_engineer`
 - **Role:** Scaffold and infrastructure phase — runs first before any coding begins
-- **Model:** nemotron-120b
+- **Model:** minimax-m2.7
 - **Tools:** Shell, File system, GitHub
-- **Runtime:** Agentic loop (up to 20 iterations). Initializes project with npx/npm/pnpm, writes package.json/tsconfig/.env.example, installs dependencies, configures CI/CD, verifies the build. After success, activates sibling `dev_general` and `ai_engineer` tasks that were waiting.
+- **Runtime:** Agentic loop (up to 20 iterations). Initializes project, installs dependencies, configures CI/CD, verifies build. After success, activates sibling `dev_general` tasks.
 - **Outputs:** `deliverables/devops-scaffold-{taskId}.md`
 
 ### Dev General
 - **ID:** `dev_general`
-- **Role:** Full application implementation, refactoring, debugging, tests
-- **Model:** nemotron-120b
+- **Role:** Full application implementation, refactoring, debugging, tests, LLM/AI integrations, automation scripts, webhooks
+- **Model:** minimax-m2.7
 - **Tools:** GitHub, Shell, File system, Supabase
-- **Runtime:** Agentic loop (up to 20 iterations, iterative LLM→action→result). The agent sees real shell output after each command and adapts. Writes `deliverables/dev-general-{taskId}.md`. Activates QA gate once all DEV_WORKERS (devops_engineer, dev_general, ai_engineer) are done.
-- **Backward compat:** Existing tasks with `dev_general_1` or `dev_general_2` are dispatched to the same runtime.
-
-### AI Engineer
-- **ID:** `ai_engineer`
-- **Role:** LLM/AI integrations, prompt engineering, RAG pipelines, embeddings, vector search
-- **Model:** nemotron-120b
-- **Tools:** Shell, File system, GitHub
-- **Runtime:** Agentic loop. Implements AI/LLM features on top of the scaffolded repo. Runs after `devops_engineer` completes. Coordinates with `dev_general` in parallel.
-- **Outputs:** `deliverables/ai-engineer-{taskId}.md`
-
-### Automation Specialist
-- **ID:** `automation_specialist`
-- **Role:** Workflow automations, n8n/Zapier/Make integrations, webhooks, data pipelines
-- **Model:** nemotron-120b
-- **Tools:** Shell, File system, GitHub, Browser
-- **Runtime:** Agentic loop. Used for cross-team automation tasks not tied to a specific software delivery phase. Can be dispatched independently by CEO or as a sibling in a delivery chain.
-- **Outputs:** `deliverables/automation-specialist-{taskId}.md`
+- **Runtime:** Agentic loop (up to 20 iterations). Writes `deliverables/dev-general-{taskId}.md`. Activates QA gate when done.
+- **Absorbs:** `ai_engineer` and `automation_specialist` (both retired)
 
 ### QA Agent
 - **ID:** `qa`
 - **Role:** Test writing, test execution, quality checklists, bug reports
-- **Model:** Gemini 2.5 Flash
+- **Model:** minimax-m2.7
 - **Tools:** Shell (test runner), GitHub, Supabase
-- **Runtime:** Reviews architecture plus worker outputs, re-checks linked repo git status and applicable `typecheck`/`build`/`test` commands, distinguishes blocking issues vs warnings, writes `deliverables/qa_report.md`, and sets project status to `review`, `blocked`, or `delivered`
+- **Runtime:** Reviews worker outputs, re-checks repo, writes `deliverables/qa_report.md`, sets project status to `review`, `blocked`, or `delivered`
 
 ---
 
 ## Team Consulting
 
-Delivers research, analysis, and strategic reports for clients.
-
 ### Consulting Lead
 - **ID:** `consulting_lead`
 - **Role:** Intake client requests, define scope, manage delivery
-- **Model:** GPT-5.4
+- **Model:** nemotron-120b
 - **Tools:** Supabase, Email (SendGrid), Browser
 
 ### Analyst
 - **ID:** `analyst`
 - **Role:** Research, data gathering, report writing
-- **Model:** GPT-5.4 (synthesis) | Gemini 2.5 Flash (data gathering)
+- **Model:** nemotron-120b
 - **Tools:** Browser, Supabase, File system
 
 ---
 
 ## Team Marketing
 
-Drives awareness, content, and growth for WAI and its products.
-
 ### Marketing Strategist
 - **ID:** `marketing_strategist`
 - **Role:** Marketing strategy, campaign planning, funnel design
-- **Model:** GPT-5.4
+- **Model:** glm-4.5-air
 - **Tools:** Supabase, Browser, Email
-- **Runtime:** Produces `marketing-plan-*.md`, creates worker tasks for `content_creator` and `social_manager`
+- **Runtime:** Produces `marketing-plan-*.md`, creates worker tasks for `content_writer` (both content and social copy)
 
-### Content Creator
-- **ID:** `content_creator`
-- **Role:** Blog posts, social copy, video scripts, email newsletters
-- **Model:** Gemini 2.5 Flash
-- **Tools:** File system, Supabase, Browser
-- **Runtime:** Produces `content-package-*.md` deliverables
-
-### Social Manager
-- **ID:** `social_manager`
-- **Role:** Content scheduling, engagement monitoring, metrics reporting
-- **Model:** Gemini 2.5 Flash
-- **Tools:** Browser, Supabase, Email
-- **Runtime:** Produces `social-calendar-*.md` delivery calendars
+### Content Writer
+- **ID:** `content_writer`
+- **Role:** Autonomous content generation with web research — blog posts, social media posts, newsletters, scripts
+- **Model:** glm-4.5-air
+- **Tools:** Web search, file write
+- **Trigger:** CEO NL command `content_generate blog|social|newsletter <topic>`, or as subtask from marketing_strategist
+- **Runtime:** Researches topic (Serper), drafts with type-specific LLM prompt, saves `.md` to workspace, sends Telegram preview with inline keyboard `[✅ Approva] [❌ Rigetta]`
+- **Absorbs:** `content_creator` and `social_manager` (both retired)
 
 ---
 
-## Team Ops / Finance / HR
-
-Keeps WAI running smoothly, solvent, and well-documented.
+## Team Ops / Finance
 
 ### Ops Agent
 - **ID:** `ops`
-- **Role:** System monitoring, uptime checks, incident response, auto-restart coordination
-- **Model:** Gemini 2.5 Flash
+- **Role:** System monitoring, uptime checks, incident response
+- **Model:** glm-4.5-air
 - **Tools:** Supabase, Shell, Telegram notify
 - **Cron:** Every 15 minutes health check
-- **Runtime:** monitora task `in_progress` / `blocked` fermi oltre soglia e agenti con `agent_error` non recuperato; emette `ops_alert` e notifica Neb; può anche eseguire snapshot on-demand se delegato dal CEO
+- **Runtime:** Monitors tasks stuck >30 min and unrecovered `agent_error` events; emits `ops_alert` and notifies Neb
 
 ### Finance Agent
 - **ID:** `finance`
 - **Role:** API cost tracking, budget alerts, monthly reports
-- **Model:** GPT-5.4 (for report synthesis)
+- **Model:** nemotron-120b
 - **Tools:** Supabase (runs table), Email, Telegram notify
 - **Cron:** Hourly cost check; monthly report on 1st of month
-- **Runtime:** esegue `checkBudget()` dal service `budget.ts`, aggiorna `project_state.monthly_cost_usd`, genera un report settimanale reale su costi/runs per agente e modello, e supporta task finance espliciti
-
-### HR Agent
-- **ID:** `hr`
-- **Role:** Agent documentation, role definitions, process docs, onboarding new agents
-- **Model:** Gemini 2.5 Flash
-- **Tools:** Supabase, File system
-- **Runtime:** aggrega attività team da `tasks`, `runs`, `events`, genera weekly digest utile per Neb e supporta task HR espliciti
 
 ---
 
----
+## Specialist Agents (on-demand)
 
-## Specialist Agents (T121)
-
-Agents added in T121 to expand WAI's analytical and strategic capabilities.
+These agents are in the registry and dispatch switch, but CEO only routes to them when explicitly needed. They are not in the default routing path.
 
 ### Executive Summary Agent
 - **ID:** `executive_summary`
-- **Role:** Transform long documents, agent outputs, meeting notes, or reports into concise, actionable executive summaries with TL;DR, key points, action items, and urgency rating
-- **Model:** Gemini 2.5 Flash
-- **Team:** ops
+- **Role:** Transform long documents, agent outputs, meeting notes, or reports into concise actionable summaries with TL;DR, key points, action items, and urgency rating
+- **Model:** glm-4.5-air
 - **Output:** Structured summary + optional `exec-summary-*.md` deliverable
 
 ### Feedback Synthesizer
 - **ID:** `feedback_synthesizer`
-- **Role:** Analyze feedback from clients, users, or stakeholders; identify recurring themes and patterns with priority scores (1-10); produce action items and quick wins
-- **Model:** GPT-5.4
-- **Team:** consulting
-- **Output:** `feedback-synthesis.md` deliverable with patterns sorted by priority
+- **Role:** Analyze feedback from clients, users, or stakeholders; identify recurring themes and patterns with priority scores; produce action items
+- **Model:** nemotron-120b
+- **Output:** `feedback-synthesis.md` with patterns sorted by priority
 
 ### Security Auditor
 - **ID:** `security_auditor`
 - **Role:** Analyze code, infrastructure, and dependencies for security vulnerabilities. OWASP Top 10, secrets detection, auth flaws, injection vectors
-- **Model:** GPT-5.4 (high thinking)
-- **Team:** ops
-- **Output:** `security-audit.md` with severity-sorted findings, OWASP categories, action plan
-- **Note:** `captureMemory: false` — does not store raw audit output in agent memory
+- **Model:** nemotron-120b
+- **Output:** `security-audit.md` with severity-sorted findings and action plan
 
 ### API Tester
 - **ID:** `api_tester`
 - **Role:** Test API endpoints for authentication, edge cases, contract compliance, and response validation
-- **Model:** GPT-5.4
-- **Team:** dev
-- **Output:** `api-test-report.md` with test cases, auth findings, contract issues
-- **Note:** `captureMemory: false`
+- **Model:** nemotron-120b
+- **Output:** `api-test-report.md`
 
 ### DB Optimizer
 - **ID:** `db_optimizer`
 - **Role:** Review database schemas and query patterns; identify missing indexes, N+1 queries, anti-patterns, and slow queries. Provides exact SQL migration fixes
-- **Model:** GPT-5.4
-- **Team:** dev
-- **Output:** `db-optimization-report.md` with DB health score, issues, SQL index statements
-- **Note:** `captureMemory: false`
+- **Model:** nemotron-120b
+- **Output:** `db-optimization-report.md`
 
 ### Legal Compliance Agent
 - **ID:** `legal_compliance`
 - **Role:** Review contracts, GDPR compliance, privacy policies, and terms of service. Analysis and recommendations only — not binding legal advice
-- **Model:** GPT-5.4 (high thinking)
-- **Team:** ops
-- **Output:** `legal-compliance-review.md` with findings, GDPR gaps, compliance status table
-- **Note:** `captureMemory: false`. Always includes disclaimer.
+- **Model:** nemotron-120b
+- **Output:** `legal-compliance-review.md`
 
 ### Proposal Strategist
 - **ID:** `proposal_strategist`
-- **Role:** Build complete, conversion-optimized commercial proposals with tiered pricing, scope of work, ROI, milestones, and next steps
-- **Model:** GPT-5.4 (high thinking)
-- **Team:** consulting
-- **Output:** `proposal-strategy.md` — full commercial proposal document
-
-### Behavioral Coach
-- **ID:** `behavioral_coach`
-- **Role:** Personal accountability partner for Neb. Habit tracking, daily/weekly check-ins, streak tracking, productivity nudges — delivered via Telegram
-- **Model:** Gemini 2.5 Flash
-- **Team:** ops
-- **Tone:** Direct, warm, Italian language for personal communications
-- **Trigger:** Explicit task from Neb or scheduled check-in
-
----
-
-## Delegation and Reporting Rules
-
-1. **Neb → CEO**: Neb gives strategic direction; CEO breaks into team-level tasks
-2. **CEO → Team Leads**: Each task is assigned to exactly one team lead
-3. **Team Lead → Workers**: Lead breaks task into subtasks for worker agents
-4. **Worker → Team Lead**: Worker updates task status and reports output
-5. **Team Lead → CEO**: Lead reports completion or escalates blockers
-6. **CEO → Neb**: CEO summarizes and notifies via Telegram
-
-Rule of thumb for orchestration:
-- Different teams or truly independent subtasks may run in parallel.
-- Worker subtasks with explicit dependencies remain queued until prerequisites are terminal.
-- If a prerequisite is `blocked`, the dependent task is auto-blocked rather than left pending forever.
-
-### Escalation Triggers
-
-An agent MUST escalate to its manager when:
-- A task is blocked for > 30 minutes
-- An error rate exceeds 3 consecutive failures
-- The task requires a decision outside defined parameters
-- Budget consumption for a single task exceeds $5
-
-### Approval Required (Neb review)
-
-- Code deployed to production
-- Client-facing emails sent
-- Budget threshold exceeded
-- New agent or model added to the system
-- Tasks marked `requires_human_review = true`
+- **Role:** Build complete commercial proposals with tiered pricing, scope of work, ROI, milestones, and next steps
+- **Model:** nemotron-120b
+- **Output:** `proposal-strategy.md`

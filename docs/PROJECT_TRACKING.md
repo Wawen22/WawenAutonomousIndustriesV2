@@ -91,6 +91,7 @@ This now implies a platform decision:
 
 | ID | Title | Status | Owner | Priority | Next step |
 |----|-------|--------|-------|----------|-----------|
+| T144 | Agent Cleanup | ✅ Done | Claude | 1 | Retired 7 redundant agents (pm_saas, ai_engineer, automation_specialist, content_creator, social_manager, hr, behavioral_coach). Consolidated from 28 to 21 agents. Existing tasks redirected to successors. |
 | T143 | Analytics Dashboard | ✅ Done | Claude | 1 | AnalyticsView in Company mode: traffic summary (7/30d), top pages, referrer breakdown, 4-stage lead funnel |
 | T142 | Content Factory | ✅ Done | Claude | 1 | content_writer agent: web research → LLM draft → Telegram preview + inline keyboard approval → .md to workspace |
 | T141 | Stripe payment automation | ✅ Done | Claude | 1 | Stripe Invoice on invoice_project, hosted payment URL in email CTA, webhook auto-mark paid + Telegram notify |
