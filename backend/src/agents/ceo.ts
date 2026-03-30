@@ -7,23 +7,17 @@ import { runAgent } from '../services/llm.js'
 import { createTask, getProjectById, transitionTaskStatus, updateTaskStatus } from '../services/supabase.js'
 import { log, recordEvent } from '../services/logger.js'
 import { loadAllWorkspaceContext, resolveSoftwareWorkspacePath } from './software_delivery_utils.js'
-import { runPmSaasAgent } from './pm_saas.js'
 import { runDevLeadSaasAgent } from './dev_lead_saas.js'
 import { runDevSaasAgent } from './dev_saas.js'
 import { runConsultingLeadAgent } from './consulting_lead.js'
 import { runAnalystAgent } from './analyst.js'
 import { runMarketingStrategistAgent } from './marketing_strategist.js'
-import { runContentCreatorAgent } from './content_creator.js'
-import { runSocialManagerAgent } from './social_manager.js'
 import { runArchitectAgent } from './architect.js'
 import { runDevGeneralAgent } from './dev_general.js'
 import { runDevOpsEngineerAgent } from './devops_engineer.js'
-import { runAiEngineerAgent } from './ai_engineer.js'
-import { runAutomationSpecialistAgent } from './automation_specialist.js'
 import { runQaAgent } from './qa.js'
 import { runOpsAgent } from './ops.js'
 import { runFinanceAgent } from './finance.js'
-import { runHrAgent } from './hr.js'
 import { runExecutiveSummaryAgent } from './executive_summary.js'
 import { runFeedbackSynthesizerAgent } from './feedback_synthesizer.js'
 import { runSecurityAuditorAgent } from './security_auditor.js'
@@ -31,7 +25,6 @@ import { runApiTesterAgent } from './api_tester.js'
 import { runDbOptimizerAgent } from './db_optimizer.js'
 import { runLegalComplianceAgent } from './legal_compliance.js'
 import { runProposalStrategistAgent } from './proposal_strategist.js'
-import { runBehavioralCoachAgent } from './behavioral_coach.js'
 import { runContentWriterAgent } from './content_writer.js'
 import type { Task, TaskType, TaskPriority } from '../types/index.js'
 
@@ -41,21 +34,19 @@ import type { Task, TaskType, TaskPriority } from '../types/index.js'
 
 const AGENT_ROSTER = `
 Available agents:
-- pm_saas         – Product Manager SaaS: roadmap, feature prioritization, user stories for SaaS products
-- dev_lead_saas   – Dev Lead SaaS: technical planning, sprint planning, subtask breakdown
+- dev_lead_saas   – Dev Lead SaaS: technical planning, sprint planning, roadmap, feature prioritization, user stories, subtask breakdown — USE THIS for SaaS product coordination
 - dev_saas_1      – Developer SaaS #1: code implementation, tests, PRs
 - dev_saas_2      – Developer SaaS #2: boilerplate, docs, simple features
-- architect            – Architect: system design, repo-aware planning, execution architecture for website/app/automation/custom software delivery — USE THIS for client software projects that are not SaaS; it will orchestrate devops_engineer, dev_general, and ai_engineer automatically
-- qa                   – QA Agent: quality gate, release review, bug reports
+- architect       – Architect: system design, repo-aware planning, execution architecture for website/app/automation/custom software delivery — USE THIS for client software projects; it will orchestrate devops_engineer and dev_general automatically
+- devops_engineer – DevOps Engineer: project scaffold, dependency install, CI/CD setup, build verification
+- dev_general     – Developer General: full implementation, refactoring, debugging, tests, LLM integrations, automation scripts, webhooks — USE THIS for all implementation tasks not requiring full SaaS team coordination
+- qa              – QA Agent: quality gate, release review, bug reports
 - consulting_lead – Consulting Lead: client proposals, scope definition, consulting delivery pipeline — USE THIS for any client project task, consulting work, or proposal creation
 - analyst         – Analyst: market research, data gathering, competitive analysis, reports — USE THIS for standalone analysis tasks without a consulting proposal
-- marketing_strategist – Marketing Strategist: campaigns, funnels, positioning, content plans — USE THIS for project-scoped marketing, content, copywriting, launch or growth work
-- content_creator – Content Creator: blog posts, social copy, scripts, newsletters — USE THIS for standalone copy/content production tasks
-- content_writer      – Content Writer Agent: autonomous content generation with web research — blog posts (800-1200 words), social media variants, newsletters — USE THIS when a task explicitly asks to write/generate a content piece for a client project with research backing
-- social_manager  – Social Media Manager: scheduling, engagement, metrics — USE THIS for standalone distribution, social planning, or channel calendar tasks
+- marketing_strategist – Marketing Strategist: campaigns, funnels, positioning, content plans — USE THIS for project-scoped marketing, launch or growth work
+- content_writer  – Content Writer Agent: autonomous content generation with web research — blog posts, social media posts, newsletters, scripts — USE THIS for all content creation and copywriting tasks
 - ops             – Ops Agent: system monitoring, uptime, incidents
 - finance         – Finance Agent: cost tracking, budget alerts, reports
-- hr              – HR Agent: agent docs, role definitions, process docs
 - executive_summary   – Executive Summary Agent: condense long documents, meeting notes, or agent outputs into concise actionable summaries — USE THIS when Neb asks for a summary of anything
 - feedback_synthesizer – Feedback Synthesizer: analyze client/user feedback, identify patterns, priority scores, action items — USE THIS for any feedback analysis task
 - security_auditor    – Security Auditor: code security review, OWASP Top 10, secrets detection, infra vulnerabilities — USE THIS for any security audit task
@@ -63,12 +54,11 @@ Available agents:
 - db_optimizer        – DB Optimizer: schema review, missing indexes, N+1 queries, query performance — USE THIS for database performance or schema review tasks
 - legal_compliance    – Legal Compliance Agent: GDPR review, privacy policy, contracts, ToS analysis — USE THIS for legal/compliance review tasks (analysis only, not legal advice)
 - proposal_strategist – Proposal Strategist: build complete commercial proposals with tiered pricing, scope, ROI — USE THIS for creating structured sales proposals
-- behavioral_coach    – Behavioral Coach: personal habit tracking, accountability check-ins, productivity nudges for Neb — USE THIS for personal productivity or habit tracking tasks
 `.trim()
 
 const VALID_TASK_TYPES = [
   'dev', 'dev_complex', 'dev_simple', 'marketing', 'content',
-  'consulting', 'analysis', 'ops', 'finance', 'hr',
+  'consulting', 'analysis', 'ops', 'finance',
   'strategy', 'architecture', 'planning', 'support', 'routing',
 ] as const
 
@@ -185,10 +175,11 @@ Valid taskType values: ${VALID_TASK_TYPES.join(', ')}
 
 Routing hints:
 - If the task is a client project with type consulting or ai, prefer consulting_lead unless it is pure standalone analysis.
-- If the task is for saas delivery, prefer pm_saas or dev_lead_saas unless it is clearly a single worker task.
+- If the task is for SaaS product delivery (roadmap, features, sprints), prefer dev_lead_saas.
 - If the task is for a client website, app, automation, portal, dashboard, internal tool, integration, or custom software project, prefer architect unless it is explicitly QA-only or a direct follow-up for a specific dev_general worker.
-- If the task is for marketing, content, copywriting, design, launches, funnels, or audience growth, prefer marketing_strategist for coordinated delivery. Use content_creator or social_manager directly only for clearly standalone execution.
-- CRITICAL OVERRIDE: If the task involves CREATING A FILE or WRITING CODE (HTML, CSS, JS, script, page, report file, PDF generator, dashboard, etc.) — regardless of project type — always prefer architect. The type of work (implementation) overrides the project domain. Architect will orchestrate devops_engineer, dev_general, and ai_engineer automatically.
+- If the task is for marketing, launches, funnels, or audience growth strategy, prefer marketing_strategist.
+- If the task is for writing content (blog post, social copy, newsletter, script), prefer content_writer.
+- CRITICAL OVERRIDE: If the task involves CREATING A FILE or WRITING CODE (HTML, CSS, JS, script, page, report file, PDF generator, dashboard, etc.) — regardless of project type — always prefer architect. The type of work (implementation) overrides the project domain. Architect will orchestrate devops_engineer and dev_general automatically.
 - CRITICAL OVERRIDE: If the task says "usa i contenuti esistenti", "usa i deliverable", "prendi quello che hai fatto", "crea una pagina da", "generate from existing" — the workspace context below may list those files. Read it and route to architect who can read and use them.
 - If workspace context lists existing deliverables (marketing plans, analysis, proposals, etc.) and the task is to CREATE SOMETHING FROM them, always prefer architect.
 - If the task asks to summarize, condense, or make a brief of a document, meeting, or report, prefer executive_summary.
@@ -198,7 +189,6 @@ Routing hints:
 - If the task involves DB schema review, query optimization, missing indexes, or N+1 detection, prefer db_optimizer.
 - If the task involves GDPR review, privacy policy audit, contract review, or ToS compliance, prefer legal_compliance.
 - If the task involves building a commercial proposal, sales deck structure, or pricing strategy for a client, prefer proposal_strategist over consulting_lead.
-- If the task involves Neb's personal habits, productivity check-in, or accountability tracking, prefer behavioral_coach.
 
 Respond with ONLY a JSON object — no markdown, no text outside JSON:
 {
@@ -293,11 +283,7 @@ Analyze and delegate to the most appropriate agent.`
     )
 
     // Invoke downstream agents asynchronously (fire-and-forget)
-    if (delegation.delegateTo === 'pm_saas') {
-      void runPmSaasAgent(subtask, notify).catch((err: unknown) => {
-        log.error({ err, subtaskId: subtask.id }, 'PM SaaS Agent failed')
-      })
-    } else if (delegation.delegateTo === 'dev_lead_saas') {
+    if (delegation.delegateTo === 'dev_lead_saas' || delegation.delegateTo === 'pm_saas') {
       void runDevLeadSaasAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'Dev Lead SaaS Agent failed')
       })
@@ -318,14 +304,6 @@ Analyze and delegate to the most appropriate agent.`
       void runMarketingStrategistAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'Marketing Strategist Agent failed')
       })
-    } else if (delegation.delegateTo === 'content_creator') {
-      void runContentCreatorAgent(subtask, notify).catch((err: unknown) => {
-        log.error({ err, subtaskId: subtask.id }, 'Content Creator Agent failed')
-      })
-    } else if (delegation.delegateTo === 'social_manager') {
-      void runSocialManagerAgent(subtask, notify).catch((err: unknown) => {
-        log.error({ err, subtaskId: subtask.id }, 'Social Manager Agent failed')
-      })
     } else if (delegation.delegateTo === 'architect') {
       void runArchitectAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'Architect Agent failed')
@@ -343,14 +321,6 @@ Analyze and delegate to the most appropriate agent.`
       void runDevGeneralAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id, assignee: assigneeId }, 'Dev General Agent failed')
       })
-    } else if (delegation.delegateTo === 'ai_engineer') {
-      void runAiEngineerAgent(subtask, notify).catch((err: unknown) => {
-        log.error({ err, subtaskId: subtask.id }, 'AI Engineer Agent failed')
-      })
-    } else if (delegation.delegateTo === 'automation_specialist') {
-      void runAutomationSpecialistAgent(subtask, notify).catch((err: unknown) => {
-        log.error({ err, subtaskId: subtask.id }, 'Automation Specialist Agent failed')
-      })
     } else if (delegation.delegateTo === 'qa') {
       void runQaAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'QA Agent failed')
@@ -362,10 +332,6 @@ Analyze and delegate to the most appropriate agent.`
     } else if (delegation.delegateTo === 'finance') {
       void runFinanceAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'Finance Agent failed')
-      })
-    } else if (delegation.delegateTo === 'hr') {
-      void runHrAgent(subtask, notify).catch((err: unknown) => {
-        log.error({ err, subtaskId: subtask.id }, 'HR Agent failed')
       })
     } else if (delegation.delegateTo === 'executive_summary') {
       void runExecutiveSummaryAgent(subtask, notify).catch((err: unknown) => {
@@ -394,10 +360,6 @@ Analyze and delegate to the most appropriate agent.`
     } else if (delegation.delegateTo === 'proposal_strategist') {
       void runProposalStrategistAgent(subtask, notify).catch((err: unknown) => {
         log.error({ err, subtaskId: subtask.id }, 'Proposal Strategist Agent failed')
-      })
-    } else if (delegation.delegateTo === 'behavioral_coach') {
-      void runBehavioralCoachAgent(subtask, notify).catch((err: unknown) => {
-        log.error({ err, subtaskId: subtask.id }, 'Behavioral Coach Agent failed')
       })
     } else if (delegation.delegateTo === 'content_writer') {
       void runContentWriterAgent(subtask, notify).catch((err: unknown) => {
