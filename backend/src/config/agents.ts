@@ -66,19 +66,6 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
 
   // --- Team SaaS ---
 
-  pm_saas: {
-    id: 'pm_saas',
-    name: 'Product Manager – SaaS',
-    role: 'Roadmap, feature prioritization, user stories, acceptance criteria',
-    team: 'saas',
-    model_id: assignedModel('pm_saas'),
-    config: makeConfig({
-      tools: ['supabase_read', 'supabase_write_tasks', 'github_issues', 'browser'],
-      thinkingLevel: 'high',
-      canReadAllTasks: true,
-    }),
-  },
-
   dev_lead_saas: {
     id: 'dev_lead_saas',
     name: 'Dev Lead – SaaS',
@@ -167,35 +154,6 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     }),
   },
 
-  ai_engineer: {
-    id: 'ai_engineer',
-    name: 'AI Engineer',
-    role: 'LLM integrations, prompt engineering, RAG pipelines, vector search, embeddings',
-    team: 'dev',
-    model_id: assignedModel('ai_engineer'),
-    config: makeConfig({
-      tools: ['shell', 'file_system', 'github', 'supabase_read'],
-      maxCostPerTaskUsd: 10,
-      thinkingLevel: 'high',
-      canUseShell: true,
-      canUseGitHub: true,
-    }),
-  },
-
-  automation_specialist: {
-    id: 'automation_specialist',
-    name: 'Automation Specialist',
-    role: 'Workflow automations, n8n/Zapier/Make integrations, webhooks, data pipelines',
-    team: 'dev',
-    model_id: assignedModel('automation_specialist'),
-    config: makeConfig({
-      tools: ['shell', 'file_system', 'github', 'supabase_read', 'browser'],
-      maxCostPerTaskUsd: 10,
-      canUseShell: true,
-      canUseGitHub: true,
-    }),
-  },
-
   qa: {
     id: 'qa',
     name: 'QA Agent',
@@ -256,32 +214,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     }),
   },
 
-  content_creator: {
-    id: 'content_creator',
-    name: 'Content Creator',
-    role: 'Blog posts, social copy, video scripts, email newsletters',
-    team: 'marketing',
-    model_id: assignedModel('content_creator'),
-    config: makeConfig({
-      tools: ['file_system', 'browser', 'supabase_read', 'file_export'],
-      maxCostPerTaskUsd: 2,
-    }),
-  },
-
-  social_manager: {
-    id: 'social_manager',
-    name: 'Social Media Manager',
-    role: 'Content scheduling, engagement monitoring, metrics reporting',
-    team: 'marketing',
-    model_id: assignedModel('social_manager'),
-    config: makeConfig({
-      tools: ['browser', 'supabase_read', 'email', 'file_export'],
-      maxCostPerTaskUsd: 1,
-      canSendEmail: true,
-    }),
-  },
-
-  // --- Team Ops/Finance/HR ---
+  // --- Team Ops/Finance ---
 
   ops: {
     id: 'ops',
@@ -312,19 +245,7 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
     }),
   },
 
-  hr: {
-    id: 'hr',
-    name: 'HR Agent',
-    role: 'Agent documentation, role definitions, process docs',
-    team: 'ops',
-    model_id: assignedModel('hr'),
-    config: makeConfig({
-      tools: ['file_system', 'supabase_read', 'supabase_write_events', 'file_export'],
-      maxCostPerTaskUsd: 2,
-    }),
-  },
-
-  // --- New Specialist Agents (T121) ---
+  // --- Specialist Agents (on-demand) ---
 
   executive_summary: {
     id: 'executive_summary',
@@ -414,19 +335,6 @@ export const AGENTS: Record<string, Omit<Agent, 'status' | 'created_at' | 'updat
       tools: ['file_system', 'supabase_read', 'file_export'],
       maxCostPerTaskUsd: 10,
       thinkingLevel: 'high',
-    }),
-  },
-
-  behavioral_coach: {
-    id: 'behavioral_coach',
-    name: 'Behavioral Coach',
-    role: 'Personal habit tracker, accountability check-ins, and productivity nudges for Neb via Telegram',
-    team: 'ops',
-    model_id: assignedModel('behavioral_coach'),
-    config: makeConfig({
-      tools: ['supabase_read', 'telegram_notify'],
-      maxCostPerTaskUsd: 1,
-      canSendTelegram: true,
     }),
   },
 
