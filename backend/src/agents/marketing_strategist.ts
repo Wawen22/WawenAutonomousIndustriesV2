@@ -13,8 +13,7 @@ import { createTask, updateProjectStatus, updateTaskStatus } from '../services/s
 import { log, recordEvent } from '../services/logger.js'
 import { appendProjectProgress } from '../services/workspace.js'
 import { resolveMarketingWorkspacePath } from './marketing_utils.js'
-import { runContentCreatorAgent } from './content_creator.js'
-import { runSocialManagerAgent } from './social_manager.js'
+import { runContentWriterAgent } from './content_writer.js'
 import type { Task } from '../types/index.js'
 
 interface WorkerTaskPlan {
@@ -219,12 +218,12 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
   "timeline": "<delivery timeline>",
   "successMetrics": ["<metric 1>", "<metric 2>"],
   "contentTask": {
-    "title": "<task title for content_creator>",
+    "title": "<task title for content creation>",
     "description": "<clear execution brief>",
     "outputs": ["<output 1>", "<output 2>"]
   },
   "socialTask": {
-    "title": "<task title for social_manager>",
+    "title": "<task title for social content>",
     "description": "<clear execution brief>",
     "outputs": ["<output 1>", "<output 2>"]
   }
@@ -307,14 +306,14 @@ Constraints:
       parent_task_id: task.id,
       ...(projectId ? { project_id: projectId } : {}),
       delegator_agent_id: 'marketing_strategist',
-      assignee_agent_id: 'content_creator',
+      assignee_agent_id: 'content_writer',
       requires_human_review: false,
       metadata: {
         ...baseMetadata,
         requested_outputs: marketingPlan.contentTask.outputs,
       },
     })
-    createdTasks.push({ id: contentTask.id, assignee: 'content_creator', title: contentTask.title })
+    createdTasks.push({ id: contentTask.id, assignee: 'content_writer', title: contentTask.title })
 
     const socialTask = await createTask({
       title: marketingPlan.socialTask.title.substring(0, 100),
@@ -324,20 +323,20 @@ Constraints:
       parent_task_id: task.id,
       ...(projectId ? { project_id: projectId } : {}),
       delegator_agent_id: 'marketing_strategist',
-      assignee_agent_id: 'social_manager',
+      assignee_agent_id: 'content_writer',
       requires_human_review: false,
       metadata: {
         ...baseMetadata,
         requested_outputs: marketingPlan.socialTask.outputs,
       },
     })
-    createdTasks.push({ id: socialTask.id, assignee: 'social_manager', title: socialTask.title })
+    createdTasks.push({ id: socialTask.id, assignee: 'content_writer', title: socialTask.title })
 
-    void runContentCreatorAgent(contentTask, notify).catch((err: unknown) => {
-      log.error({ err, subtaskId: contentTask.id }, 'Content Creator Agent failed')
+    void runContentWriterAgent(contentTask, notify).catch((err: unknown) => {
+      log.error({ err, subtaskId: contentTask.id }, 'Content Writer Agent (content) failed')
     })
-    void runSocialManagerAgent(socialTask, notify).catch((err: unknown) => {
-      log.error({ err, subtaskId: socialTask.id }, 'Social Manager Agent failed')
+    void runContentWriterAgent(socialTask, notify).catch((err: unknown) => {
+      log.error({ err, subtaskId: socialTask.id }, 'Content Writer Agent (social) failed')
     })
 
     if (projectId) {

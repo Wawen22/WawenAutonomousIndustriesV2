@@ -31,7 +31,6 @@ import {
   renderRepoExecutionMarkdown,
 } from './software_repo_runtime.js'
 import { runDevGeneralAgent } from './dev_general.js'
-import { runAiEngineerAgent } from './ai_engineer.js'
 import type { Task } from '../types/index.js'
 
 export async function runDevOpsEngineerAgent(
@@ -177,7 +176,7 @@ export async function runDevOpsEngineerAgent(
       const freshSibling = await getTaskById(sibling.id)
       const taskToRun = freshSibling ?? { ...siblingTask, status: 'in_progress' as const }
 
-      const runner = sibling.assignee_agent_id === 'ai_engineer' ? runAiEngineerAgent : runDevGeneralAgent
+      const runner = runDevGeneralAgent
       void runner(taskToRun, notify).catch((err: unknown) => {
         log.error({ err, siblingTaskId: sibling.id, assignee: sibling.assignee_agent_id }, 'DevOps: sibling task failed')
       })

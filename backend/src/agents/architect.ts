@@ -13,7 +13,6 @@ import { log, recordEvent } from '../services/logger.js'
 import { appendProjectProgress, tickProgressChecklist } from '../services/workspace.js'
 import { runDevGeneralAgent } from './dev_general.js'
 import { runDevOpsEngineerAgent } from './devops_engineer.js'
-import { runAiEngineerAgent } from './ai_engineer.js'
 import {
   loadAllWorkspaceContext,
   loadRepoContext,
@@ -25,7 +24,7 @@ import { initWorkspaceRepo } from './software_repo_runtime.js'
 import type { Task } from '../types/index.js'
 
 interface ArchitectureImplementationTask {
-  assignee: 'devops_engineer' | 'dev_general' | 'ai_engineer'
+  assignee: 'devops_engineer' | 'dev_general'
   title: string
   focus: string
   description: string
@@ -56,7 +55,7 @@ function parseImplementationTask(value: unknown): ArchitectureImplementationTask
 
   const task = value as Record<string, unknown>
   if (
-    (task['assignee'] !== 'devops_engineer' && task['assignee'] !== 'dev_general' && task['assignee'] !== 'ai_engineer') ||
+    (task['assignee'] !== 'devops_engineer' && task['assignee'] !== 'dev_general') ||
     typeof task['title'] !== 'string' ||
     typeof task['focus'] !== 'string' ||
     typeof task['description'] !== 'string'
@@ -276,13 +275,11 @@ IMPORTANT: If workspace context includes existing deliverables, your workers MUS
 
 ## Worker Team (use EXACTLY these IDs):
 - devops_engineer: project scaffolding, npm init, install, CI/CD, Docker, env setup — ALWAYS include this worker, ALWAYS first
-- dev_general: main application code, routes, components, business logic, database integration — ALWAYS include this worker
-- ai_engineer: AI/LLM integrations, RAG pipelines, embeddings, prompt engineering — ONLY include if the project involves AI features
+- dev_general: main application code, routes, components, business logic, database integration, AI/LLM integrations, RAG pipelines, embeddings — ALWAYS include this worker
 
 ## Phasing Rules:
 1. devops_engineer runs FIRST with no dependencies
 2. dev_general runs SECOND, depends on devops_engineer
-3. ai_engineer (if included) runs in parallel with dev_general after devops_engineer
 
 Respond with ONLY a JSON object — no markdown, no text outside JSON:
 {
@@ -315,8 +312,7 @@ Respond with ONLY a JSON object — no markdown, no text outside JSON:
 
 Constraints:
 - ALWAYS include devops_engineer as the first task.
-- ALWAYS include dev_general as the second task.
-- ONLY include ai_engineer (as third task) if the project requires AI/LLM features.
+- ALWAYS include dev_general as the second task (handles all implementation including AI/LLM).
 - devops_engineer must scaffold the project cleanly so dev_general can implement on top.
 - Keep the plan grounded in real client delivery: website, app, automation, portal, dashboard, or custom software.
 - When repo context exists, reference real repo-relative modules and folders.
@@ -412,15 +408,15 @@ Constraints:
       ...(effectiveRepoUrl ? { repo_url: effectiveRepoUrl } : {}),
     }
 
-    // Phase ordering: devops_engineer first (no deps), then dev_general + ai_engineer (dep on devops_engineer)
-    const phaseOrder: Array<ArchitectureImplementationTask['assignee']> = ['devops_engineer', 'dev_general', 'ai_engineer']
+    // Phase ordering: devops_engineer first (no deps), then dev_general (dep on devops_engineer)
+    const phaseOrder: Array<ArchitectureImplementationTask['assignee']> = ['devops_engineer', 'dev_general']
     const orderedImplementationTasks = [...architecturePlan.implementationTasks].sort(
       (a, b) => phaseOrder.indexOf(a.assignee) - phaseOrder.indexOf(b.assignee)
     )
 
     for (const implementationTask of orderedImplementationTasks) {
       const devopsTaskId = createdTaskIdsByAssignee.get('devops_engineer')
-      // dev_general and ai_engineer always depend on devops_engineer being done first
+      // dev_general always depends on devops_engineer being done first
       const dependencyTaskIds =
         implementationTask.assignee !== 'devops_engineer' && devopsTaskId
           ? [devopsTaskId]
@@ -432,7 +428,6 @@ Constraints:
 
       const taskType =
         implementationTask.assignee === 'devops_engineer' ? 'dev_simple'
-        : implementationTask.assignee === 'ai_engineer' ? 'dev_complex'
         : 'dev_complex'
 
       const createdTask = await createTask({
@@ -476,7 +471,6 @@ Constraints:
       if (dependencyTaskIds.length === 0) {
         const runner =
           implementationTask.assignee === 'devops_engineer' ? runDevOpsEngineerAgent
-          : implementationTask.assignee === 'ai_engineer' ? runAiEngineerAgent
           : runDevGeneralAgent
 
         void runner(createdTask, notify).catch((err: unknown) => {
