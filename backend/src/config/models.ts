@@ -133,7 +133,6 @@ export const AGENT_MODEL_DEFAULTS: Record<string, string> = {
   ceo: 'nemotron-120b',
 
   // Team SaaS
-  pm_saas: 'nemotron-120b',
   dev_lead_saas: 'nemotron-120b',
   dev_saas_1: 'nemotron-120b',
   dev_saas_2: 'nemotron-120b',
@@ -142,8 +141,6 @@ export const AGENT_MODEL_DEFAULTS: Record<string, string> = {
   architect: 'minimax-m2.7',
   devops_engineer: 'minimax-m2.7',
   dev_general: 'minimax-m2.7',
-  ai_engineer: 'minimax-m2.7',
-  automation_specialist: 'minimax-m2.7',
   qa: 'minimax-m2.7',
 
   // Team Consulting — analysis → nemotron-120b
@@ -152,13 +149,10 @@ export const AGENT_MODEL_DEFAULTS: Record<string, string> = {
 
   // Team Marketing — content → glm-4.5-air
   marketing_strategist: 'glm-4.5-air',
-  content_creator: 'glm-4.5-air',
-  social_manager: 'glm-4.5-air',
 
-  // Team Ops/Finance/HR
+  // Team Ops/Finance
   ops: 'glm-4.5-air',
   finance: 'nemotron-120b',
-  hr: 'glm-4.5-air',
 
   // Specialist agents (T121)
   executive_summary: 'glm-4.5-air',       // fast summarization — no complex reasoning needed
@@ -168,7 +162,6 @@ export const AGENT_MODEL_DEFAULTS: Record<string, string> = {
   db_optimizer: 'nemotron-120b',           // schema + query analysis
   legal_compliance: 'nemotron-120b',       // complex legal reasoning
   proposal_strategist: 'nemotron-120b',    // structured commercial output
-  behavioral_coach: 'glm-4.5-air',        // lightweight personal messages
 }
 
 // ---------------------------------------------------------------------------
@@ -191,7 +184,6 @@ const SIMPLE_TASK_TYPES = new Set<TaskType>([
   'content',
   'support',
   'routing',
-  'hr',
 ])
 
 // ---------------------------------------------------------------------------
