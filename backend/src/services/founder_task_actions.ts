@@ -9,23 +9,17 @@ import {
 } from './supabase.js'
 import { getPendingDependencyIds, getBlockedDependencyIds } from '../agents/software_delivery_utils.js'
 import { runCeoAgent } from '../agents/ceo.js'
-import { runPmSaasAgent } from '../agents/pm_saas.js'
 import { runDevLeadSaasAgent } from '../agents/dev_lead_saas.js'
 import { runDevSaasAgent } from '../agents/dev_saas.js'
 import { runConsultingLeadAgent } from '../agents/consulting_lead.js'
 import { runAnalystAgent } from '../agents/analyst.js'
 import { runMarketingStrategistAgent } from '../agents/marketing_strategist.js'
-import { runContentCreatorAgent } from '../agents/content_creator.js'
-import { runSocialManagerAgent } from '../agents/social_manager.js'
 import { runArchitectAgent } from '../agents/architect.js'
 import { runDevGeneralAgent } from '../agents/dev_general.js'
 import { runDevOpsEngineerAgent } from '../agents/devops_engineer.js'
-import { runAiEngineerAgent } from '../agents/ai_engineer.js'
-import { runAutomationSpecialistAgent } from '../agents/automation_specialist.js'
 import { resumeApprovedDeliveryGates, runQaAgent } from '../agents/qa.js'
 import { runOpsAgent } from '../agents/ops.js'
 import { runFinanceAgent } from '../agents/finance.js'
-import { runHrAgent } from '../agents/hr.js'
 import { runExecutiveSummaryAgent } from '../agents/executive_summary.js'
 import { runFeedbackSynthesizerAgent } from '../agents/feedback_synthesizer.js'
 import { runSecurityAuditorAgent } from '../agents/security_auditor.js'
@@ -33,7 +27,7 @@ import { runApiTesterAgent } from '../agents/api_tester.js'
 import { runDbOptimizerAgent } from '../agents/db_optimizer.js'
 import { runLegalComplianceAgent } from '../agents/legal_compliance.js'
 import { runProposalStrategistAgent } from '../agents/proposal_strategist.js'
-import { runBehavioralCoachAgent } from '../agents/behavioral_coach.js'
+import { runContentWriterAgent } from '../agents/content_writer.js'
 import { extractAndSaveProjectFacts, processFeedbackLearning } from './memory_learning.js'
 import { buildSystemStatusReport } from './status_report.js'
 import type { Task, TaskStatus } from '../types/index.js'
@@ -108,7 +102,8 @@ async function dispatchRetriedTask(
       await runCeoAgent(task, notify)
       return
     case 'pm_saas':
-      await runPmSaasAgent(task, notify)
+      // Retired: redirected to dev_lead_saas
+      await runDevLeadSaasAgent(task, notify)
       return
     case 'dev_lead_saas':
       await runDevLeadSaasAgent(task, notify)
@@ -127,11 +122,14 @@ async function dispatchRetriedTask(
       await runMarketingStrategistAgent(task, notify)
       return
     case 'content_creator':
-      await runContentCreatorAgent(task, notify)
+      // Retired: redirected to content_writer
+      await runContentWriterAgent(task, notify)
+      return
+    case 'content_writer':
+      await runContentWriterAgent(task, notify)
       return
     case 'social_manager':
-      await runSocialManagerAgent(task, notify)
-      return
+      throw new Error(`Agent 'social_manager' has been retired. This task cannot be retried.`)
     case 'architect':
       await runArchitectAgent(task, notify)
       return
@@ -144,10 +142,9 @@ async function dispatchRetriedTask(
       await runDevGeneralAgent(task, notify)
       return
     case 'ai_engineer':
-      await runAiEngineerAgent(task, notify)
-      return
     case 'automation_specialist':
-      await runAutomationSpecialistAgent(task, notify)
+      // Retired: redirected to dev_general
+      await runDevGeneralAgent(task, notify)
       return
     case 'qa':
       await runQaAgent(task, notify)
@@ -159,8 +156,7 @@ async function dispatchRetriedTask(
       await runFinanceAgent(task, notify)
       return
     case 'hr':
-      await runHrAgent(task, notify)
-      return
+      throw new Error(`Agent 'hr' has been retired. This task cannot be retried.`)
     case 'executive_summary':
       await runExecutiveSummaryAgent(task, notify)
       return
@@ -183,8 +179,7 @@ async function dispatchRetriedTask(
       await runProposalStrategistAgent(task, notify)
       return
     case 'behavioral_coach':
-      await runBehavioralCoachAgent(task, notify)
-      return
+      throw new Error(`Agent 'behavioral_coach' has been retired. This task cannot be retried.`)
     default:
       throw new Error(`Task ${task.id} has no retryable assignee`)
   }
